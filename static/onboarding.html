@@ -28,7 +28,6 @@
             --step-active: #1a1a1a;
             --step-done: #2d6a4f;
             --step-pending: #d5d1c7;
-            --pill-bg: #ede9e1;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -42,115 +41,42 @@
             padding: 2rem 1rem 4rem;
             color: var(--text);
         }
-        .brand {
-            margin-bottom: 2.5rem;
-            text-align: center;
-        }
-        .brand img {
-            height: 45px;
-            width: auto;
-        }
+        .brand { margin-bottom: 2.5rem; text-align: center; }
+        .brand img { height: 45px; width: auto; }
         .card {
             background: var(--surface);
             border: 1px solid var(--border);
             border-radius: 20px;
             width: 100%;
             max-width: 560px;
-            padding: 2.5rem 2.5rem;
+            padding: 2.5rem;
             position: relative;
         }
-        .steps-bar {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            margin-bottom: 2.5rem;
-        }
-        .step-dot {
-            width: 28px; height: 5px;
-            border-radius: 99px;
-            background: var(--step-pending);
-            transition: background 0.3s;
-        }
+        .steps-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 2.5rem; }
+        .step-dot { width: 28px; height: 5px; border-radius: 99px; background: var(--step-pending); transition: 0.3s; }
         .step-dot.active { background: var(--step-active); width: 44px; }
         .step-dot.done { background: var(--step-done); }
 
-        .step-label {
-            font-size: 0.72rem;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            color: var(--muted);
-            font-weight: 500;
-            margin-bottom: 0.4rem;
-        }
-        h2 {
-            font-family: 'Instrument Serif', serif;
-            font-size: 1.75rem;
-            font-weight: 400;
-            line-height: 1.25;
-            margin-bottom: 0.5rem;
-            letter-spacing: -0.3px;
-        }
-        .subtitle {
-            font-size: 0.88rem;
-            color: var(--muted);
-            margin-bottom: 2rem;
-            line-height: 1.5;
-        }
+        .step-label { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; margin-bottom: 0.4rem; }
+        h2 { font-family: 'Instrument Serif', serif; font-size: 1.75rem; font-weight: 400; margin-bottom: 0.5rem; }
+        .subtitle { font-size: 0.88rem; color: var(--muted); margin-bottom: 2rem; }
 
         .field { margin-bottom: 1.25rem; }
-        label {
-            display: block;
-            font-size: 0.8rem;
-            font-weight: 500;
-            color: var(--muted);
-            margin-bottom: 0.4rem;
-            letter-spacing: 0.02em;
-        }
-        input[type="text"],
-        input[type="email"],
-        input[type="password"],
-        select {
-            width: 100%;
-            padding: 0.7rem 0.9rem;
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            font-family: 'DM Sans', sans-serif;
-            font-size: 0.92rem;
-            color: var(--text);
-            background: var(--surface);
-            outline: none;
-            transition: all 0.2s;
+        label { display: block; font-size: 0.8rem; font-weight: 500; color: var(--muted); margin-bottom: 0.4rem; }
+        input, select {
+            width: 100%; padding: 0.7rem 0.9rem; border: 1px solid var(--border); border-radius: 10px;
+            font-family: 'DM Sans', sans-serif; font-size: 0.92rem; outline: none; transition: 0.2s;
         }
         input:focus { border-color: var(--border-focus); }
-        
-        /* Estilos de Validación de RUT */
         input.invalid { border-color: var(--error); background-color: #fffafa; }
-        input.valid { border-color: var(--success); }
-
-        .rut-row { display: flex; gap: 8px; align-items: flex-start; }
-        .rut-row input { flex: 1; }
-        .rut-status {
-            font-size: 0.72rem;
-            margin-top: 4px;
-            font-weight: 500;
-            display: none;
-        }
+        
+        .rut-status { font-size: 0.72rem; margin-top: 4px; display: none; }
         .rut-status.error { color: var(--error); display: block; }
         .rut-status.ok { color: var(--success); display: block; }
 
         .btn {
-            width: 100%;
-            padding: 0.85rem;
-            background: var(--accent);
-            color: #fff;
-            border: none;
-            border-radius: 12px;
-            font-family: 'DM Sans', sans-serif;
-            font-size: 0.95rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: opacity 0.2s;
-            margin-top: 0.5rem;
+            width: 100%; padding: 0.85rem; background: var(--accent); color: #fff; border: none;
+            border-radius: 12px; font-weight: 500; cursor: pointer; transition: 0.2s; margin-top: 0.5rem;
         }
         .btn:disabled { opacity: 0.3; cursor: not-allowed; }
         .btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
@@ -161,12 +87,14 @@
         .step.active { display: block; }
 
         .caf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 1.5rem; }
-        .caf-card {
-            border: 1.5px dashed var(--border); border-radius: 12px; padding: 1rem;
-            text-align: center; cursor: pointer; position: relative;
-        }
+        .caf-card { border: 1.5px dashed var(--border); border-radius: 12px; padding: 1rem; text-align: center; position: relative; }
         .caf-card.loaded { border-color: var(--success); background: var(--success-bg); }
         .caf-card input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+        #loading-overlay {
+            display: none; position: absolute; inset: 0; background: rgba(255,255,255,0.8);
+            z-index: 10; border-radius: 20px; align-items: center; justify-content: center; flex-direction: column;
+        }
     </style>
 </head>
 <body>
@@ -176,76 +104,51 @@
 </div>
 
 <div class="card">
+    <div id="loading-overlay">
+        <img src="/static/isotipo.svg" style="width: 40px; animation: pulse 1.5s infinite;">
+        <p style="margin-top: 10px; font-weight: 500;" id="loading-text">Guardando datos...</p>
+    </div>
+
     <div class="steps-bar" id="stepsBar"></div>
 
     <div class="step active" id="step1">
         <div class="step-label">Paso 1 de 5</div>
         <h2>Cuenta Personal</h2>
-        <p class="subtitle">Datos del administrador del sistema.</p>
-
-        <div class="field">
-            <label>Nombre</label>
-            <input type="text" id="nombre" placeholder="Ej: Juan">
-        </div>
-        <div class="field">
-            <label>Apellido</label>
-            <input type="text" id="apellido" placeholder="Ej: Pérez">
-        </div>
-        <div class="field">
-            <label>Email</label>
-            <input type="email" id="email" placeholder="juan@empresa.cl">
-        </div>
-        <div class="field">
-            <label>Contraseña</label>
-            <input type="password" id="password" placeholder="Mínimo 8 caracteres">
-        </div>
+        <div class="field"><label>Nombre</label><input type="text" id="nombre" placeholder="Juan"></div>
+        <div class="field"><label>Apellido</label><input type="text" id="apellido" placeholder="Pérez"></div>
+        <div class="field"><label>Email</label><input type="email" id="email" placeholder="juan@empresa.cl"></div>
+        <div class="field"><label>Contraseña</label><input type="password" id="password" placeholder="Mínimo 8 caracteres"></div>
         <div class="field">
             <label>RUT Personal (Sin puntos, con guion)</label>
             <input type="text" id="rut-usuario" placeholder="12345678-9" oninput="validarRutInput(this)">
             <div id="msg-rut-usuario" class="rut-status">RUT incorrecto</div>
         </div>
-        <button class="btn" id="btn-next-1" onclick="goStep(2)">Continuar</button>
+        <button class="btn" id="btn-next-1" onclick="goStep(2)" disabled>Continuar</button>
     </div>
 
     <div class="step" id="step2">
         <div class="step-label">Paso 2 de 5</div>
         <h2>Datos de Empresa</h2>
-        <p class="subtitle">Información tributaria para el SII.</p>
-
         <div class="field">
             <label>RUT Empresa (Sin puntos, con guion)</label>
             <input type="text" id="rut-empresa" placeholder="76123456-7" oninput="validarRutInput(this)">
-            <div id="msg-rut-empresa" class="rut-status">RUT Empresa incorrecto</div>
+            <div id="msg-rut-empresa" class="rut-status">RUT incorrecto</div>
         </div>
-        <div class="field">
-            <label>Razón Social</label>
-            <input type="text" id="razon-social" placeholder="Yepar Solutions SpA">
-        </div>
-        <div class="field">
-            <label>Giro</label>
-            <input type="text" id="giro" placeholder="Venta de abarrotes">
-        </div>
-        <div class="field">
-            <label>Dirección</label>
-            <input type="text" id="direccion" placeholder="Av. Principal 123">
-        </div>
+        <div class="field"><label>Razón Social</label><input type="text" id="razon-social" placeholder="Yepar Solutions SpA"></div>
+        <div class="field"><label>Giro</label><input type="text" id="giro" placeholder="Venta de abarrotes"></div>
+        <div class="field"><label>Dirección</label><input type="text" id="direccion" placeholder="Calle 123, Ciudad"></div>
         <div class="btn-row">
             <button class="btn btn-secondary" onclick="goStep(1)">Atrás</button>
-            <button class="btn" id="btn-next-2" onclick="goStep(3)">Continuar</button>
+            <button class="btn" id="btn-next-2" onclick="goStep(3)" disabled>Continuar</button>
         </div>
     </div>
 
     <div class="step" id="step3">
         <div class="step-label">Paso 3 de 5</div>
         <h2>Firma Digital</h2>
-        <p class="subtitle">Sube tu archivo .p12 para firmar documentos.</p>
-        <div class="field">
-            <input type="file" id="certFile" accept=".p12,.pfx">
-        </div>
-        <div class="field">
-            <label>Clave del Certificado</label>
-            <input type="password" id="cert-password">
-        </div>
+        <p class="subtitle">Sube tu certificado .p12 o .pfx</p>
+        <div class="field"><input type="file" id="certFile" accept=".p12,.pfx"></div>
+        <div class="field"><label>Clave del Certificado</label><input type="password" id="cert-password"></div>
         <div class="btn-row">
             <button class="btn btn-secondary" onclick="goStep(2)">Atrás</button>
             <button class="btn" onclick="goStep(4)">Continuar</button>
@@ -264,12 +167,11 @@
 
     <div class="step" id="step5">
         <div style="text-align: center;">
-            <img src="/static/isotipo.svg" style="width: 60px; margin-bottom: 1rem;">
-            <h2>¡Todo listo!</h2>
-            <p class="subtitle">Verifica los datos antes de finalizar.</p>
+            <img src="/static/isotipo.svg" style="width: 50px; margin-bottom: 1rem;">
+            <h2>Confirmación</h2>
         </div>
-        <div id="summary" style="background: var(--accent-light); padding: 1rem; border-radius: 10px; margin-bottom: 1.5rem; font-size: 0.85rem;"></div>
-        <button class="btn" onclick="submitAll()">Finalizar Configuración</button>
+        <div id="summary" style="background: var(--accent-light); padding: 1rem; border-radius: 10px; margin: 1.5rem 0; font-size: 0.85rem; line-height: 1.6;"></div>
+        <button class="btn" id="final-btn" onclick="submitAll()">Finalizar y Guardar en BD</button>
     </div>
 </div>
 
@@ -277,56 +179,36 @@
 let currentStep = 1;
 let cafFiles = {};
 
-// --- LÓGICA DE VALIDACIÓN DE RUT (MÓDULO 11) ---
 function validarRutInput(input) {
-    let value = input.value.replace(/\./g, ''); // Eliminar puntos si el usuario los pega
-    
-    // Limitar formato a: números y guion final
-    if (value.length > 1) {
-        let cuerpo = value.slice(0, -1).replace(/[^0-9]/g, '');
-        let dv = value.slice(-1).toUpperCase();
-        if (!/[0-9K]/.test(dv)) dv = '';
-        input.value = cuerpo + (dv ? '-' + dv : '');
+    let val = input.value.replace(/\./g, '');
+    if (val.length > 1) {
+        let cuerpo = val.slice(0, -1).replace(/[^0-9]/g, '');
+        let dv = val.slice(-1).toUpperCase();
+        input.value = cuerpo + '-' + dv;
     }
-
-    const cleanValue = input.value;
+    const isValid = esRutValido(input.value);
     const msg = document.getElementById('msg-' + input.id);
     const btn = currentStep === 1 ? document.getElementById('btn-next-1') : document.getElementById('btn-next-2');
-
-    if (cleanValue.includes('-') && esRutValido(cleanValue)) {
-        input.classList.remove('invalid');
-        input.classList.add('valid');
-        msg.classList.remove('error');
-        msg.classList.add('ok');
-        msg.textContent = '✓ RUT Válido';
-        btn.disabled = false;
-    } else {
-        input.classList.remove('valid');
-        input.classList.add('invalid');
-        msg.classList.remove('ok');
-        msg.classList.add('error');
-        msg.textContent = '✗ RUT incorrecto o incompleto';
-        btn.disabled = true;
-    }
+    
+    input.classList.toggle('invalid', !isValid);
+    msg.style.display = isValid ? 'none' : 'block';
+    btn.disabled = !isValid;
 }
 
 function esRutValido(rut) {
     if (!/^[0-9]+-[0-9Kk]$/.test(rut)) return false;
-    let [cuerpo, dv] = rut.split('-');
-    if (cuerpo.length < 7) return false;
-    
-    let suma = 0;
-    let multiplo = 2;
-    for (let i = cuerpo.length - 1; i >= 0; i--) {
-        suma += parseInt(cuerpo[i]) * multiplo;
-        multiplo = (multiplo === 7) ? 2 : multiplo + 1;
+    let [c, dv] = rut.split('-');
+    if (c.length < 7) return false;
+    let s = 0, m = 2;
+    for (let i = c.length - 1; i >= 0; i--) {
+        s += parseInt(c[i]) * m;
+        m = (m === 7) ? 2 : m + 1;
     }
-    let dvEsperado = 11 - (suma % 11);
-    dvEsperado = (dvEsperado === 11) ? '0' : (dvEsperado === 10) ? 'K' : dvEsperado.toString();
-    return dvEsperado === dv.toUpperCase();
+    let dvr = 11 - (s % 11);
+    dvr = dvr === 11 ? '0' : dvr === 10 ? 'K' : dvr.toString();
+    return dvr === dv.toUpperCase();
 }
 
-// --- NAVEGACIÓN ---
 function goStep(n) {
     document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
     document.getElementById('step' + n).classList.add('active');
@@ -347,45 +229,113 @@ function updateDots() {
 function renderCafs() {
     const grid = document.getElementById('cafGrid');
     grid.innerHTML = '';
-    [33, 39, 61].forEach(tipo => {
+    [33, 39, 61].forEach(t => {
         grid.innerHTML += `
-            <div class="caf-card" id="caf-${tipo}">
-                <input type="file" accept=".xml" onchange="handleCaf(${tipo}, this)">
-                <div style="font-size: 10px; color: var(--muted)">TIPO ${tipo}</div>
-                <div style="font-weight: 500">${tipo === 33 ? 'Factura' : tipo === 39 ? 'Boleta' : 'Nota Crédito'}</div>
-                <div id="status-${tipo}" style="font-size: 11px; margin-top: 5px;">Haga clic para subir</div>
+            <div class="caf-card ${cafFiles[t] ? 'loaded' : ''}" id="caf-${t}">
+                <input type="file" accept=".xml" onchange="handleCaf(${t}, this)">
+                <div style="font-size: 10px;">TIPO ${t}</div>
+                <div style="font-weight: 500">${t===33?'Factura':t===39?'Boleta':'Nota Cr.'}</div>
+                <div style="font-size: 10px;">${cafFiles[t] ? '✓ Cargado' : 'Subir XML'}</div>
             </div>`;
     });
 }
 
-function handleCaf(tipo, input) {
-    if (input.files[0]) {
-        cafFiles[tipo] = input.files[0];
-        document.getElementById(`caf-${tipo}`).classList.add('loaded');
-        document.getElementById(`status-${tipo}`).textContent = '✓ Cargado';
-    }
+function handleCaf(t, input) {
+    if(input.files[0]) { cafFiles[t] = input.files[0]; renderCafs(); }
 }
 
 function showSummary() {
-    const s = document.getElementById('summary');
-    s.innerHTML = `
-        <b>Empresa:</b> ${document.getElementById('razon-social').value}<br>
-        <b>RUT Empresa:</b> ${document.getElementById('rut-empresa').value}<br>
+    document.getElementById('summary').innerHTML = `
         <b>Usuario:</b> ${document.getElementById('nombre').value} ${document.getElementById('apellido').value}<br>
-        <b>RUT Personal:</b> ${document.getElementById('rut-usuario').value}<br>
-        <b>Folios:</b> ${Object.keys(cafFiles).length} tipos cargados
+        <b>Email:</b> ${document.getElementById('email').value}<br>
+        <b>Empresa:</b> ${document.getElementById('razon-social').value} (${document.getElementById('rut-empresa').value})<br>
+        <b>Archivos:</b> Certificado y ${Object.keys(cafFiles).length} CAFs seleccionados.
     `;
 }
 
-// --- ENVÍO FINAL ---
+// --- EL CORAZÓN: ENVÍO A BASE DE DATOS ---
 async function submitAll() {
-    // Aquí va la lógica de fetch a /v1/auth/registro y /v1/emisores/
-    // El RUT se envía exactamente como está en el input (ya validado sin puntos y con guion)
-    alert("Iniciando creación de cuenta y empresa...");
-}
+    const overlay = document.getElementById('loading-overlay');
+    const loadText = document.getElementById('loading-text');
+    overlay.style.display = 'flex';
 
-updateDots();
+    try {
+        // 1. Registro de Usuario
+        loadText.textContent = "Creando cuenta de usuario...";
+        const resUser = await fetch('/v1/auth/registro', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                nombre: document.getElementById('nombre').value,
+                apellido: document.getElementById('apellido').value,
+                email: document.getElementById('email').value,
+                password: document.getElementById('password').value
+            })
+        });
+        if (!resUser.ok) throw new Error("Error al crear usuario");
+        const userData = await resUser.json();
+        const token = userData.access_token;
+
+        // 2. Creación de Emisor (Empresa)
+        loadText.textContent = "Registrando empresa...";
+        const resEmisor = await fetch('/v1/emisores/', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+            body: JSON.stringify({
+                rut: document.getElementById('rut-empresa').value,
+                razon_social: document.getElementById('razon-social').value,
+                giro: document.getElementById('giro').value,
+                direccion: document.getElementById('direccion').value,
+                comuna: "Santiago", // Valor por defecto para simplificar
+                ciudad: "Metropolitana",
+                ambiente: "certificacion"
+            })
+        });
+        if (!resEmisor.ok) throw new Error("Error al crear empresa");
+        const emisorData = await resEmisor.json();
+
+        // 3. Subir Certificado Digital
+        const certFile = document.getElementById('certFile').files[0];
+        if (certFile) {
+            loadText.textContent = "Subiendo certificado digital...";
+            const formData = new FormData();
+            formData.append('file', certFile);
+            formData.append('password', document.getElementById('cert-password').value);
+            await fetch(`/v1/certificados/${emisorData.id}/subir`, {
+                method: 'POST',
+                headers: {'Authorization': `Bearer ${token}`},
+                body: formData
+            });
+        }
+
+        // 4. Cargar CAFs
+        for (const tipo in cafFiles) {
+            loadText.textContent = `Cargando folio tipo ${tipo}...`;
+            const xmlText = await cafFiles[tipo].text();
+            await fetch('/v1/caf/cargar', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+                body: JSON.stringify({
+                    emisor_id: emisorData.id,
+                    xml_caf: xmlText,
+                    ambiente: "certificacion"
+                })
+            });
+        }
+
+        loadText.textContent = "¡Todo guardado con éxito!";
+        setTimeout(() => window.location.href = "/api/docs", 1500);
+
+    } catch (err) {
+        overlay.style.display = 'none';
+        alert("Hubo un fallo: " + err.message);
+    }
+}
 </script>
+
+<style>
+@keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+</style>
 
 </body>
 </html>
