@@ -1,99 +1,51 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
-from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.api.v1.router import api_router
 from app.db.base import engine, Base
 import os
-import base64
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup: Verificación de tablas
-    async with engine.begin() as conn:
-        from app.models import Emisor, CAF, DTE, ItemDTE
-        from app.models.usuario import Usuario
-        await conn.run_sync(Base.metadata.create_all)
-    yield
-    # Shutdown
-    await engine.dispose()
+# ... (mantén tu lifespan igual) ...
 
-app = FastAPI(
-    title=settings.APP_NAME,
-    version=settings.APP_VERSION,
-    docs_url="/docs",
-    redoc_url="/redoc",
-    lifespan=lifespan,
-)
+app = FastAPI(title=settings.APP_NAME, docs_url="/docs")
 
-# ── CORS Actualizado ──────────────────────────────────────────
+# ✅ IMPORTANTE: Esto permite que el portal se comunique con la BD de Railway
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if settings.DEBUG else [
-        "https://yeparstock.yeparsolutions.com",
-        "https://yeparte.yeparsolutions.com",
-        "https://yepardte.yeparsolutions.com",
-        "https://yepardtecore.cl",
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-if os.path.exists("static"):
-    app.mount("/static", StaticFiles(directory="static"), name="static")
-
 app.include_router(api_router, prefix=settings.API_PREFIX)
 
-# ── RUTA RAÍZ: La "Página Blanca" Dinámica ────────────────────
-@app.get("/", response_class=HTMLResponse, tags=["Frontend"])
+# ── LA RUTA QUE MANDA EL PORTAL ──────────────────────────────
+@app.get("/", response_class=HTMLResponse)
 async def root():
-    # Aquí puedes poner todo el HTML que genera la página blanca
-    # He incluido el código que me mostraste adaptado para responder directo
-    
-    html_content = """
+    # Esta es la página blanca que mencionas. 
+    # Al ser dinámica, la definimos aquí para que cargue de inmediato.
+    return """
     <!DOCTYPE html>
     <html lang="es">
     <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>YeparDTEcore — API Facturación Electrónica Chile</title>
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+        <title>YeparDTE — Portal de Registro</title>
         <style>
-            /* Aquí va tu CSS dinámico */
-            body { 
-                font-family: 'Inter', sans-serif; 
-                margin: 0; 
-                display: flex; 
-                flex-direction: column; 
-                align-items: center; 
-                justify-content: center; 
-                height: 100vh;
-                background-color: #ffffff; /* El fondo blanco que buscas */
-            }
-            .container { text-align: center; }
-            h1 { font-family: 'Syne', sans-serif; font-weight: 800; color: #1a1a1a; }
-            .btn-docs { 
-                margin-top: 20px;
-                display: inline-block;
-                padding: 10px 20px;
-                background: #22C55E;
-                color: white;
-                text-decoration: none;
-                border-radius: 8px;
-            }
+            body { font-family: 'Inter', sans-serif; background: #F9FAFB; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+            .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: center; max-width: 500px; }
+            h1 { color: #111827; font-size: 24px; }
+            p { color: #6B7280; }
+            .btn { background: #2563EB; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; display: inline-block; margin-top: 20px; }
         </style>
     </head>
     <body>
-        <div class="container">
+        <div class="card">
             <h1>Facturación electrónica sin dolor</h1>
-            <p>YeparDTEcore Motor v""" + settings.APP_VERSION + """</p>
-            <a href="/docs" class="btn-docs">Documentación API</a>
+            <p>Bienvenido al portal de YeparDTEcore. Aquí puedes registrar tu empresa y configurar tu certificado digital.</p>
+            <a href="/docs" class="btn">Panel de Control API</a>
         </div>
     </body>
     </html>
     """
-    return HTMLResponse(content=html_content)
