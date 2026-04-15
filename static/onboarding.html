@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YeparDTE — Registro</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f7f6f2;
+    --surface: #ffffff;
+    --border: #e3e1d9;
+    --border-focus: #1a1a1a;
+    --text: #1a1a1a;
+    --muted: #7a7770;
+    --accent: #1a1a1a;
+    --accent-light: #f0ede6;
+    --success: #2d6a4f;
+    --success-bg: #d8f3dc;
+    --error: #c1121f;
+    --error-bg: #fde8e8;
+    --step-active: #1a1a1a;
+    --step-done: #2d6a4f;
+    --step-pending: #d5d1c7;
+    --pill-bg: #ede9e1;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 2rem 1rem 4rem;
+    color: var(--text);
+  }
+  .brand {
+    margin-bottom: 2.5rem;
+    text-align: center;
+  }
+  .brand-logo {
+    font-family: 'Instrument Serif', serif;
+    font-size: 1.6rem;
+    letter-spacing: -0.5px;
+    color: var(--text);
+  }
+  .brand-logo span { color: var(--muted); }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    width: 100%;
+    max-width: 560px;
+    padding: 2.5rem 2.5rem;
+    position: relative;
+  }
+  .steps-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 2.5rem;
+  }
+  .step-dot {
+    width: 28px; height: 5px;
+    border-radius: 99px;
+    background: var(--step-pending);
+    transition: background 0.3s;
+  }
+  .step-dot.active { background: var(--step-active); width: 44px; }
+  .step-dot.done { background: var(--step-done); }
+
+  .step-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+    margin-bottom: 0.4rem;
+  }
+  h2 {
+    font-family: 'Instrument Serif', serif;
+    font-size: 1.75rem;
+    font-weight: 400;
+    line-height: 1.25;
+    margin-bottom: 0.5rem;
+    letter-spacing: -0.3px;
+  }
+  .subtitle {
+    font-size: 0.88rem;
+    color: var(--muted);
+    margin-bottom: 2rem;
+    line-height: 1.5;
+  }
+
+  .field { margin-bottom: 1.25rem; }
+  label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--muted);
+    margin-bottom: 0.4rem;
+    letter-spacing: 0.02em;
+  }
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  select,
+  textarea {
+    width: 100%;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.92rem;
+    color: var(--text);
+    background: var(--surface);
+    outline: none;
+    transition: border-color 0.2s;
+    appearance: none;
+  }
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--border-focus);
+  }
+  input.error, select.error { border-color: var(--error); }
+  .error-msg {
+    font-size: 0.78rem;
+    color: var(--error);
+    margin-top: 0.3rem;
+    display: none;
+  }
+  .error-msg.show { display: block; }
+
+  .rut-row { display: flex; gap: 8px; align-items: flex-start; }
+  .rut-row input { flex: 1; }
+  .rut-badge {
+    margin-top: 0;
+    padding: 0.7rem 0.85rem;
+    border-radius: 10px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+  .rut-badge.ok { background: var(--success-bg); color: var(--success); border-color: #b7e4c7; }
+  .rut-badge.fail { background: var(--error-bg); color: var(--error); border-color: #f5c6c6; }
+  .rut-badge.neutral { background: var(--pill-bg); color: var(--muted); border-color: var(--border); }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+
+  .file-drop {
+    border: 1.5px dashed var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+  }
+  .file-drop:hover { border-color: var(--border-focus); background: var(--accent-light); }
+  .file-drop.has-file { border-color: var(--step-done); background: var(--success-bg); }
+  .file-drop input[type="file"] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer;
+    width: 100%; height: 100%;
+    border: none; padding: 0;
+  }
+  .file-icon {
+    width: 36px; height: 36px;
+    background: var(--pill-bg);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 0.75rem;
+  }
+  .file-icon svg { width: 18px; height: 18px; }
+  .file-label { font-size: 0.85rem; color: var(--muted); }
+  .file-label strong { color: var(--text); }
+  .file-name { font-size: 0.82rem; color: var(--success); font-weight: 500; margin-top: 0.4rem; }
+
+  .caf-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 1.5rem;
+  }
+  .caf-card {
+    border: 1.5px dashed var(--border);
+    border-radius: 12px;
+    padding: 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    background: var(--surface);
+  }
+  .caf-card:hover { border-color: var(--border-focus); }
+  .caf-card.loaded { border-color: var(--step-done); border-style: solid; background: var(--success-bg); }
+  .caf-card input[type="file"] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer;
+    width: 100%; height: 100%; border: none; padding: 0;
+  }
+  .caf-type {
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.35rem;
+  }
+  .caf-name { font-size: 0.85rem; font-weight: 500; color: var(--text); }
+  .caf-status { font-size: 0.75rem; margin-top: 0.3rem; }
+  .caf-status.ok { color: var(--success); }
+  .caf-status.pending { color: var(--muted); }
+  .caf-badge {
+    position: absolute; top: 8px; right: 8px;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--step-done);
+    display: none;
+    align-items: center; justify-content: center;
+  }
+  .caf-card.loaded .caf-badge { display: flex; }
+  .caf-badge svg { width: 10px; height: 10px; }
+
+  .btn {
+    width: 100%;
+    padding: 0.85rem;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    margin-top: 0.5rem;
+  }
+  .btn:hover { opacity: 0.88; }
+  .btn:active { transform: scale(0.98); }
+  .btn-secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { background: var(--accent-light); opacity: 1; }
+  .btn-row { display: flex; gap: 10px; }
+  .btn-row .btn { flex: 1; }
+
+  .hint {
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-top: 0.35rem;
+    line-height: 1.45;
+  }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 1.5rem 0;
+  }
+
+  .success-screen {
+    text-align: center;
+    padding: 1rem 0;
+  }
+  .success-icon {
+    width: 64px; height: 64px;
+    background: var(--success-bg);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 1.5rem;
+  }
+  .success-icon svg { width: 30px; height: 30px; }
+  .success-screen h2 { margin-bottom: 0.6rem; }
+  .success-detail {
+    background: var(--accent-light);
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    margin-top: 1.5rem;
+    text-align: left;
+  }
+  .success-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.83rem;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .success-row:last-child { border-bottom: none; }
+  .success-row span:first-child { color: var(--muted); }
+  .success-row span:last-child { font-weight: 500; }
+
+  .step { display: none; }
+  .step.active { display: block; }
+
+  select option { color: var(--text); background: var(--surface); }
+</style>
+</head>
+<body>
+
+<div class="brand">
+  <div class="brand-logo">Yepar<span>DTE</span></div>
+</div>
+
+<div class="card">
+
+  <div class="steps-bar" id="stepsBar"></div>
+
+  <!-- STEP 1: Cuenta de usuario -->
+  <div class="step active" id="step1">
+    <div class="step-label">Paso 1 de 5</div>
+    <h2>Crea tu cuenta</h2>
+    <p class="subtitle">Ingresa tus datos de acceso. Usarás este correo y contraseña para entrar a YeparDTE.</p>
+
+    <div class="field">
+      <label>Nombre</label>
+      <input type="text" id="nombre" placeholder="Juan Carlos">
+      <div class="error-msg" id="err-nombre">Ingresa tu nombre</div>
+    </div>
+    <div class="field">
+      <label>Apellido</label>
+      <input type="text" id="apellido" placeholder="González Silva">
+      <div class="error-msg" id="err-apellido">Ingresa tu apellido</div>
+    </div>
+    <div class="field">
+      <label>Correo electrónico</label>
+      <input type="email" id="email" placeholder="juan@empresa.cl">
+      <div class="error-msg" id="err-email">Ingresa un correo válido</div>
+    </div>
+    <div class="field">
+      <label>Contraseña</label>
+      <input type="password" id="password" placeholder="Mínimo 8 caracteres">
+      <div class="error-msg" id="err-password">Mínimo 8 caracteres</div>
+    </div>
+    <div class="field">
+      <label>RUT personal</label>
+      <div class="rut-row">
+        <div style="flex:1">
+          <input type="text" id="rut-usuario" placeholder="12345678-9" maxlength="12" oninput="formatRutInput(this,'badge-rut-usuario')">
+          <div class="error-msg" id="err-rut-usuario">RUT inválido</div>
+        </div>
+        <div class="rut-badge neutral" id="badge-rut-usuario">—</div>
+      </div>
+      <div class="hint">Sin puntos, con guión. Ej: 12345678-9</div>
+    </div>
+
+    <button class="btn" onclick="goStep(2)">Continuar</button>
+  </div>
+
+  <!-- STEP 2: Datos empresa -->
+  <div class="step" id="step2">
+    <div class="step-label">Paso 2 de 5</div>
+    <h2>Tu empresa</h2>
+    <p class="subtitle">Estos datos aparecerán en tus documentos tributarios. Asegúrate de que coincidan con los del SII.</p>
+
+    <div class="field">
+      <label>RUT de la empresa</label>
+      <div class="rut-row">
+        <div style="flex:1">
+          <input type="text" id="rut-empresa" placeholder="78123456-7" maxlength="12" oninput="formatRutInput(this,'badge-rut-empresa')">
+          <div class="error-msg" id="err-rut-empresa">RUT inválido</div>
+        </div>
+        <div class="rut-badge neutral" id="badge-rut-empresa">—</div>
+      </div>
+      <div class="hint">Sin puntos, con guión. Ej: 78123456-7</div>
+    </div>
+    <div class="field">
+      <label>Razón social</label>
+      <input type="text" id="razon-social" placeholder="Comercial González SpA">
+      <div class="error-msg" id="err-razon-social">Campo requerido</div>
+    </div>
+    <div class="field">
+      <label>Giro comercial</label>
+      <input type="text" id="giro" placeholder="Comercio al por menor de productos varios">
+      <div class="error-msg" id="err-giro">Campo requerido</div>
+    </div>
+    <div class="field">
+      <label>Dirección</label>
+      <input type="text" id="direccion" placeholder="Av. Providencia 1234, Of. 502">
+      <div class="error-msg" id="err-direccion">Campo requerido</div>
+    </div>
+    <div class="field">
+      <label>Correo de contacto</label>
+      <input type="email" id="correo-empresa" placeholder="contacto@empresa.cl">
+      <div class="error-msg" id="err-correo-empresa">Correo inválido</div>
+    </div>
+
+    <div class="two-col">
+      <div class="field">
+        <label>Región</label>
+        <select id="region" onchange="cargarComunas()">
+          <option value="">Seleccionar...</option>
+        </select>
+        <div class="error-msg" id="err-region">Selecciona una región</div>
+      </div>
+      <div class="field">
+        <label>Comuna</label>
+        <select id="comuna" disabled>
+          <option value="">Primero región...</option>
+        </select>
+        <div class="error-msg" id="err-comuna">Selecciona una comuna</div>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="goStep(1)">Atrás</button>
+      <button class="btn" onclick="goStep(3)">Continuar</button>
+    </div>
+  </div>
+
+  <!-- STEP 3: Certificado digital -->
+  <div class="step" id="step3">
+    <div class="step-label">Paso 3 de 5</div>
+    <h2>Firma digital</h2>
+    <p class="subtitle">Sube el certificado .p12 o .pfx que usarás para firmar tus documentos tributarios ante el SII.</p>
+
+    <div class="field">
+      <div class="file-drop" id="certDrop">
+        <input type="file" id="certFile" accept=".p12,.pfx" onchange="handleCertFile(this)">
+        <div class="file-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M12 15V3m0 12l-4-4m4 4l4-4"/>
+            <path d="M2 17l.621 2.485A2 2 0 0 0 4.561 21h14.878a2 2 0 0 0 1.94-1.515L22 17"/>
+          </svg>
+        </div>
+        <div class="file-label"><strong>Arrastra tu certificado</strong> o haz clic para seleccionar</div>
+        <div class="file-label" style="font-size:0.76rem; margin-top:4px;">Formatos .p12 o .pfx</div>
+        <div class="file-name" id="certFileName"></div>
+      </div>
+      <div class="error-msg show" style="display:none" id="err-cert">Debes subir un certificado</div>
+    </div>
+
+    <div class="field">
+      <label>Contraseña del certificado</label>
+      <input type="password" id="cert-password" placeholder="Contraseña de tu .p12">
+      <div class="error-msg" id="err-cert-password">Ingresa la contraseña del certificado</div>
+      <div class="hint">Esta contraseña se almacena cifrada y solo se usa para firmar documentos.</div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="goStep(2)">Atrás</button>
+      <button class="btn" onclick="goStep(4)">Continuar</button>
+    </div>
+  </div>
+
+  <!-- STEP 4: CAFs -->
+  <div class="step" id="step4">
+    <div class="step-label">Paso 4 de 5</div>
+    <h2>Archivos CAF</h2>
+    <p class="subtitle">Sube los Códigos de Autorización de Folios entregados por el SII para cada tipo de documento.</p>
+
+    <div class="caf-grid" id="cafGrid"></div>
+
+    <div class="hint" style="margin-bottom:1.25rem">
+      Puedes subir los que tengas ahora y agregar el resto después desde el panel de administración. Debes subir al menos uno para continuar.
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="goStep(3)">Atrás</button>
+      <button class="btn" onclick="goStep(5)">Continuar</button>
+    </div>
+  </div>
+
+  <!-- STEP 5: Confirmación -->
+  <div class="step" id="step5">
+    <div class="step-label">Paso 5 de 5</div>
+    <div class="success-screen">
+      <div class="success-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#2d6a4f" stroke-width="2.2">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+      </div>
+      <h2>Todo listo</h2>
+      <p class="subtitle">Tu cuenta y empresa han sido configuradas correctamente. Ya puedes comenzar a emitir documentos.</p>
+      <div class="success-detail" id="summaryBox"></div>
+      <button class="btn" style="margin-top:1.5rem" onclick="submitAll()">Ir al panel de YeparDTE</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const TOTAL_STEPS = 5;
+let currentStep = 1;
+
+const REGIONES_COMUNAS = {
+  "Región de Arica y Parinacota": ["Arica","Camarones","Putre","General Lagos"],
+  "Región de Tarapacá": ["Iquique","Alto Hospicio","Pozo Almonte","Camiña","Colchane","Huara","Pica"],
+  "Región de Antofagasta": ["Antofagasta","Mejillones","Sierra Gorda","Taltal","Calama","Ollagüe","San Pedro de Atacama","Tocopilla","María Elena"],
+  "Región de Atacama": ["Copiapó","Caldera","Tierra Amarilla","Chañaral","Diego de Almagro","Vallenar","Alto del Carmen","Freirina","Huasco"],
+  "Región de Coquimbo": ["La Serena","Coquimbo","Andacollo","La Higuera","Paiguano","Vicuña","Illapel","Canela","Los Vilos","Salamanca","Ovalle","Combarbalá","Monte Patria","Punitaqui","Río Hurtado"],
+  "Región de Valparaíso": ["Valparaíso","Casablanca","Concón","Juan Fernández","Puchuncaví","Quintero","Viña del Mar","Isla de Pascua","Los Andes","Calle Larga","Rinconada","San Esteban","La Ligua","Cabildo","Papudo","Petorca","Zapallar","Quillota","Calera","Hijuelas","La Cruz","Nogales","San Antonio","Algarrobo","Cartagena","El Quisco","El Tabo","Santo Domingo","San Felipe","Catemu","Llaillay","Panquehue","Putaendo","Santa María","Quilpué","Limache","Olmué","Villa Alemana"],
+  "Región Metropolitana de Santiago": ["Cerrillos","Cerro Navia","Conchalí","El Bosque","Estación Central","Huechuraba","Independencia","La Cisterna","La Florida","La Granja","La Pintana","La Reina","Las Condes","Lo Barnechea","Lo Espejo","Lo Prado","Macul","Maipú","Ñuñoa","Pedro Aguirre Cerda","Peñalolén","Providencia","Pudahuel","Quilicura","Quinta Normal","Recoleta","Renca","San Joaquín","San Miguel","San Ramón","Santiago","Vitacura","Puente Alto","Pirque","San José de Maipo","Colina","Lampa","Tiltil","San Bernardo","Buin","Calera de Tango","Paine","Melipilla","Alhué","Curacaví","María Pinto","San Pedro","Talagante","El Monte","Isla de Maipo","Padre Hurtado","Peñaflor"],
+  "Región del Libertador Gral. Bernardo O'Higgins": ["Rancagua","Codegua","Coinco","Coltauco","Doñihue","Graneros","Las Cabras","Machalí","Malloa","Mostazal","Olivar","Peumo","Pichidegua","Quinta de Tilcoco","Rengo","Requínoa","San Vicente","Pichilemu","La Estrella","Litueche","Marchihue","Navidad","Paredones","San Fernando","Chépica","Chimbarongo","Lolol","Nancagua","Palmilla","Peralillo","Placilla","Pumanque","Santa Cruz"],
+  "Región del Maule": ["Talca","Constitución","Curepto","Empedrado","Maule","Pelarco","Pencahue","Río Claro","San Clemente","San Rafael","Cauquenes","Chanco","Pelluhue","Curicó","Hualañé","Licantén","Molina","Rauco","Romeral","Sagrada Familia","Teno","Vichuquén","Linares","Colbún","Longaví","Parral","Retiro","San Javier","Villa Alegre","Yerbas Buenas"],
+  "Región de Ñuble": ["Chillán","Bulnes","Cobquecura","Coelemu","Coihueco","Chillán Viejo","El Carmen","Ninhue","Ñiquén","Pemuco","Pinto","Portezuelo","Quillón","Quirihue","Ránquil","San Carlos","San Fabián","San Ignacio","San Nicolás","Trehuaco","Yungay"],
+  "Región del Biobío": ["Concepción","Coronel","Chiguayante","Florida","Hualqui","Lota","Penco","San Pedro de la Paz","Santa Juana","Talcahuano","Tomé","Hualpén","Lebu","Arauco","Cañete","Contulmo","Curanilahue","Los Álamos","Tirúa","Los Ángeles","Antuco","Cabrero","Laja","Mulchén","Nacimiento","Negrete","Quilaco","Quilleco","San Rosendo","Santa Bárbara","Tucapel","Yumbel","Alto Biobío"],
+  "Región de La Araucanía": ["Temuco","Carahue","Cunco","Curarrehue","Freire","Galvarino","Gorbea","Lautaro","Loncoche","Melipeuco","Nueva Imperial","Padre Las Casas","Perquenco","Pitrufquén","Pucón","Saavedra","Teodoro Schmidt","Toltén","Vilcún","Villarrica","Cholchol","Angol","Collipulli","Curacautín","Ercilla","Lonquimay","Los Sauces","Lumaco","Purén","Renaico","Traiguén","Victoria"],
+  "Región de Los Ríos": ["Valdivia","Corral","Futrono","La Unión","Lago Ranco","Lanco","Los Lagos","Máfil","Mariquina","Paillaco","Panguipulli","Río Bueno"],
+  "Región de Los Lagos": ["Puerto Montt","Calbuco","Cochamó","Fresia","Frutillar","Los Muermos","Llanquihue","Maullín","Puerto Varas","Castro","Ancud","Chonchi","Curaco de Vélez","Dalcahue","Puqueldón","Queilén","Quellón","Quemchi","Quinchao","Osorno","Puerto Octay","Purranque","Puyehue","Río Negro","San Juan de la Costa","San Pablo","Chaitén","Futaleufú","Hualaihué","Palena"],
+  "Región Aysén del Gral. Carlos Ibáñez del Campo": ["Coyhaique","Lago Verde","Aysén","Cisnes","Guaitecas","Cochrane","O'Higgins","Tortel","Chile Chico","Río Ibáñez"],
+  "Región de Magallanes y de la Antártica Chilena": ["Punta Arenas","Laguna Blanca","Río Verde","San Gregorio","Cabo de Hornos","Antártica","Porvenir","Primavera","Timaukel","Natales","Torres del Paine"]
+};
+
+const CAF_TIPOS = [
+  { tipo: 39, nombre: "Boleta electrónica", codigo: "Tipo 39" },
+  { tipo: 41, nombre: "Boleta exenta", codigo: "Tipo 41" },
+  { tipo: 33, nombre: "Factura electrónica", codigo: "Tipo 33" },
+  { tipo: 34, nombre: "Factura exenta", codigo: "Tipo 34" },
+  { tipo: 61, nombre: "Nota de crédito", codigo: "Tipo 61" },
+  { tipo: 56, nombre: "Nota de débito", codigo: "Tipo 56" },
+  { tipo: 52, nombre: "Guía de despacho", codigo: "Tipo 52" },
+];
+
+let cafFiles = {};
+let certFileData = null;
+let userData = {};
+let empresaData = {};
+
+function buildStepsBar() {
+  const bar = document.getElementById('stepsBar');
+  bar.innerHTML = '';
+  for (let i = 1; i <= TOTAL_STEPS; i++) {
+    const d = document.createElement('div');
+    d.className = 'step-dot' + (i === currentStep ? ' active' : i < currentStep ? ' done' : '');
+    bar.appendChild(d);
+  }
+}
+
+function buildCafGrid() {
+  const grid = document.getElementById('cafGrid');
+  grid.innerHTML = '';
+  CAF_TIPOS.forEach(caf => {
+    const card = document.createElement('div');
+    card.className = 'caf-card' + (cafFiles[caf.tipo] ? ' loaded' : '');
+    card.id = 'caf-card-' + caf.tipo;
+    card.innerHTML = `
+      <input type="file" accept=".xml" onchange="handleCafFile(this, ${caf.tipo})">
+      <div class="caf-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <div class="caf-type">${caf.codigo}</div>
+      <div class="caf-name">${caf.nombre}</div>
+      <div class="caf-status ${cafFiles[caf.tipo] ? 'ok' : 'pending'}">
+        ${cafFiles[caf.tipo] ? '✓ ' + cafFiles[caf.tipo].name : 'Sin cargar'}
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+function populateRegiones() {
+  const sel = document.getElementById('region');
+  Object.keys(REGIONES_COMUNAS).forEach(r => {
+    const opt = document.createElement('option');
+    opt.value = r; opt.textContent = r;
+    sel.appendChild(opt);
+  });
+}
+
+function cargarComunas() {
+  const region = document.getElementById('region').value;
+  const comunaSel = document.getElementById('comuna');
+  comunaSel.innerHTML = '<option value="">Seleccionar...</option>';
+  if (region && REGIONES_COMUNAS[region]) {
+    REGIONES_COMUNAS[region].forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c; opt.textContent = c;
+      comunaSel.appendChild(opt);
+    });
+    comunaSel.disabled = false;
+  } else {
+    comunaSel.disabled = true;
+  }
+}
+
+function calcDV(rut) {
+  let sum = 0, mul = 2;
+  for (let i = rut.length - 1; i >= 0; i--) {
+    sum += parseInt(rut[i]) * mul;
+    mul = mul === 7 ? 2 : mul + 1;
+  }
+  const dv = 11 - (sum % 11);
+  if (dv === 11) return '0';
+  if (dv === 10) return 'K';
+  return String(dv);
+}
+
+function validateRut(full) {
+  const clean = full.replace(/\./g, '').toUpperCase();
+  const parts = clean.split('-');
+  if (parts.length !== 2) return false;
+  const body = parts[0];
+  const dv = parts[1];
+  if (!/^\d{7,8}$/.test(body)) return false;
+  return calcDV(body) === dv;
+}
+
+function formatRutInput(input, badgeId) {
+  let v = input.value.replace(/[^0-9kK\-]/g, '').toUpperCase();
+  if (!v.includes('-') && v.length > 1) {
+    v = v.slice(0, -1) + '-' + v.slice(-1);
+  }
+  input.value = v;
+  const badge = document.getElementById(badgeId);
+  if (v.includes('-') && v.split('-')[0].length >= 7) {
+    const valid = validateRut(v);
+    badge.className = 'rut-badge ' + (valid ? 'ok' : 'fail');
+    badge.textContent = valid ? '✓ Válido' : '✗ Inválido';
+  } else {
+    badge.className = 'rut-badge neutral';
+    badge.textContent = '—';
+  }
+}
+
+function handleCertFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  certFileData = file;
+  document.getElementById('certDrop').classList.add('has-file');
+  document.getElementById('certFileName').textContent = '✓ ' + file.name;
+}
+
+function handleCafFile(input, tipo) {
+  const file = input.files[0];
+  if (!file) return;
+  cafFiles[tipo] = file;
+  const card = document.getElementById('caf-card-' + tipo);
+  card.className = 'caf-card loaded';
+  card.querySelector('.caf-status').className = 'caf-status ok';
+  card.querySelector('.caf-status').textContent = '✓ ' + file.name;
+  card.querySelector('.caf-badge').style.display = 'flex';
+}
+
+function showError(id, show) {
+  const el = document.getElementById('err-' + id);
+  if (el) el.className = 'error-msg' + (show ? ' show' : '');
+  const inp = document.getElementById(id);
+  if (inp) inp.className = inp.tagName === 'SELECT' ? (show ? 'error' : '') : (show ? 'error' : '');
+}
+
+function validateStep(n) {
+  let ok = true;
+  if (n === 1) {
+    const nombre = document.getElementById('nombre').value.trim();
+    const apellido = document.getElementById('apellido').value.trim();
+    const email = document.getElementById('email').value.trim();
+    const pass = document.getElementById('password').value;
+    const rut = document.getElementById('rut-usuario').value.trim();
+    if (!nombre) { showError('nombre', true); ok = false; } else showError('nombre', false);
+    if (!apellido) { showError('apellido', true); ok = false; } else showError('apellido', false);
+    if (!email || !email.includes('@')) { showError('email', true); ok = false; } else showError('email', false);
+    if (pass.length < 8) { showError('password', true); ok = false; } else showError('password', false);
+    if (!validateRut(rut)) { showError('rut-usuario', true); ok = false; } else showError('rut-usuario', false);
+  }
+  if (n === 2) {
+    const rut = document.getElementById('rut-empresa').value.trim();
+    const rs = document.getElementById('razon-social').value.trim();
+    const giro = document.getElementById('giro').value.trim();
+    const dir = document.getElementById('direccion').value.trim();
+    const correo = document.getElementById('correo-empresa').value.trim();
+    const region = document.getElementById('region').value;
+    const comuna = document.getElementById('comuna').value;
+    if (!validateRut(rut)) { showError('rut-empresa', true); ok = false; } else showError('rut-empresa', false);
+    if (!rs) { showError('razon-social', true); ok = false; } else showError('razon-social', false);
+    if (!giro) { showError('giro', true); ok = false; } else showError('giro', false);
+    if (!dir) { showError('direccion', true); ok = false; } else showError('direccion', false);
+    if (!correo || !correo.includes('@')) { showError('correo-empresa', true); ok = false; } else showError('correo-empresa', false);
+    if (!region) { showError('region', true); ok = false; } else showError('region', false);
+    if (!comuna) { showError('comuna', true); ok = false; } else showError('comuna', false);
+  }
+  if (n === 3) {
+    const certPass = document.getElementById('cert-password').value;
+    if (!certFileData) { document.getElementById('err-cert').style.display = 'block'; ok = false; }
+    else document.getElementById('err-cert').style.display = 'none';
+    if (!certPass) { showError('cert-password', true); ok = false; } else showError('cert-password', false);
+  }
+  if (n === 4) {
+    const loaded = Object.keys(cafFiles).length;
+    if (loaded === 0) { ok = false; alert('Debes subir al menos un archivo CAF para continuar.'); }
+  }
+  return ok;
+}
+
+function buildSummary() {
+  empresaData = {
+    rut: document.getElementById('rut-empresa').value.trim(),
+    razonSocial: document.getElementById('razon-social').value.trim(),
+    region: document.getElementById('region').value,
+    comuna: document.getElementById('comuna').value,
+  };
+  userData = {
+    nombre: document.getElementById('nombre').value.trim(),
+    email: document.getElementById('email').value.trim(),
+  };
+  const cafCount = Object.keys(cafFiles).length;
+  const cafNames = Object.keys(cafFiles).map(t => {
+    const tipo = CAF_TIPOS.find(c => c.tipo === parseInt(t));
+    return tipo ? tipo.nombre : 'Tipo ' + t;
+  }).join(', ');
+
+  const box = document.getElementById('summaryBox');
+  box.innerHTML = `
+    <div class="success-row"><span>Usuario</span><span>${userData.nombre}</span></div>
+    <div class="success-row"><span>Correo</span><span>${userData.email}</span></div>
+    <div class="success-row"><span>Empresa</span><span>${empresaData.razonSocial}</span></div>
+    <div class="success-row"><span>RUT empresa</span><span>${empresaData.rut}</span></div>
+    <div class="success-row"><span>Ubicación</span><span>${empresaData.comuna}, ${empresaData.region.split(' ')[1] || empresaData.region}</span></div>
+    <div class="success-row"><span>CAFs cargados</span><span>${cafCount} de ${CAF_TIPOS.length}</span></div>
+    ${certFileData ? `<div class="success-row"><span>Certificado</span><span>${certFileData.name}</span></div>` : ''}
+  `;
+}
+
+function goStep(n) {
+  if (n > currentStep && !validateStep(currentStep)) return;
+  document.getElementById('step' + currentStep).classList.remove('active');
+  currentStep = n;
+  document.getElementById('step' + currentStep).classList.add('active');
+  buildStepsBar();
+  if (n === 4) buildCafGrid();
+  if (n === 5) buildSummary();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function submitAll() {
+  const apiBase = window.location.origin;
+  try {
+    const regRes = await fetch(`${apiBase}/v1/auth/registro`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nombre: document.getElementById('nombre').value.trim(),
+        apellido: document.getElementById('apellido').value.trim(),
+        email: document.getElementById('email').value.trim(),
+        password: document.getElementById('password').value,
+      })
+    });
+    if (!regRes.ok) {
+      const err = await regRes.json();
+      alert('Error registro: ' + (err.detail || 'Inténtalo de nuevo'));
+      return;
+    }
+    const regData = await regRes.json();
+    const token = regData.access_token;
+
+    const emisorRes = await fetch(`${apiBase}/v1/emisores/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({
+        rut: document.getElementById('rut-empresa').value.trim(),
+        razon_social: document.getElementById('razon-social').value.trim(),
+        giro: document.getElementById('giro').value.trim(),
+        direccion: document.getElementById('direccion').value.trim(),
+        comuna: document.getElementById('comuna').value,
+        ciudad: document.getElementById('region').value,
+        correo: document.getElementById('correo-empresa').value.trim(),
+        ambiente: 'certificacion'
+      })
+    });
+    if (!emisorRes.ok) {
+      const err = await emisorRes.json();
+      alert('Error emisor: ' + (err.detail || 'Inténtalo de nuevo'));
+      return;
+    }
+    const emisorData = await emisorRes.json();
+    const emisorId = emisorData.id;
+
+    if (certFileData) {
+      const certForm = new FormData();
+      certForm.append('archivo', certFileData);
+      certForm.append('password', document.getElementById('cert-password').value);
+      await fetch(`${apiBase}/v1/certificados/${emisorId}/subir`, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token },
+        body: certForm
+      });
+    }
+
+    for (const [tipo, file] of Object.entries(cafFiles)) {
+      const xmlText = await file.text();
+      await fetch(`${apiBase}/v1/caf/cargar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ emisor_id: emisorId, xml_caf: xmlText, ambiente: 'certificacion' })
+      });
+    }
+
+    localStorage.setItem('yepar_token', token);
+    window.location.href = '/api/docs';
+  } catch (e) {
+    alert('Error de conexión: ' + e.message);
+  }
+}
+
+populateRegiones();
+buildStepsBar();
+</script>
+</body>
+</html>
