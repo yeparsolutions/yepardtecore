@@ -5,108 +5,49 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YeparDTE — Registro</title>
     
-    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png">
-    <link rel="icon" type="image/png" sizes="64x64" href="/static/favicon-64.png">
-
     <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #f7f6f2;
-            --surface: #ffffff;
-            --border: #e3e1d9;
-            --border-focus: #1a1a1a;
-            --text: #1a1a1a;
-            --muted: #7a7770;
-            --accent: #1a1a1a;
-            --accent-light: #f0ede6;
-            --success: #2d6a4f;
-            --success-bg: #d8f3dc;
-            --error: #c1121f;
-            --error-bg: #fde8e8;
-            --step-active: #1a1a1a;
-            --step-done: #2d6a4f;
-            --step-pending: #d5d1c7;
+            --bg: #f7f6f2; --surface: #ffffff; --border: #e3e1d9; --border-focus: #1a1a1a;
+            --text: #1a1a1a; --muted: #7a7770; --accent: #1a1a1a; --accent-light: #f0ede6;
+            --success: #2d6a4f; --success-bg: #d8f3dc; --error: #c1121f; --error-bg: #fde8e8;
+            --step-active: #1a1a1a; --step-done: #2d6a4f; --step-pending: #d5d1c7;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: 'DM Sans', sans-serif;
-            background: var(--bg);
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: flex-start;
-            padding: 2rem 1rem 4rem;
-            color: var(--text);
-        }
-        .brand { margin-bottom: 2.5rem; text-align: center; }
-        .brand img { height: 45px; width: auto; }
-        .card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 20px;
-            width: 100%;
-            max-width: 560px;
-            padding: 2.5rem;
-            position: relative;
-        }
+        body { font-family: 'DM Sans', sans-serif; background: var(--bg); display: flex; flex-direction: column; align-items: center; padding: 2rem 1rem; color: var(--text); }
+        .brand { margin-bottom: 2.5rem; }
+        .brand img { height: 45px; }
+        .card { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; width: 100%; max-width: 560px; padding: 2.5rem; position: relative; }
         .steps-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 2.5rem; }
         .step-dot { width: 28px; height: 5px; border-radius: 99px; background: var(--step-pending); transition: 0.3s; }
         .step-dot.active { background: var(--step-active); width: 44px; }
         .step-dot.done { background: var(--step-done); }
-
         .step-label { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; margin-bottom: 0.4rem; }
-        h2 { font-family: 'Instrument Serif', serif; font-size: 1.75rem; font-weight: 400; margin-bottom: 0.5rem; }
-        .subtitle { font-size: 0.88rem; color: var(--muted); margin-bottom: 2rem; }
-
+        h2 { font-family: 'Instrument Serif', serif; font-size: 1.75rem; font-weight: 400; margin-bottom: 1.5rem; }
         .field { margin-bottom: 1.25rem; }
         label { display: block; font-size: 0.8rem; font-weight: 500; color: var(--muted); margin-bottom: 0.4rem; }
-        input, select {
-            width: 100%; padding: 0.7rem 0.9rem; border: 1px solid var(--border); border-radius: 10px;
-            font-family: 'DM Sans', sans-serif; font-size: 0.92rem; outline: none; transition: 0.2s;
-        }
+        input { width: 100%; padding: 0.7rem 0.9rem; border: 1px solid var(--border); border-radius: 10px; font-family: 'DM Sans', sans-serif; outline: none; }
         input:focus { border-color: var(--border-focus); }
         input.invalid { border-color: var(--error); background-color: #fffafa; }
-        
-        .rut-status { font-size: 0.72rem; margin-top: 4px; display: none; }
-        .rut-status.error { color: var(--error); display: block; }
-        .rut-status.ok { color: var(--success); display: block; }
-
-        .btn {
-            width: 100%; padding: 0.85rem; background: var(--accent); color: #fff; border: none;
-            border-radius: 12px; font-weight: 500; cursor: pointer; transition: 0.2s; margin-top: 0.5rem;
-        }
+        .rut-status { font-size: 0.72rem; margin-top: 4px; display: none; color: var(--error); }
+        .btn { width: 100%; padding: 0.85rem; background: var(--accent); color: #fff; border: none; border-radius: 12px; font-weight: 500; cursor: pointer; margin-top: 0.5rem; }
         .btn:disabled { opacity: 0.3; cursor: not-allowed; }
         .btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
         .btn-row { display: flex; gap: 10px; }
         .btn-row .btn { flex: 1; }
-
         .step { display: none; }
         .step.active { display: block; }
-
-        .caf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 1.5rem; }
-        .caf-card { border: 1.5px dashed var(--border); border-radius: 12px; padding: 1rem; text-align: center; position: relative; }
-        .caf-card.loaded { border-color: var(--success); background: var(--success-bg); }
-        .caf-card input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-
-        #loading-overlay {
-            display: none; position: absolute; inset: 0; background: rgba(255,255,255,0.8);
-            z-index: 10; border-radius: 20px; align-items: center; justify-content: center; flex-direction: column;
-        }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        #loading-overlay { display: none; position: absolute; inset: 0; background: rgba(255,255,255,0.9); z-index: 10; border-radius: 20px; align-items: center; justify-content: center; flex-direction: column; text-align: center; padding: 2rem; }
     </style>
 </head>
 <body>
 
-<div class="brand">
-    <img src="/static/logo-horizontal.svg" alt="YeparDTE">
-</div>
+<div class="brand"><img src="/static/logo-horizontal.svg" alt="YeparDTE"></div>
 
 <div class="card">
     <div id="loading-overlay">
-        <img src="/static/isotipo.svg" style="width: 40px; animation: pulse 1.5s infinite;">
-        <p style="margin-top: 10px; font-weight: 500;" id="loading-text">Guardando datos...</p>
+        <p id="loading-text" style="font-weight: 500;">Procesando...</p>
     </div>
 
     <div class="steps-bar" id="stepsBar"></div>
@@ -114,8 +55,10 @@
     <div class="step active" id="step1">
         <div class="step-label">Paso 1 de 5</div>
         <h2>Cuenta Personal</h2>
-        <div class="field"><label>Nombre</label><input type="text" id="nombre" placeholder="Juan"></div>
-        <div class="field"><label>Apellido</label><input type="text" id="apellido" placeholder="Pérez"></div>
+        <div class="grid-2">
+            <div class="field"><label>Nombre</label><input type="text" id="nombre" placeholder="Juan"></div>
+            <div class="field"><label>Apellido</label><input type="text" id="apellido" placeholder="Pérez"></div>
+        </div>
         <div class="field"><label>Email</label><input type="email" id="email" placeholder="juan@empresa.cl"></div>
         <div class="field"><label>Contraseña</label><input type="password" id="password" placeholder="Mínimo 8 caracteres"></div>
         <div class="field">
@@ -136,7 +79,11 @@
         </div>
         <div class="field"><label>Razón Social</label><input type="text" id="razon-social" placeholder="Yepar Solutions SpA"></div>
         <div class="field"><label>Giro</label><input type="text" id="giro" placeholder="Venta de abarrotes"></div>
-        <div class="field"><label>Dirección</label><input type="text" id="direccion" placeholder="Calle 123, Ciudad"></div>
+        <div class="field"><label>Dirección</label><input type="text" id="direccion" placeholder="Calle Falsa 123"></div>
+        <div class="grid-2">
+            <div class="field"><label>Comuna</label><input type="text" id="comuna" placeholder="Santiago"></div>
+            <div class="field"><label>Ciudad</label><input type="text" id="ciudad" placeholder="Metropolitana"></div>
+        </div>
         <div class="btn-row">
             <button class="btn btn-secondary" onclick="goStep(1)">Atrás</button>
             <button class="btn" id="btn-next-2" onclick="goStep(3)" disabled>Continuar</button>
@@ -146,9 +93,8 @@
     <div class="step" id="step3">
         <div class="step-label">Paso 3 de 5</div>
         <h2>Firma Digital</h2>
-        <p class="subtitle">Sube tu certificado .p12 o .pfx</p>
-        <div class="field"><input type="file" id="certFile" accept=".p12,.pfx"></div>
-        <div class="field"><label>Clave del Certificado</label><input type="password" id="cert-password"></div>
+        <div class="field"><label>Archivo .p12 o .pfx</label><input type="file" id="certFile" accept=".p12,.pfx"></div>
+        <div class="field"><label>Clave de la firma</label><input type="password" id="cert-password"></div>
         <div class="btn-row">
             <button class="btn btn-secondary" onclick="goStep(2)">Atrás</button>
             <button class="btn" onclick="goStep(4)">Continuar</button>
@@ -158,7 +104,7 @@
     <div class="step" id="step4">
         <div class="step-label">Paso 4 de 5</div>
         <h2>Folios (CAF)</h2>
-        <div class="caf-grid" id="cafGrid"></div>
+        <p style="font-size: 0.85rem; color: var(--muted); margin-bottom: 1rem;">Puedes subir los archivos XML de autorización más tarde en el panel.</p>
         <div class="btn-row">
             <button class="btn btn-secondary" onclick="goStep(3)">Atrás</button>
             <button class="btn" onclick="goStep(5)">Revisar</button>
@@ -166,18 +112,15 @@
     </div>
 
     <div class="step" id="step5">
-        <div style="text-align: center;">
-            <img src="/static/isotipo.svg" style="width: 50px; margin-bottom: 1rem;">
-            <h2>Confirmación</h2>
-        </div>
-        <div id="summary" style="background: var(--accent-light); padding: 1rem; border-radius: 10px; margin: 1.5rem 0; font-size: 0.85rem; line-height: 1.6;"></div>
-        <button class="btn" id="final-btn" onclick="submitAll()">Finalizar y Guardar en BD</button>
+        <div class="step-label">Finalizar</div>
+        <h2>Confirmar Datos</h2>
+        <div id="summary" style="background: var(--accent-light); padding: 1rem; border-radius: 10px; font-size: 0.85rem; margin-bottom: 1.5rem;"></div>
+        <button class="btn" onclick="submitAll()">Guardar en Base de Datos</button>
     </div>
 </div>
 
 <script>
 let currentStep = 1;
-let cafFiles = {};
 
 function validarRutInput(input) {
     let val = input.value.replace(/\./g, '');
@@ -187,11 +130,8 @@ function validarRutInput(input) {
         input.value = cuerpo + '-' + dv;
     }
     const isValid = esRutValido(input.value);
-    const msg = document.getElementById('msg-' + input.id);
+    document.getElementById('msg-' + input.id).style.display = isValid ? 'none' : 'block';
     const btn = currentStep === 1 ? document.getElementById('btn-next-1') : document.getElementById('btn-next-2');
-    
-    input.classList.toggle('invalid', !isValid);
-    msg.style.display = isValid ? 'none' : 'block';
     btn.disabled = !isValid;
 }
 
@@ -200,10 +140,7 @@ function esRutValido(rut) {
     let [c, dv] = rut.split('-');
     if (c.length < 7) return false;
     let s = 0, m = 2;
-    for (let i = c.length - 1; i >= 0; i--) {
-        s += parseInt(c[i]) * m;
-        m = (m === 7) ? 2 : m + 1;
-    }
+    for (let i = c.length - 1; i >= 0; i--) { s += parseInt(c[i]) * m; m = (m === 7) ? 2 : m + 1; }
     let dvr = 11 - (s % 11);
     dvr = dvr === 11 ? '0' : dvr === 10 ? 'K' : dvr.toString();
     return dvr === dv.toUpperCase();
@@ -214,54 +151,31 @@ function goStep(n) {
     document.getElementById('step' + n).classList.add('active');
     currentStep = n;
     updateDots();
-    if(n === 4) renderCafs();
     if(n === 5) showSummary();
 }
 
 function updateDots() {
     const bar = document.getElementById('stepsBar');
     bar.innerHTML = '';
-    for (let i = 1; i <= 5; i++) {
-        bar.innerHTML += `<div class="step-dot ${i === currentStep ? 'active' : (i < currentStep ? 'done' : '')}"></div>`;
-    }
-}
-
-function renderCafs() {
-    const grid = document.getElementById('cafGrid');
-    grid.innerHTML = '';
-    [33, 39, 61].forEach(t => {
-        grid.innerHTML += `
-            <div class="caf-card ${cafFiles[t] ? 'loaded' : ''}" id="caf-${t}">
-                <input type="file" accept=".xml" onchange="handleCaf(${t}, this)">
-                <div style="font-size: 10px;">TIPO ${t}</div>
-                <div style="font-weight: 500">${t===33?'Factura':t===39?'Boleta':'Nota Cr.'}</div>
-                <div style="font-size: 10px;">${cafFiles[t] ? '✓ Cargado' : 'Subir XML'}</div>
-            </div>`;
-    });
-}
-
-function handleCaf(t, input) {
-    if(input.files[0]) { cafFiles[t] = input.files[0]; renderCafs(); }
+    for (let i = 1; i <= 5; i++) bar.innerHTML += `<div class="step-dot ${i === currentStep ? 'active' : (i < currentStep ? 'done' : '')}"></div>`;
 }
 
 function showSummary() {
     document.getElementById('summary').innerHTML = `
         <b>Usuario:</b> ${document.getElementById('nombre').value} ${document.getElementById('apellido').value}<br>
-        <b>Email:</b> ${document.getElementById('email').value}<br>
-        <b>Empresa:</b> ${document.getElementById('razon-social').value} (${document.getElementById('rut-empresa').value})<br>
-        <b>Archivos:</b> Certificado y ${Object.keys(cafFiles).length} CAFs seleccionados.
+        <b>Empresa:</b> ${document.getElementById('razon-social').value}<br>
+        <b>Ubicación:</b> ${document.getElementById('comuna').value}, ${document.getElementById('ciudad').value}
     `;
 }
 
-// --- EL CORAZÓN: ENVÍO A BASE DE DATOS ---
 async function submitAll() {
     const overlay = document.getElementById('loading-overlay');
     const loadText = document.getElementById('loading-text');
     overlay.style.display = 'flex';
 
     try {
-        // 1. Registro de Usuario
-        loadText.textContent = "Creando cuenta de usuario...";
+        // 1. REGISTRO
+        loadText.textContent = "1/3: Creando usuario...";
         const resUser = await fetch('/v1/auth/registro', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -272,70 +186,57 @@ async function submitAll() {
                 password: document.getElementById('password').value
             })
         });
-        if (!resUser.ok) throw new Error("Error al crear usuario");
+        
         const userData = await resUser.json();
-        const token = userData.access_token;
+        if (!resUser.ok) throw new Error(userData.detail || "Fallo en registro");
 
-        // 2. Creación de Emisor (Empresa)
-        loadText.textContent = "Registrando empresa...";
+        // 2. EMPRESA
+        loadText.textContent = "2/3: Creando empresa...";
         const resEmisor = await fetch('/v1/emisores/', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${userData.access_token}`
+            },
             body: JSON.stringify({
                 rut: document.getElementById('rut-empresa').value,
                 razon_social: document.getElementById('razon-social').value,
                 giro: document.getElementById('giro').value,
                 direccion: document.getElementById('direccion').value,
-                comuna: "Santiago", // Valor por defecto para simplificar
-                ciudad: "Metropolitana",
+                comuna: document.getElementById('comuna').value,
+                ciudad: document.getElementById('ciudad').value,
                 ambiente: "certificacion"
             })
         });
-        if (!resEmisor.ok) throw new Error("Error al crear empresa");
+        
         const emisorData = await resEmisor.json();
+        if (!resEmisor.ok) throw new Error(emisorData.detail || "Fallo en empresa");
 
-        // 3. Subir Certificado Digital
-        const certFile = document.getElementById('certFile').files[0];
-        if (certFile) {
-            loadText.textContent = "Subiendo certificado digital...";
+        // 3. CERTIFICADO
+        const fileInput = document.getElementById('certFile');
+        if (fileInput.files[0]) {
+            loadText.textContent = "3/3: Subiendo firma digital...";
             const formData = new FormData();
-            formData.append('file', certFile);
+            formData.append('file', fileInput.files[0]);
             formData.append('password', document.getElementById('cert-password').value);
+            
             await fetch(`/v1/certificados/${emisorData.id}/subir`, {
                 method: 'POST',
-                headers: {'Authorization': `Bearer ${token}`},
+                headers: {'Authorization': `Bearer ${userData.access_token}`},
                 body: formData
             });
         }
 
-        // 4. Cargar CAFs
-        for (const tipo in cafFiles) {
-            loadText.textContent = `Cargando folio tipo ${tipo}...`;
-            const xmlText = await cafFiles[tipo].text();
-            await fetch('/v1/caf/cargar', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
-                body: JSON.stringify({
-                    emisor_id: emisorData.id,
-                    xml_caf: xmlText,
-                    ambiente: "certificacion"
-                })
-            });
-        }
-
-        loadText.textContent = "¡Todo guardado con éxito!";
-        setTimeout(() => window.location.href = "/api/docs", 1500);
+        loadText.innerHTML = "✅ ¡Configuración terminada!<br>Redirigiendo...";
+        setTimeout(() => window.location.reload(), 2000);
 
     } catch (err) {
         overlay.style.display = 'none';
-        alert("Hubo un fallo: " + err.message);
+        alert("ERROR: " + err.message);
     }
 }
+
+updateDots();
 </script>
-
-<style>
-@keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
-</style>
-
 </body>
 </html>
