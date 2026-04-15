@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<EnvioDTE xmlns="http://www.sii.cl/SiiDte" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="1.0" xsi:schemaLocation="http://www.sii.cl/SiiDte EnvioDTE_v10.xsd">
+  <SetDTE ID="SetDTE">
+    <Caratula version="1.0">
+      <RutEmisor>25648612-1</RutEmisor>
+      <RutEnvia>25648612-1</RutEnvia>
+      <RutReceptor>60803000-K</RutReceptor>
+      <FchResol>2026-04-14</FchResol>
+      <NroResol>0</NroResol>
+      <TmstFirmaEnv>2026-04-14T15:30:00</TmstFirmaEnv>
+      <SubTotDTE>
+        <TpoDTE>39</TpoDTE>
+        <NroDTE>5</NroDTE>
+      </SubTotDTE>
+    </Caratula>
+    <DTE version="1.0">
+      <Documento ID="DTE39_C1">
+        <Encabezado>
+          <IdDoc><TipoDTE>39</TipoDTE><Folio>1</Folio><FchEmis>2026-04-14</FchEmis></IdDoc>
+          <Emisor><RUTEmisor>25648612-1</RUTEmisor><RznSoc>ALBERTO JOSE YEPEZ VIVAS</RznSoc><GiroEmis>VENTA AL POR MENOR</GiroEmis><DirOrigen>SANTIAGO</DirOrigen><CmnaOrigen>SANTIAGO</CmnaOrigen></Emisor>
+          <Receptor><RUTRecep>66666666-6</RUTRecep></Receptor>
+          <Totales><MntTotal>29800</MntTotal></Totales>
+        </Encabezado>
+        <Detalle><NroLinDet>1</NroLinDet><NmbItem>Cambio de aceite</NmbItem><QtyItem>1</QtyItem><PrcItem>19900</PrcItem><MntItem>19900</MntItem></Detalle>
+        <Detalle><NroLinDet>2</NroLinDet><NmbItem>Alineacion y balanceo</NmbItem><QtyItem>1</QtyItem><PrcItem>9900</PrcItem><MntItem>9900</MntItem></Detalle>
+        <Referencia><NroLinRef>1</NroLinRef><TpoDocRef>SET</TpoDocRef><RazonRef>CASO-1</RazonRef></Referencia>
+      </Documento>
+    </DTE>
+    <DTE version="1.0">
+      <Documento ID="DTE39_C2">
+        <Encabezado>
+          <IdDoc><TipoDTE>39</TipoDTE><Folio>2</Folio><FchEmis>2026-04-14</FchEmis></IdDoc>
+          <Emisor><RUTEmisor>25648612-1</RUTEmisor><RznSoc>ALBERTO JOSE YEPEZ VIVAS</RznSoc><GiroEmis>VENTA AL POR MENOR</GiroEmis><DirOrigen>SANTIAGO</DirOrigen><CmnaOrigen>SANTIAGO</CmnaOrigen></Emisor>
+          <Receptor><RUTRecep>66666666-6</RUTRecep></Receptor>
+          <Totales><MntTotal>2040</MntTotal></Totales>
+        </Encabezado>
+        <Detalle><NroLinDet>1</NroLinDet><NmbItem>Papel de regalo</NmbItem><QtyItem>17</QtyItem><PrcItem>120</PrcItem><MntItem>2040</MntItem></Detalle>
+        <Referencia><NroLinRef>1</NroLinRef><TpoDocRef>SET</TpoDocRef><RazonRef>CASO-2</RazonRef></Referencia>
+      </Documento>
+    </DTE>
+    <DTE version="1.0">
+      <Documento ID="DTE39_C3">
+        <Encabezado>
+          <IdDoc><TipoDTE>39</TipoDTE><Folio>3</Folio><FchEmis>2026-04-14</FchEmis></IdDoc>
+          <Emisor><RUTEmisor>25648612-1</RUTEmisor><RznSoc>ALBERTO JOSE YEPEZ VIVAS</RznSoc><GiroEmis>VENTA AL POR MENOR</GiroEmis><DirOrigen>SANTIAGO</DirOrigen><CmnaOrigen>SANTIAGO</CmnaOrigen></Emisor>
+          <Receptor><RUTRecep>66666666-6</RUTRecep></Receptor>
+          <Totales><MntTotal>4100</MntTotal></Totales>
+        </Encabezado>
+        <Detalle><NroLinDet>1</NroLinDet><NmbItem>Sandwic</NmbItem><QtyItem>2</QtyItem><PrcItem>1500</PrcItem><MntItem>3000</MntItem></Detalle>
+        <Detalle><NroLinDet>2</NroLinDet><NmbItem>Bebida</NmbItem><QtyItem>2</QtyItem><PrcItem>550</PrcItem><MntItem>1100</MntItem></Detalle>
+        <Referencia><NroLinRef>1</NroLinRef><TpoDocRef>SET</TpoDocRef><RazonRef>CASO-3</RazonRef></Referencia>
+      </Documento>
+    </DTE>
+    <DTE version="1.0">
+      <Documento ID="DTE39_C4">
+        <Encabezado>
+          <IdDoc><TipoDTE>39</TipoDTE><Folio>4</Folio><FchEmis>2026-04-14</FchEmis></IdDoc>
+          <Emisor><RUTEmisor>25648612-1</RUTEmisor><RznSoc>ALBERTO JOSE YEPEZ VIVAS</RznSoc><GiroEmis>VENTA AL POR MENOR</GiroEmis><DirOrigen>SANTIAGO</DirOrigen><CmnaOrigen>SANTIAGO</CmnaOrigen></Emisor>
+          <Receptor><RUTRecep>66666666-6</RUTRecep></Receptor>
+          <Totales><MntExe>2000</MntExe><MntTotal>14720</MntTotal></Totales>
+        </Encabezado>
+        <Detalle><NroLinDet>1</NroLinDet><NmbItem>item afecto 1</NmbItem><QtyItem>8</QtyItem><PrcItem>1590</PrcItem><MntItem>12720</MntItem></Detalle>
+        <Detalle><NroLinDet>2</NroLinDet><IndExe>1</IndExe><NmbItem>item exento 2</NmbItem><QtyItem>2</QtyItem><PrcItem>1000</PrcItem><MntItem>2000</MntItem></Detalle>
+        <Referencia><NroLinRef>1</NroLinRef><TpoDocRef>SET</TpoDocRef><RazonRef>CASO-4</RazonRef></Referencia>
+      </Documento>
+    </DTE>
+    <DTE version="1.0">
+      <Documento ID="DTE39_C5">
+        <Encabezado>
+          <IdDoc><TipoDTE>39</TipoDTE><Folio>5</Folio><FchEmis>2026-04-14</FchEmis></IdDoc>
+          <Emisor><RUTEmisor>25648612-1</RUTEmisor><RznSoc>ALBERTO JOSE YEPEZ VIVAS</RznSoc><GiroEmis>VENTA AL POR MENOR</GiroEmis><DirOrigen>SANTIAGO</DirOrigen><CmnaOrigen>SANTIAGO</CmnaOrigen></Emisor>
+          <Receptor><RUTRecep>66666666-6</RUTRecep></Receptor>
+          <Totales><MntTotal>3500</MntTotal></Totales>
+        </Encabezado>
+        <Detalle><NroLinDet>1</NroLinDet><NmbItem>Arroz</NmbItem><QtyItem>5</QtyItem><UnmdItem>Kg</UnmdItem><PrcItem>700</PrcItem><MntItem>3500</MntItem></Detalle>
+        <Referencia><NroLinRef>1</NroLinRef><TpoDocRef>SET</TpoDocRef><RazonRef>CASO-5</RazonRef></Referencia>
+      </Documento>
+    </DTE>
+    <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
+      <SignedInfo>
+        <CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
+        <SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>
+        <Reference URI="#SetDTE">
+          <Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/></Transforms>
+          <DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/><DigestValue>aCrqMqI8ldl2W0lt1tKYqTwTnQM=</DigestValue>
+        </Reference>
+      </SignedInfo>
+      <SignatureValue>KmelsVvfQOCgrJ2JnEfbdEFwL6tn/jXfmd9dRqIrQpIxDSX8UCmW7T1IzWiI4bzZ
+egtqXpFo3p6C6C9qg3sRnLlJSeWyygZIaxG6URSAPzCX+skxtPYt/jxrlK48qVo8
+tFhr1pLhseEHDlB/YnoVcVN8pOrhenFtj/6XTizAq+6xppH/s7RQrUylbDazrD4a
+bo3gklvJOCu2ZOCphckfxg+7/5rz3ihxpQaa1K3qg5XdRT9/gF3F+5zZzrMZ7j3H
+ayLKSJnsu6JnsPi3Y0DPw5idmQ55H3sFlT+e4HBpFmdpAEAYu8l3FpIUWyRsRj9i
+hhLyAS66SNuJuh2/ICYH3A==</SignatureValue><KeyInfo/>
+    </Signature>
+  </SetDTE>
+</EnvioDTE>
