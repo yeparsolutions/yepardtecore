@@ -3,163 +3,262 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YeparDTE — Registro</title>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&family=Instrument+Serif&display=swap" rel="stylesheet">
+    <title>YeparDTE — Onboarding</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    
     <style>
         :root {
-            --bg: #f7f6f2; --surface: #ffffff; --border: #e3e1d9;
-            --text: #1a1a1a; --muted: #7a7770; --accent: #1a1a1a;
-            --error: #c1121f; --step-done: #2d6a4f; --step-pending: #d5d1c7;
+            --yepar-blue: #0057ff; /* Ajustado al color de tu logo Yepar */
+            --yepar-grey: #4a4a4a;
+            --bg: #f8f9fa;
+            --surface: #ffffff;
+            --border: #e0e0e0;
+            --text: #1a1a1a;
+            --muted: #6c757d;
+            --success: #28a745;
         }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'DM Sans', sans-serif; background: var(--bg); display: flex; flex-direction: column; align-items: center; padding: 2rem 1rem; color: var(--text); }
-        .card { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; width: 100%; max-width: 560px; padding: 2.5rem; position: relative; }
-        .steps-bar { display: flex; gap: 6px; margin-bottom: 2rem; }
-        .step-dot { width: 28px; height: 5px; border-radius: 99px; background: var(--step-pending); }
-        .step-dot.active { background: var(--accent); width: 44px; }
-        .step-dot.done { background: var(--step-done); }
-        h2 { font-family: 'Instrument Serif', serif; font-size: 1.75rem; margin-bottom: 1.5rem; }
-        .field { margin-bottom: 1.2rem; }
-        label { display: block; font-size: 0.8rem; font-weight: 500; color: var(--muted); margin-bottom: 0.4rem; }
-        input { width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 10px; outline: none; }
-        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .btn { width: 100%; padding: 0.85rem; background: var(--accent); color: #fff; border: none; border-radius: 12px; cursor: pointer; font-weight: 500; }
-        .btn:disabled { opacity: 0.3; }
-        .step { display: none; } .step.active { display: block; }
-        #loading-overlay { display: none; position: absolute; inset: 0; background: rgba(255,255,255,0.9); z-index: 10; border-radius: 20px; align-items: center; justify-content: center; flex-direction: column; text-align: center; }
+        
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+        }
+
+        .brand-header { margin-bottom: 40px; text-align: center; }
+        .brand-header img { height: 50px; }
+
+        .onboarding-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            width: 100%;
+            max-width: 500px;
+            padding: 40px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+            position: relative;
+        }
+
+        /* Indicador de pasos */
+        .steps-nav { display: flex; gap: 8px; margin-bottom: 30px; }
+        .step-pill { height: 6px; flex: 1; border-radius: 10px; background: #eee; transition: 0.3s; }
+        .step-pill.active { background: var(--yepar-blue); }
+        .step-pill.done { background: var(--yepar-grey); }
+
+        h2 { font-family: 'Instrument Serif', serif; font-size: 2rem; margin-bottom: 10px; font-weight: 400; }
+        p.desc { color: var(--muted); font-size: 0.95rem; margin-bottom: 25px; }
+
+        /* Formularios */
+        .form-group { margin-bottom: 18px; }
+        label { display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 6px; color: var(--yepar-grey); }
+        input {
+            width: 100%; padding: 12px 16px; border: 1px solid var(--border);
+            border-radius: 12px; font-size: 1rem; transition: 0.2s; outline: none;
+        }
+        input:focus { border-color: var(--yepar-blue); box-shadow: 0 0 0 3px rgba(0,87,255,0.1); }
+        
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+
+        /* Botones */
+        .btn {
+            width: 100%; padding: 14px; border: none; border-radius: 14px;
+            font-weight: 600; font-size: 1rem; cursor: pointer; transition: 0.2s;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .btn-primary { background: var(--yepar-blue); color: white; }
+        .btn-primary:hover { background: #0046cc; }
+        .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
+        .btn-ghost { background: transparent; color: var(--muted); margin-top: 10px; }
+
+        /* Estados */
+        .step-content { display: none; }
+        .step-content.active { display: block; animation: fadeIn 0.4s ease; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        #loader {
+            display: none; position: absolute; inset: 0; background: rgba(255,255,255,0.9);
+            z-index: 100; border-radius: 24px; flex-direction: column; align-items: center; justify-content: center;
+        }
     </style>
 </head>
 <body>
 
-<div class="card">
-    <div id="loading-overlay"><p id="loading-text">Procesando...</p></div>
-    <div class="steps-bar" id="stepsBar"></div>
-
-    <div class="step active" id="step1">
-        <h2>Cuenta Personal</h2>
-        <div class="grid-2">
-            <div class="field"><label>Nombre</label><input type="text" id="nombre"></div>
-            <div class="field"><label>Apellido</label><input type="text" id="apellido"></div>
-        </div>
-        <div class="field"><label>Email</label><input type="email" id="email"></div>
-        <div class="field"><label>Contraseña</label><input type="password" id="password"></div>
-        <div class="field">
-            <label>RUT Personal (Sin puntos, con guion)</label>
-            <input type="text" id="rut-usuario" placeholder="12345678-9" oninput="validarRut(this)">
-        </div>
-        <button class="btn" id="btn1" onclick="goStep(2)" disabled>Continuar</button>
+    <div class="brand-header">
+        <img src="/static/logo-horizontal.svg" alt="Yepar Logo">
     </div>
 
-    <div class="step" id="step2">
-        <h2>Datos de Empresa</h2>
-        <div class="field">
-            <label>RUT Empresa (Sin puntos, con guion)</label>
-            <input type="text" id="rut-empresa" placeholder="76123456-7" oninput="validarRut(this)">
+    <div class="onboarding-card">
+        <div id="loader">
+            <div style="width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid var(--yepar-blue); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <p style="margin-top: 15px; font-weight: 500;" id="loader-text">Guardando configuración...</p>
         </div>
-        <div class="field"><label>Razón Social</label><input type="text" id="razon-social"></div>
-        <div class="field"><label>Giro</label><input type="text" id="giro"></div>
-        <div class="field"><label>Dirección</label><input type="text" id="direccion"></div>
-        <div class="grid-2">
-            <div class="field"><label>Comuna</label><input type="text" id="comuna" placeholder="Ej: Providencia"></div>
-            <div class="field"><label>Ciudad</label><input type="text" id="ciudad" placeholder="Ej: Santiago"></div>
+
+        <div class="steps-nav" id="steps-nav">
+            <div class="step-pill active"></div>
+            <div class="step-pill"></div>
+            <div class="step-pill"></div>
+            <div class="step-pill"></div>
         </div>
-        <div class="grid-2">
-            <button class="btn" style="background:#ccc" onclick="goStep(1)">Atrás</button>
-            <button class="btn" id="btn2" onclick="goStep(3)" disabled>Continuar</button>
+
+        <div class="step-content active" id="step1">
+            <h2>Crear tu cuenta</h2>
+            <p class="desc">Comencemos con tus datos de acceso.</p>
+            <div class="row">
+                <div class="form-group"><label>Nombre</label><input type="text" id="u_nombre" placeholder="Ej: Alberto"></div>
+                <div class="form-group"><label>Apellido</label><input type="text" id="u_apellido" placeholder="Ej: Yépez"></div>
+            </div>
+            <div class="form-group"><label>Email Corporativo</label><input type="email" id="u_email" placeholder="alberto@empresa.cl"></div>
+            <div class="form-group"><label>Contraseña</label><input type="password" id="u_pass" placeholder="••••••••"></div>
+            <button class="btn btn-primary" onclick="nextStep(2)">Continuar</button>
+        </div>
+
+        <div class="step-content" id="step2">
+            <h2>Datos de la Empresa</h2>
+            <p class="desc">Información legal para tus documentos.</p>
+            <div class="form-group"><label>RUT Empresa</label><input type="text" id="e_rut" placeholder="76.123.456-7"></div>
+            <div class="form-group"><label>Razón Social</label><input type="text" id="e_razon" placeholder="Yepar Solutions SpA"></div>
+            <div class="form-group"><label>Giro</label><input type="text" id="e_giro" placeholder="Servicios Informáticos"></div>
+            <div class="form-group"><label>Dirección</label><input type="text" id="e_dir" placeholder="Av. Providencia 1234"></div>
+            <div class="row">
+                <div class="form-group"><label>Comuna</label><input type="text" id="e_comuna" placeholder="Providencia"></div>
+                <div class="form-group"><label>Ciudad</label><input type="text" id="e_ciudad" placeholder="Santiago"></div>
+            </div>
+            <button class="btn btn-primary" onclick="nextStep(3)">Siguiente paso</button>
+            <button class="btn btn-ghost" onclick="nextStep(1)">Volver</button>
+        </div>
+
+        <div class="step-content" id="step3">
+            <h2>Certificado Digital</h2>
+            <p class="desc">Sube tu firma (.p12 o .pfx) para firmar los DTE.</p>
+            <div class="form-group">
+                <label>Archivo del certificado</label>
+                <input type="file" id="e_cert" accept=".p12,.pfx" style="padding: 8px;">
+            </div>
+            <div class="form-group"><label>Contraseña del certificado</label><input type="password" id="e_cert_pass" placeholder="Clave de tu firma"></div>
+            <button class="btn btn-primary" onclick="nextStep(4)">Revisar final</button>
+            <button class="btn btn-ghost" onclick="nextStep(2)">Volver</button>
+        </div>
+
+        <div class="step-content" id="step4">
+            <h2>¡Todo listo!</h2>
+            <p class="desc">Verifica que la información sea correcta antes de activar tu cuenta YeparDTE.</p>
+            <div id="resumen" style="background: #f0f4ff; padding: 20px; border-radius: 15px; font-size: 0.9rem; margin-bottom: 25px;">
+                </div>
+            <button class="btn btn-primary" id="final-btn" onclick="finalizarOnboarding()">Activar mi Empresa</button>
+            <button class="btn btn-ghost" onclick="nextStep(3)">Cambiar algo</button>
         </div>
     </div>
 
-    <div class="step" id="step3">
-        <h2>Finalizar</h2>
-        <button class="btn" onclick="submitAll()">Guardar en Base de Datos</button>
-    </div>
-</div>
+    <script>
+        let currentStep = 1;
 
-<script>
-let currentStep = 1;
+        function nextStep(step) {
+            document.querySelectorAll('.step-content').forEach(el => el.classList.remove('active'));
+            document.getElementById('step' + step).classList.add('active');
+            
+            // Actualizar pills
+            const pills = document.querySelectorAll('.step-pill');
+            pills.forEach((pill, idx) => {
+                if (idx + 1 < step) pill.className = 'step-pill done';
+                else if (idx + 1 === step) pill.className = 'step-pill active';
+                else pill.className = 'step-pill';
+            });
 
-function validarRut(input) {
-    let val = input.value.replace(/\./g, '');
-    if (val.length > 1 && !val.includes('-')) {
-        val = val.slice(0, -1) + '-' + val.slice(-1);
-        input.value = val;
-    }
-    const isValid = /^[0-9]+-[0-9Kk]$/.test(input.value);
-    const btn = currentStep === 1 ? document.getElementById('btn1') : document.getElementById('btn2');
-    btn.disabled = !isValid;
-}
-
-function goStep(n) {
-    document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
-    document.getElementById('step' + n).classList.add('active');
-    currentStep = n;
-    updateDots();
-}
-
-function updateDots() {
-    const bar = document.getElementById('stepsBar');
-    bar.innerHTML = '';
-    for (let i = 1; i <= 3; i++) bar.innerHTML += `<div class="step-dot ${i === currentStep ? 'active' : (i < currentStep ? 'done' : '')}"></div>`;
-}
-
-async function submitAll() {
-    const overlay = document.getElementById('loading-overlay');
-    const loadText = document.getElementById('loading-text');
-    overlay.style.display = 'flex';
-
-    try {
-        loadText.textContent = "Registrando usuario...";
-        const resUser = await fetch('/v1/auth/registro', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                nombre: document.getElementById('nombre').value,
-                apellido: document.getElementById('apellido').value,
-                email: document.getElementById('email').value,
-                password: document.getElementById('password').value
-            })
-        });
-
-        // Manejo robusto de errores del servidor
-        if (!resUser.ok) {
-            const errorText = await resUser.text();
-            let errorMsg;
-            try { errorMsg = JSON.parse(errorText).detail; } 
-            catch { errorMsg = `Error del servidor (500): ${errorText.substring(0, 50)}...`; }
-            throw new Error(errorMsg);
+            if(step === 4) mostrarResumen();
+            currentStep = step;
         }
 
-        const userData = await resUser.json();
+        function mostrarResumen() {
+            const resumen = `
+                <b>Usuario:</b> ${document.getElementById('u_nombre').value} ${document.getElementById('u_apellido').value}<br>
+                <b>Email:</b> ${document.getElementById('u_email').value}<br><br>
+                <b>Empresa:</b> ${document.getElementById('e_razon').value}<br>
+                <b>RUT:</b> ${document.getElementById('e_rut').value}<br>
+                <b>Ubicación:</b> ${document.getElementById('e_comuna').value}, ${document.getElementById('e_ciudad').value}
+            `;
+            document.getElementById('resumen').innerHTML = resumen;
+        }
 
-        loadText.textContent = "Registrando empresa...";
-        const resEmisor = await fetch('/v1/emisores/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${userData.access_token}`
-            },
-            body: JSON.stringify({
-                rut: document.getElementById('rut-empresa').value,
-                razon_social: document.getElementById('razon-social').value,
-                giro: document.getElementById('giro').value,
-                direccion: document.getElementById('direccion').value,
-                comuna: document.getElementById('comuna').value,
-                ciudad: document.getElementById('ciudad').value,
-                ambiente: "certificacion"
-            })
-        });
+        async function finalizarOnboarding() {
+            const loader = document.getElementById('loader');
+            const loaderText = document.getElementById('loader-text');
+            loader.style.display = 'flex';
 
-        if (!resEmisor.ok) throw new Error("No se pudo crear la empresa");
+            try {
+                // 1. REGISTRO DE USUARIO
+                loaderText.textContent = "Creando tu perfil...";
+                const resUser = await fetch('/v1/auth/registro', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        nombre: document.getElementById('u_nombre').value,
+                        apellido: document.getElementById('u_apellido').value,
+                        email: document.getElementById('u_email').value,
+                        password: document.getElementById('u_pass').value
+                    })
+                });
 
-        loadText.textContent = "¡Éxito!";
-        setTimeout(() => window.location.reload(), 1500);
+                if (!resUser.ok) {
+                    const err = await resUser.json();
+                    throw new Error(err.detail || "Error al crear el usuario.");
+                }
+                const userData = await resUser.json();
 
-    } catch (err) {
-        overlay.style.display = 'none';
-        alert("ERROR: " + err.message);
-    }
-}
-updateDots();
-</script>
+                // 2. CREACIÓN DE EMISOR
+                loaderText.textContent = "Configurando empresa...";
+                const resEmisor = await fetch('/v1/emisores/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${userData.access_token}`
+                    },
+                    body: JSON.stringify({
+                        rut: document.getElementById('e_rut').value,
+                        razon_social: document.getElementById('e_razon').value,
+                        giro: document.getElementById('e_giro').value,
+                        direccion: document.getElementById('e_dir').value,
+                        comuna: document.getElementById('e_comuna').value,
+                        ciudad: document.getElementById('e_ciudad').value,
+                        ambiente: "certificacion"
+                    })
+                });
+
+                if (!resEmisor.ok) throw new Error("Error al registrar la empresa.");
+                const emisorData = await resEmisor.json();
+
+                // 3. SUBIDA DE CERTIFICADO
+                const certFile = document.getElementById('e_cert').files[0];
+                if (certFile) {
+                    loaderText.textContent = "Subiendo firma digital...";
+                    const formData = new FormData();
+                    formData.append('file', certFile);
+                    formData.append('password', document.getElementById('e_cert_pass').value);
+
+                    const resCert = await fetch(`/v1/certificados/${emisorData.id}/subir`, {
+                        method: 'POST',
+                        headers: {'Authorization': `Bearer ${userData.access_token}`},
+                        body: formData
+                    });
+                    if (!resCert.ok) throw new Error("Firma subida, pero hubo un problema al validarla.");
+                }
+
+                loaderText.textContent = "¡Bienvenido a Yepar!";
+                setTimeout(() => window.location.href = "/api/docs", 2000);
+
+            } catch (error) {
+                loader.style.display = 'none';
+                alert("❌ " + error.message);
+            }
+        }
+    </script>
+
+    <style> @keyframes spin { to { transform: rotate(360deg); } } </style>
 </body>
 </html>
