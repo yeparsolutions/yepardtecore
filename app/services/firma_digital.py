@@ -135,14 +135,14 @@ class FirmaDigital:
 
         signed_info = self._build_signed_info(f"#{doc_id}", digest_doc)
 
-        # FIX: El SII hereda xmlns:xsi en el C14N del SignedInfo al verificar.
-        # Usamos wrapper con el mismo contexto de namespace del documento final.
-        si_parent = etree.fromstring(
-            f'<wrapper xmlns="{SII_NS}" xmlns:xsi="{XSI_NS}">'
-            f'{signed_info}'
-            f'</wrapper>'
+        # FIX: El SII usa inclusive C14N al verificar, por lo que hereda
+        # xmlns:xsi del DTE padre. Envolvemos SignedInfo en un wrapper con
+        # el mismo contexto de namespace para que el C14N coincida.
+        # Sin este wrapper, el SII calcula un hash diferente → RFR.
+        si_wrapper = etree.fromstring(
+            f'<w xmlns="{SII_NS}" xmlns:xsi="{XSI_NS}">{signed_info}</w>'
         )
-        si_c14n = etree.tostring(si_parent[0], method="c14n", exclusive=False)
+        si_c14n   = etree.tostring(si_wrapper[0], method="c14n", exclusive=False)
         firma_b64 = b64encode(
             self._private_key.sign(si_c14n, padding.PKCS1v15(), hashes.SHA1())
         ).decode()
@@ -196,13 +196,12 @@ class FirmaDigital:
         digest_val = b64encode(hashlib.sha1(set_c14n).digest()).decode()
 
         signed_info = self._build_signed_info("#SetDoc", digest_val)
+
         # FIX: mismo contexto namespace que EnvioBOLETA para C14N correcto.
-        si_parent = etree.fromstring(
-            f'<wrapper xmlns="{SII_NS}" xmlns:xsi="{XSI_NS}">'
-            f'{signed_info}'
-            f'</wrapper>'
+        si_wrapper = etree.fromstring(
+            f'<w xmlns="{SII_NS}" xmlns:xsi="{XSI_NS}">{signed_info}</w>'
         )
-        si_c14n = etree.tostring(si_parent[0], method="c14n", exclusive=False)
+        si_c14n   = etree.tostring(si_wrapper[0], method="c14n", exclusive=False)
         firma_b64 = b64encode(
             self._private_key.sign(si_c14n, padding.PKCS1v15(), hashes.SHA1())
         ).decode()
