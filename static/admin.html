@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YeparDTEcore — Panel de Configuración</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #07090f;
+    --surface:  #0e1219;
+    --card:     #131922;
+    --border:   rgba(255,255,255,0.07);
+    --border2:  rgba(255,255,255,0.13);
+    --green:    #10b981;
+    --green2:   #059669;
+    --blue:     #3b82f6;
+    --amber:    #f59e0b;
+    --red:      #ef4444;
+    --text:     #e2e8f0;
+    --muted:    #64748b;
+    --mono:     'JetBrains Mono', monospace;
+    --sans:     'Outfit', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ── Fondo con grid sutil ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0;
+    background-image:
+      linear-gradient(rgba(16,185,129,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(16,185,129,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+  }
+
+  /* ── Navbar ── */
+  nav {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(7,9,15,0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 58px;
+    display: flex; align-items: center; gap: 20px;
+  }
+  .logo {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--green);
+    letter-spacing: -0.3px;
+    white-space: nowrap;
+  }
+  .logo span { color: var(--muted); }
+  .url-bar {
+    flex: 1;
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 0 12px;
+    height: 36px;
+  }
+  .url-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .url-bar input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .url-bar input::placeholder { color: var(--muted); }
+  .dot-status {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .dot-status.online  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot-status.error   { background: var(--red); }
+  .dot-status.loading { background: var(--amber); }
+
+  /* ── Layout principal ── */
+  .main {
+    position: relative; z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 24px;
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 24px;
+    align-items: start;
+  }
+
+  /* ── Steps container ── */
+  .steps { display: flex; flex-direction: column; gap: 16px; }
+
+  /* ── Card ── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .card.active { border-color: rgba(16,185,129,0.35); }
+  .card.done   { border-color: rgba(16,185,129,0.2); opacity: 0.85; }
+  .card.locked { opacity: 0.4; pointer-events: none; }
+
+  .card-header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+  }
+  .step-num {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    flex-shrink: 0;
+    transition: all 0.3s;
+  }
+  .card.active .step-num {
+    background: rgba(16,185,129,0.15);
+    border-color: var(--green);
+    color: var(--green);
+  }
+  .card.done .step-num {
+    background: rgba(16,185,129,0.15);
+    border-color: var(--green);
+    color: var(--green);
+  }
+  .card-title { font-weight: 500; font-size: 15px; flex: 1; }
+  .card-badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 3px 9px;
+    border-radius: 20px;
+    background: rgba(16,185,129,0.1);
+    color: var(--green);
+    border: 1px solid rgba(16,185,129,0.2);
+  }
+  .card-badge.pending { background: rgba(100,116,139,0.1); color: var(--muted); border-color: var(--border); }
+
+  .card-body { padding: 22px; display: none; }
+  .card.active .card-body,
+  .card.done   .card-body { display: block; }
+
+  /* ── Form elements ── */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .form-grid.full { grid-template-columns: 1fr; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .field input, .field select {
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 9px 12px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .field input:focus, .field select:focus {
+    border-color: var(--green);
+  }
+  .field input.rut-field {
+    font-family: var(--mono);
+    letter-spacing: 0.5px;
+  }
+  .field input.rut-field.valid   { border-color: var(--green); }
+  .field input.rut-field.invalid { border-color: var(--red); }
+  .rut-hint {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .rut-hint.ok  { color: var(--green); }
+  .rut-hint.bad { color: var(--red); }
+
+  /* ── Upload zone ── */
+  .upload-zone {
+    border: 1.5px dashed var(--border2);
+    border-radius: 10px;
+    padding: 28px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: var(--green);
+    background: rgba(16,185,129,0.04);
+  }
+  .upload-zone input[type="file"] {
+    position: absolute; inset: 0;
+    opacity: 0; cursor: pointer;
+    width: 100%; height: 100%;
+  }
+  .upload-icon { font-size: 28px; margin-bottom: 8px; }
+  .upload-text { font-size: 13px; color: var(--muted); }
+  .upload-text strong { color: var(--text); display: block; margin-bottom: 4px; }
+  .file-selected {
+    margin-top: 12px;
+    background: rgba(16,185,129,0.08);
+    border: 1px solid rgba(16,185,129,0.2);
+    border-radius: 8px;
+    padding: 10px 14px;
+    display: none;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--green);
+  }
+  .file-selected.visible { display: flex; }
+
+  /* CAF list */
+  .caf-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  .caf-item {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 13px;
+    font-size: 13px;
+  }
+  .caf-item .tipo {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: rgba(59,130,246,0.12);
+    color: #60a5fa;
+    border: 1px solid rgba(59,130,246,0.2);
+    white-space: nowrap;
+  }
+  .caf-item .nombre { flex: 1; color: var(--muted); font-size: 12px; }
+  .caf-item .remove {
+    cursor: pointer; color: var(--muted);
+    font-size: 16px; line-height: 1;
+    transition: color 0.15s;
+  }
+  .caf-item .remove:hover { color: var(--red); }
+
+  /* ── Buttons ── */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+  }
+  .btn-primary {
+    background: var(--green);
+    color: #000;
+  }
+  .btn-primary:hover { background: #0ea572; transform: translateY(-1px); }
+  .btn-primary:active { transform: scale(0.98); }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+  .btn-ghost {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border2);
+  }
+  .btn-ghost:hover { border-color: var(--green); color: var(--green); }
+  .btn-danger {
+    background: rgba(239,68,68,0.1);
+    color: var(--red);
+    border: 1px solid rgba(239,68,68,0.25);
+  }
+  .btn-danger:hover { background: rgba(239,68,68,0.2); }
+  .btn-full { width: 100%; }
+  .btn-row { display: flex; gap: 10px; margin-top: 18px; }
+
+  /* ── Result box ── */
+  .result-box {
+    margin-top: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    display: none;
+  }
+  .result-box.visible { display: block; }
+  .result-box.ok   { border-color: rgba(16,185,129,0.3); }
+  .result-box.fail { border-color: rgba(239,68,68,0.3); }
+  .result-label {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+  .result-label.ok   { color: var(--green); }
+  .result-label.fail { color: var(--red); }
+  .result-content { color: #94a3b8; white-space: pre-wrap; word-break: break-all; }
+
+  /* ── Panel derecho: Console ── */
+  .console-panel {
+    position: sticky; top: 78px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .console-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .console-title {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    flex: 1;
+  }
+  .console-clear {
+    font-size: 11px; color: var(--muted);
+    cursor: pointer; padding: 2px 6px;
+    border-radius: 4px;
+    transition: color 0.15s;
+  }
+  .console-clear:hover { color: var(--red); }
+  .console-body {
+    height: 460px;
+    overflow-y: auto;
+    padding: 14px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .log-entry {
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.5;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border-left: 2px solid transparent;
+  }
+  .log-entry.info  { border-color: var(--blue);  background: rgba(59,130,246,0.05); color: #93c5fd; }
+  .log-entry.ok    { border-color: var(--green); background: rgba(16,185,129,0.05); color: #6ee7b7; }
+  .log-entry.error { border-color: var(--red);   background: rgba(239,68,68,0.05);  color: #fca5a5; }
+  .log-entry.warn  { border-color: var(--amber); background: rgba(245,158,11,0.05); color: #fcd34d; }
+  .log-time { color: var(--muted); margin-right: 6px; }
+
+  /* ── Cert resultado panel ── */
+  .cert-results { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+  .cert-case {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 11px 14px;
+    font-size: 13px;
+  }
+  .case-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: var(--card);
+    color: var(--muted);
+    border: 1px solid var(--border2);
+    white-space: nowrap;
+  }
+  .case-desc { flex: 1; font-size: 12px; color: var(--muted); }
+  .case-status {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .case-status.ok   { background: rgba(16,185,129,0.1); color: var(--green); }
+  .case-status.fail { background: rgba(239,68,68,0.1);  color: var(--red); }
+  .track-box {
+    margin-top: 16px;
+    background: rgba(16,185,129,0.06);
+    border: 1px solid rgba(16,185,129,0.25);
+    border-radius: 10px;
+    padding: 18px;
+    text-align: center;
+  }
+  .track-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .track-id {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 500;
+    color: var(--green);
+    letter-spacing: 2px;
+  }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  @media (max-width: 768px) {
+    .main { grid-template-columns: 1fr; }
+    .console-panel { position: static; }
+    .form-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Navbar ── -->
+<nav>
+  <div class="logo">yepar<span>/</span>dtecore</div>
+  <div class="url-bar">
+    <span class="url-label">API&nbsp;</span>
+    <input id="apiUrl" type="text"
+      placeholder="https://tu-app.railway.app"
+      value="https://tu-app.railway.app">
+    <div class="dot-status" id="dotStatus"></div>
+  </div>
+  <button class="btn btn-ghost" onclick="testConnection()" style="white-space:nowrap;padding:7px 14px;font-size:13px">
+    Probar conexión
+  </button>
+</nav>
+
+<!-- ── Main ── -->
+<div class="main">
+
+  <!-- Steps -->
+  <div class="steps">
+
+    <!-- ══ Step 1: Emisor ══ -->
+    <div class="card active" id="card1">
+      <div class="card-header" onclick="toggleCard(1)">
+        <div class="step-num">1</div>
+        <div class="card-title">Crear Emisor</div>
+        <div class="card-badge pending" id="badge1">pendiente</div>
+      </div>
+      <div class="card-body">
+        <div class="form-grid">
+
+          <div class="field">
+            <label>RUT Empresa</label>
+            <input type="text" id="e_rut" class="rut-field"
+              placeholder="78.377.021-0"
+              oninput="handleRutInput(this, 'hint_rut_e')">
+            <div class="rut-hint" id="hint_rut_e">Ingresa el RUT con o sin puntos</div>
+          </div>
+
+          <div class="field">
+            <label>Razón Social</label>
+            <input type="text" id="e_razon" placeholder="Yepar Solutions SpA">
+          </div>
+
+          <div class="field" style="grid-column:1/-1">
+            <label>Giro Comercial</label>
+            <input type="text" id="e_giro" placeholder="Servicios de tecnología">
+          </div>
+
+          <div class="field" style="grid-column:1/-1">
+            <label>Dirección</label>
+            <input type="text" id="e_dir" placeholder="Av. Providencia 1234, Of. 501">
+          </div>
+
+          <div class="field">
+            <label>Comuna</label>
+            <input type="text" id="e_comuna" placeholder="Providencia">
+          </div>
+
+          <div class="field">
+            <label>Ciudad</label>
+            <input type="text" id="e_ciudad" placeholder="Santiago">
+          </div>
+
+          <div class="field">
+            <label>Teléfono (opcional)</label>
+            <input type="text" id="e_tel" placeholder="+56 2 1234 5678">
+          </div>
+
+          <div class="field">
+            <label>Ambiente</label>
+            <select id="e_ambiente">
+              <option value="certificacion" selected>Certificación (maullin)</option>
+              <option value="produccion">Producción (palena)</option>
+            </select>
+          </div>
+
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="crearEmisor()">
+            Crear emisor
+          </button>
+        </div>
+
+        <div class="result-box" id="res1">
+          <div class="result-label" id="res1_label"></div>
+          <div class="result-content" id="res1_content"></div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ══ Step 2: Certificado .p12 ══ -->
+    <div class="card locked" id="card2">
+      <div class="card-header" onclick="toggleCard(2)">
+        <div class="step-num">2</div>
+        <div class="card-title">Subir Certificado Digital (.p12)</div>
+        <div class="card-badge pending" id="badge2">pendiente</div>
+      </div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+          Sube el archivo <code style="font-family:var(--mono);color:var(--text)">.p12</code>
+          que descargaste del SII. Se guarda en PostgreSQL —
+          nunca en archivos de Railway.
+        </p>
+
+        <div class="upload-zone" id="zone_p12"
+          ondragover="handleDragOver(event,'zone_p12')"
+          ondragleave="handleDragLeave('zone_p12')"
+          ondrop="handleDrop(event,'p12_file','zone_p12','.p12',showP12Name)">
+          <input type="file" id="p12_file" accept=".p12,.pfx"
+            onchange="showP12Name(this)">
+          <div class="upload-icon">🔐</div>
+          <div class="upload-text">
+            <strong>Arrastra el .p12 aquí o haz clic</strong>
+            Formatos: .p12 / .pfx
+          </div>
+        </div>
+
+        <div class="file-selected" id="p12_selected">
+          <span>📄</span>
+          <span id="p12_name"></span>
+        </div>
+
+        <div class="field" style="margin-top:14px">
+          <label>Contraseña del certificado</label>
+          <input type="password" id="p12_pass" placeholder="••••••••">
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="subirCertificado()">
+            Subir certificado
+          </button>
+        </div>
+
+        <div class="result-box" id="res2">
+          <div class="result-label" id="res2_label"></div>
+          <div class="result-content" id="res2_content"></div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ══ Step 3: CAFs ══ -->
+    <div class="card locked" id="card3">
+      <div class="card-header" onclick="toggleCard(3)">
+        <div class="step-num">3</div>
+        <div class="card-title">Cargar CAFs del SII</div>
+        <div class="card-badge pending" id="badge3">pendiente</div>
+      </div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+          Para certificar boletas necesitas al menos los CAFs
+          <code style="font-family:var(--mono);color:#60a5fa">tipo 39</code> y
+          <code style="font-family:var(--mono);color:#60a5fa">tipo 41</code>.
+          Puedes subir todos los demás también.
+        </p>
+
+        <div class="upload-zone" id="zone_caf"
+          ondragover="handleDragOver(event,'zone_caf')"
+          ondragleave="handleDragLeave('zone_caf')"
+          ondrop="handleDropMulti(event)">
+          <input type="file" id="caf_files" accept=".xml" multiple
+            onchange="agregarCAFs(this.files)">
+          <div class="upload-icon">📑</div>
+          <div class="upload-text">
+            <strong>Arrastra los XML de CAF o haz clic</strong>
+            Puedes seleccionar varios a la vez (.xml)
+          </div>
+        </div>
+
+        <div class="caf-list" id="caf_list"></div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btnSubirCAFs"
+            onclick="subirTodosCAFs()" disabled>
+            Subir CAFs a la BD
+          </button>
+          <button class="btn btn-ghost" onclick="clearCAFs()">
+            Limpiar lista
+          </button>
+        </div>
+
+        <div class="result-box" id="res3">
+          <div class="result-label" id="res3_label"></div>
+          <div class="result-content" id="res3_content"></div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ══ Step 4: Certificación ══ -->
+    <div class="card locked" id="card4">
+      <div class="card-header" onclick="toggleCard(4)">
+        <div class="step-num">4</div>
+        <div class="card-title">Ejecutar Certificación SII</div>
+        <div class="card-badge pending" id="badge4">pendiente</div>
+      </div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+          Envía el set de 5 boletas a <code style="font-family:var(--mono);color:var(--green)">maullin.sii.cl</code>.
+          El motor firma cada boleta individualmente (con TED) y luego
+          las empaqueta en un solo <code style="font-family:var(--mono);color:var(--text)">EnvioBOLETA</code>.
+        </p>
+
+        <!-- Checklist pre-certificación -->
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:18px">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px">
+            Checklist previo
+          </div>
+          <div style="display:flex;flex-direction:column;gap:7px;font-size:13px">
+            <div class="check-item" id="chk_emisor">⬜ Emisor creado</div>
+            <div class="check-item" id="chk_cert">⬜ Certificado .p12 cargado</div>
+            <div class="check-item" id="chk_caf39">⬜ CAF tipo 39 (Boleta) cargado</div>
+            <div class="check-item" id="chk_caf41">⬜ CAF tipo 41 (Boleta exenta) cargado</div>
+          </div>
+        </div>
+
+        <div class="btn-row" style="flex-direction:column;gap:10px">
+          <button class="btn btn-primary btn-full" id="btnCertificar"
+            onclick="ejecutarCertificacion()" style="padding:13px">
+            🚀 &nbsp;Enviar set de certificación al SII
+          </button>
+          <button class="btn btn-ghost btn-full"
+            onclick="previewCertificacion()" style="font-size:13px">
+            Ver preview de los 5 casos (sin enviar)
+          </button>
+        </div>
+
+        <div id="certResults" style="display:none">
+          <div class="cert-results" id="certCases"></div>
+          <div class="track-box" id="trackBox" style="display:none">
+            <div class="track-label">Track ID recibido del SII</div>
+            <div class="track-id" id="trackIdValue"></div>
+            <div style="font-size:12px;color:var(--muted);margin-top:8px">
+              Guarda este número — con él consultas el estado de la certificación
+            </div>
+          </div>
+        </div>
+
+        <div class="result-box" id="res4">
+          <div class="result-label" id="res4_label"></div>
+          <div class="result-content" id="res4_content"></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /steps -->
+
+
+  <!-- ── Console panel ── -->
+  <div class="console-panel">
+    <div class="console-header">
+      <div class="console-title">▸ consola API</div>
+      <div class="console-clear" onclick="clearConsole()">limpiar</div>
+    </div>
+    <div class="console-body" id="consoleBody">
+      <div class="log-entry info">
+        <span class="log-time">--:--:--</span>
+        Panel listo. Configura la URL de tu API en Railway arriba.
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+
+<script>
+// ══════════════════════════════════════════════════════
+// Estado global
+// ══════════════════════════════════════════════════════
+const state = {
+  emisorId:   null,
+  rutEmisor:  null,
+  certOk:     false,
+  cafsOk:     false,
+  tiposCargados: new Set(),
+  cafFiles:   [],   // [{file, tipo, nombre}]
+};
+
+// ══════════════════════════════════════════════════════
+// RUT: formateo y validación
+// El SII exige: sin puntos, con guión  → "78377021-0"
+// ══════════════════════════════════════════════════════
+function rutParaSII(raw) {
+  // 1. Quitar puntos y espacios, mayúscula
+  let clean = raw.replace(/[.\s]/g, '').toUpperCase();
+  // 2. Si no tiene guión, insertar antes del último carácter
+  if (!clean.includes('-') && clean.length > 1) {
+    clean = clean.slice(0, -1) + '-' + clean.slice(-1);
+  }
+  return clean; // "78377021-0"
+}
+
+function rutConFormato(raw) {
+  // Para mostrar al usuario: con puntos y guión
+  let clean = raw.replace(/[.\s-]/g, '').toUpperCase();
+  if (clean.length < 2) return raw;
+  const dv   = clean.slice(-1);
+  const body = clean.slice(0, -1).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return body + '-' + dv;
+}
+
+function validarRut(raw) {
+  // Validación módulo 11
+  const clean = raw.replace(/[.\s-]/g, '').toUpperCase();
+  if (clean.length < 2) return false;
+  const dv   = clean.slice(-1);
+  const body = clean.slice(0, -1);
+  if (!/^\d+$/.test(body)) return false;
+  let sum = 0, mul = 2;
+  for (let i = body.length - 1; i >= 0; i--) {
+    sum += parseInt(body[i]) * mul;
+    mul = mul === 7 ? 2 : mul + 1;
+  }
+  const expected = 11 - (sum % 11);
+  const dvCalc = expected === 11 ? '0' : expected === 10 ? 'K' : String(expected);
+  return dv === dvCalc;
+}
+
+function handleRutInput(input, hintId) {
+  const val  = input.value;
+  const hint = document.getElementById(hintId);
+  if (!val) {
+    input.classList.remove('valid','invalid');
+    hint.textContent = 'Ingresa el RUT con o sin puntos';
+    hint.className = 'rut-hint';
+    return;
+  }
+  const sii = rutParaSII(val);
+  const ok  = validarRut(val);
+  input.classList.toggle('valid',   ok);
+  input.classList.toggle('invalid', !ok);
+  if (ok) {
+    hint.textContent = '✓ SII recibirá: ' + sii;
+    hint.className = 'rut-hint ok';
+  } else {
+    hint.textContent = '✗ RUT inválido (dígito verificador no coincide)';
+    hint.className = 'rut-hint bad';
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// Consola de logs
+// ══════════════════════════════════════════════════════
+function log(msg, type = 'info') {
+  const body  = document.getElementById('consoleBody');
+  const now   = new Date().toLocaleTimeString('es-CL', {hour12: false});
+  const el    = document.createElement('div');
+  el.className = `log-entry ${type}`;
+  el.innerHTML = `<span class="log-time">${now}</span>${msg}`;
+  body.appendChild(el);
+  body.scrollTop = body.scrollHeight;
+}
+function clearConsole() {
+  document.getElementById('consoleBody').innerHTML = '';
+}
+
+// ══════════════════════════════════════════════════════
+// Helpers
+// ══════════════════════════════════════════════════════
+function apiBase() {
+  return document.getElementById('apiUrl').value.trim().replace(/\/$/, '');
+}
+
+function showResult(n, ok, content) {
+  const box = document.getElementById('res'+n);
+  const lbl = document.getElementById('res'+n+'_label');
+  const cnt = document.getElementById('res'+n+'_content');
+  box.className = 'result-box visible ' + (ok ? 'ok' : 'fail');
+  lbl.className = 'result-label ' + (ok ? 'ok' : 'fail');
+  lbl.textContent = ok ? '✓ éxito' : '✗ error';
+  cnt.textContent = typeof content === 'string'
+    ? content
+    : JSON.stringify(content, null, 2);
+}
+
+async function apiFetch(path, opts = {}) {
+  const url = apiBase() + path;
+  log(`→ ${opts.method || 'GET'} ${path}`, 'info');
+  const res = await fetch(url, opts);
+  const text = await res.text();
+  let data;
+  try { data = JSON.parse(text); } catch { data = text; }
+  if (res.ok) {
+    log(`← ${res.status} OK`, 'ok');
+  } else {
+    log(`← ${res.status} ${JSON.stringify(data).slice(0,120)}`, 'error');
+  }
+  if (!res.ok) throw { status: res.status, data };
+  return data;
+}
+
+// ══════════════════════════════════════════════════════
+// Conexión
+// ══════════════════════════════════════════════════════
+async function testConnection() {
+  const dot = document.getElementById('dotStatus');
+  dot.className = 'dot-status loading';
+  log('Probando conexión...', 'info');
+  try {
+    const data = await apiFetch('/v1/health');
+    dot.className = 'dot-status online';
+    log('API conectada ✓ ' + JSON.stringify(data), 'ok');
+  } catch(e) {
+    dot.className = 'dot-status error';
+    log('Sin conexión — verifica la URL', 'error');
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// Step 1: Crear emisor
+// ══════════════════════════════════════════════════════
+async function crearEmisor() {
+  const rut = document.getElementById('e_rut').value;
+  if (!rut || !validarRut(rut)) {
+    showResult(1, false, 'RUT inválido. Verifica el dígito verificador.');
+    return;
+  }
+
+  const payload = {
+    rut:          rutParaSII(rut),       // ← Sin puntos para la BD/SII
+    razon_social: document.getElementById('e_razon').value,
+    giro:         document.getElementById('e_giro').value,
+    direccion:    document.getElementById('e_dir').value,
+    comuna:       document.getElementById('e_comuna').value,
+    ciudad:       document.getElementById('e_ciudad').value,
+    telefono:     document.getElementById('e_tel').value || null,
+    ambiente:     document.getElementById('e_ambiente').value,
+  };
+
+  for (const [k,v] of Object.entries(payload)) {
+    if (!v && k !== 'telefono') {
+      showResult(1, false, `Campo requerido: ${k}`);
+      return;
+    }
+  }
+
+  log(`Creando emisor RUT=${payload.rut}`, 'info');
+  try {
+    const data = await apiFetch('/v1/emisores/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    state.emisorId  = data.id;
+    state.rutEmisor = data.rut;
+
+    showResult(1, true,
+      `Emisor creado ✓\nID: ${data.id}\nRUT: ${data.rut}\nAPI Key: ${data.api_key}`);
+
+    log(`Emisor ID=${data.id} RUT=${data.rut}`, 'ok');
+    setBadge(1, '✓ listo');
+    setCardDone(1);
+    unlockCard(2);
+    updateChecklist();
+  } catch(e) {
+    const msg = e.data?.detail || JSON.stringify(e.data);
+    showResult(1, false, msg);
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// Step 2: Subir certificado .p12
+// ══════════════════════════════════════════════════════
+function showP12Name(input) {
+  if (!input.files[0]) return;
+  document.getElementById('p12_name').textContent = input.files[0].name;
+  document.getElementById('p12_selected').classList.add('visible');
+  log(`Archivo seleccionado: ${input.files[0].name}`, 'info');
+}
+
+async function subirCertificado() {
+  const fileInput = document.getElementById('p12_file');
+  const pass      = document.getElementById('p12_pass').value;
+
+  if (!fileInput.files[0]) {
+    showResult(2, false, 'Selecciona el archivo .p12 primero.');
+    return;
+  }
+  if (!pass) {
+    showResult(2, false, 'Ingresa la contraseña del certificado.');
+    return;
+  }
+  if (!state.emisorId) {
+    showResult(2, false, 'Primero crea el emisor (paso 1).');
+    return;
+  }
+
+  const fd = new FormData();
+  fd.append('password', pass);
+  fd.append('archivo', fileInput.files[0]);
+
+  log(`Subiendo certificado para emisor ${state.emisorId}...`, 'info');
+  try {
+    const data = await apiFetch(`/v1/certificados/${state.emisorId}/subir`, {
+      method: 'POST',
+      body: fd,
+    });
+
+    state.certOk = true;
+    showResult(2, true,
+      `Certificado cargado ✓\nTitular: ${data.rut || ''}\nVence: ${data.vence || ''}`);
+
+    log(`Certificado OK — vence ${data.vence}`, 'ok');
+    setBadge(2, '✓ listo');
+    setCardDone(2);
+    unlockCard(3);
+    updateChecklist();
+  } catch(e) {
+    const msg = e.data?.detail || JSON.stringify(e.data);
+    showResult(2, false, msg);
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// Step 3: CAFs
+// ══════════════════════════════════════════════════════
+const TIPO_NOMBRES = {
+  33:'Factura Electrónica', 34:'Factura Exenta',
+  39:'Boleta Electrónica',  41:'Boleta No Afecta/Exenta',
+  52:'Guía de Despacho',    56:'Nota de Débito',
+  61:'Nota de Crédito',
+};
+
+async function leerTipoCAF(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const match = e.target.result.match(/<TD>(\d+)<\/TD>/);
+      resolve(match ? parseInt(match[1]) : null);
+    };
+    reader.readAsText(file);
+  });
+}
+
+async function agregarCAFs(files) {
+  for (const file of files) {
+    const tipo = await leerTipoCAF(file);
+    // Evitar duplicados por nombre de archivo
+    if (state.cafFiles.find(c => c.file.name === file.name)) continue;
+    state.cafFiles.push({ file, tipo, nombre: file.name });
+  }
+  renderCAFList();
+  document.getElementById('btnSubirCAFs').disabled = state.cafFiles.length === 0;
+}
+
+function renderCAFList() {
+  const list = document.getElementById('caf_list');
+  list.innerHTML = '';
+  state.cafFiles.forEach((c, idx) => {
+    const nombre = TIPO_NOMBRES[c.tipo] || `Tipo ${c.tipo}`;
+    list.innerHTML += `
+      <div class="caf-item">
+        <span class="tipo">tipo ${c.tipo}</span>
+        <span class="nombre">${nombre}</span>
+        <span style="font-size:11px;font-family:var(--mono);color:var(--muted)">${c.file.name}</span>
+        <span class="remove" onclick="removeCAF(${idx})">×</span>
+      </div>`;
+  });
+}
+
+function removeCAF(idx) {
+  state.cafFiles.splice(idx, 1);
+  renderCAFList();
+  document.getElementById('btnSubirCAFs').disabled = state.cafFiles.length === 0;
+}
+
+function clearCAFs() {
+  state.cafFiles = [];
+  renderCAFList();
+  document.getElementById('caf_list').innerHTML = '';
+  document.getElementById('btnSubirCAFs').disabled = true;
+}
+
+async function subirTodosCAFs() {
+  if (!state.emisorId) {
+    showResult(3, false, 'Primero crea el emisor.');
+    return;
+  }
+  if (state.cafFiles.length === 0) {
+    showResult(3, false, 'Agrega al menos un CAF.');
+    return;
+  }
+
+  const ambiente = document.getElementById('e_ambiente').value;
+  let ok = 0, fail = 0, msgs = [];
+  const tiposCargados = new Set();
+
+  for (const caf of state.cafFiles) {
+    const fd = new FormData();
+    fd.append('emisor_id', state.emisorId);
+    fd.append('ambiente',  ambiente);
+    fd.append('archivo',   caf.file);
+
+    log(`Subiendo CAF tipo ${caf.tipo} (${caf.file.name})...`, 'info');
+    try {
+      const data = await apiFetch('/v1/caf/cargar-archivo', { method:'POST', body: fd });
+      ok++;
+      tiposCargados.add(caf.tipo);
+      msgs.push(`✓ Tipo ${caf.tipo}: folios ${data.folio_desde}-${data.folio_hasta} (${data.disponibles} disponibles)`);
+      log(`CAF tipo ${caf.tipo} OK — ${data.disponibles} folios`, 'ok');
+    } catch(e) {
+      fail++;
+      const msg = e.data?.detail || JSON.stringify(e.data);
+      msgs.push(`✗ Tipo ${caf.tipo}: ${msg}`);
+      log(`CAF tipo ${caf.tipo} ERROR: ${msg}`, 'error');
+    }
+  }
+
+  state.tiposCargados = tiposCargados;
+
+  showResult(3, fail === 0,
+    `${ok} CAF(s) cargados${fail > 0 ? `, ${fail} con error` : ''}\n\n${msgs.join('\n')}`);
+
+  if (ok > 0) {
+    state.cafsOk = true;
+    setBadge(3, `✓ ${ok} CAFs`);
+    setCardDone(3);
+    unlockCard(4);
+    updateChecklist();
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// Step 4: Certificación
+// ══════════════════════════════════════════════════════
+function updateChecklist() {
+  const set = (id, ok) => {
+    document.getElementById(id).textContent =
+      (ok ? '✅' : '⬜') + ' ' + document.getElementById(id).textContent.slice(2);
+  };
+  if (state.emisorId) set('chk_emisor', true);
+  if (state.certOk)   set('chk_cert', true);
+  if (state.tiposCargados.has(39)) set('chk_caf39', true);
+  if (state.tiposCargados.has(41)) set('chk_caf41', true);
+}
+
+async function previewCertificacion() {
+  if (!state.emisorId) { log('Primero completa los pasos anteriores', 'warn'); return; }
+  try {
+    const data = await apiFetch(
+      `/v1/certificacion/set-boletas/${state.emisorId}/preview`
+    );
+    showResult(4, true, JSON.stringify(data, null, 2));
+  } catch(e) {
+    showResult(4, false, e.data?.detail || JSON.stringify(e.data));
+  }
+}
+
+async function ejecutarCertificacion() {
+  if (!state.emisorId) {
+    log('Completa los pasos 1-3 antes de certificar', 'warn');
+    return;
+  }
+
+  const btn = document.getElementById('btnCertificar');
+  btn.disabled = true;
+  btn.textContent = '⏳  Enviando al SII...';
+
+  document.getElementById('certResults').style.display = 'none';
+  document.getElementById('trackBox').style.display    = 'none';
+
+  log('Iniciando set de certificación SII...', 'info');
+
+  try {
+    const data = await apiFetch(
+      `/v1/certificacion/set-boletas?emisor_id=${state.emisorId}`,
+      { method: 'POST' }
+    );
+
+    // Mostrar casos
+    const casesEl = document.getElementById('certCases');
+    casesEl.innerHTML = '';
+    for (const doc of (data.documentos || [])) {
+      const ok = doc.estado === 'FIRMADO_OK';
+      casesEl.innerHTML += `
+        <div class="cert-case">
+          <span class="case-num">caso ${doc.caso}</span>
+          <span class="case-desc">${doc.descripcion}</span>
+          ${doc.folio ? `<span style="font-family:var(--mono);font-size:11px;color:var(--muted)">folio ${doc.folio}</span>` : ''}
+          <span class="case-status ${ok?'ok':'fail'}">${ok ? 'firmado ✓' : 'error ✗'}</span>
+        </div>`;
+    }
+
+    document.getElementById('certResults').style.display = 'block';
+
+    // Track ID
+    if (data.track_id) {
+      document.getElementById('trackIdValue').textContent = data.track_id;
+      document.getElementById('trackBox').style.display = 'block';
+      log(`TrackID recibido: ${data.track_id}`, 'ok');
+      setBadge(4, '✓ enviado');
+      setCardDone(4);
+      showResult(4, true,
+        `Estado SII: ${data.estado_envio}\nMensaje: ${data.mensaje}\nTrack ID: ${data.track_id}`);
+    } else {
+      log(`Sin TrackID — ${data.estado_envio}: ${data.mensaje}`, 'error');
+      showResult(4, false,
+        `Estado: ${data.estado_envio}\nMensaje: ${data.mensaje}`);
+    }
+
+  } catch(e) {
+    const msg = e.data?.detail || JSON.stringify(e.data);
+    showResult(4, false, msg);
+    log('Error en certificación: ' + msg, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🚀 &nbsp;Enviar set de certificación al SII';
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// Card helpers
+// ══════════════════════════════════════════════════════
+function toggleCard(n) {
+  const card = document.getElementById('card'+n);
+  if (card.classList.contains('locked')) return;
+  const body = card.querySelector('.card-body');
+  body.style.display = body.style.display === 'none' ? 'block' : 'none';
+}
+function unlockCard(n) {
+  const card = document.getElementById('card'+n);
+  card.classList.remove('locked');
+  card.classList.add('active');
+  card.querySelector('.card-body').style.display = 'block';
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function setCardDone(n) {
+  document.getElementById('card'+n).classList.replace('active','done');
+}
+function setBadge(n, text) {
+  const b = document.getElementById('badge'+n);
+  b.textContent = text;
+  b.classList.replace('pending','');
+  b.style.background = 'rgba(16,185,129,0.1)';
+  b.style.color = 'var(--green)';
+  b.style.borderColor = 'rgba(16,185,129,0.2)';
+}
+
+// ══════════════════════════════════════════════════════
+// Drag & drop
+// ══════════════════════════════════════════════════════
+function handleDragOver(e, zoneId) {
+  e.preventDefault();
+  document.getElementById(zoneId).classList.add('dragover');
+}
+function handleDragLeave(zoneId) {
+  document.getElementById(zoneId).classList.remove('dragover');
+}
+function handleDrop(e, inputId, zoneId, ext, callback) {
+  e.preventDefault();
+  document.getElementById(zoneId).classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (!file || !file.name.endsWith(ext)) return;
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  const input = document.getElementById(inputId);
+  input.files = dt.files;
+  callback(input);
+}
+function handleDropMulti(e) {
+  e.preventDefault();
+  document.getElementById('zone_caf').classList.remove('dragover');
+  agregarCAFs(e.dataTransfer.files);
+}
+
+// ══════════════════════════════════════════════════════
+// Init
+// ══════════════════════════════════════════════════════
+window.onload = () => {
+  log('Panel YeparDTEcore iniciado', 'info');
+  log('Ingresa la URL de tu API en Railway y presiona "Probar conexión"', 'info');
+};
+</script>
+</body>
+</html>
