@@ -117,12 +117,7 @@ class SIISender:
             except Exception as e:
                 raise ValueError(f"DTE XML invalido: {e}")
 
-        # El SII exige declaración XML con encoding ISO-8859-1 al inicio.
-        # Sin ella devuelve SCH-00001: Invalid Schema Name.
-        # Analogía: es como firmar una carta sin membrete —
-        # el contenido es correcto pero el destinatario no sabe cómo leerla.
-        xml_body = etree.tostring(envio_el, encoding="unicode")
-        sobre_sin_firma = '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + xml_body
+        sobre_sin_firma = etree.tostring(envio_el, encoding="unicode")
         return firma_service.firmar_sobre(sobre_sin_firma)
 
     async def enviar_sobre(self, sobre_xml: str, rut_emisor: str,
