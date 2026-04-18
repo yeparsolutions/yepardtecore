@@ -3,1224 +3,507 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>YeparDTEcore — Panel de Configuración</title>
+<title>YeparDTEcore — Panel Admin</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg:       #07090f;
-    --surface:  #0e1219;
-    --card:     #131922;
-    --border:   rgba(255,255,255,0.07);
-    --border2:  rgba(255,255,255,0.13);
-    --green:    #10b981;
-    --green2:   #059669;
-    --blue:     #3b82f6;
-    --amber:    #f59e0b;
-    --red:      #ef4444;
-    --text:     #e2e8f0;
-    --muted:    #64748b;
-    --mono:     'JetBrains Mono', monospace;
-    --sans:     'Outfit', sans-serif;
+    --bg:      #07090f;
+    --surface: #0e1219;
+    --card:    #131922;
+    --border:  rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.13);
+    --green:   #10b981;
+    --blue:    #3b82f6;
+    --amber:   #f59e0b;
+    --red:     #ef4444;
+    --text:    #e2e8f0;
+    --muted:   #64748b;
+    --mono:    'JetBrains Mono', monospace;
+    --sans:    'Outfit', sans-serif;
   }
-
   * { box-sizing: border-box; margin: 0; padding: 0; }
-
   body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--sans);
-    font-size: 15px;
-    line-height: 1.6;
-    min-height: 100vh;
+    background: var(--bg); color: var(--text);
+    font-family: var(--sans); font-size: 15px;
+    line-height: 1.6; min-height: 100vh;
   }
-
-  /* ── Fondo con grid sutil ── */
   body::before {
-    content: '';
-    position: fixed; inset: 0; z-index: 0;
+    content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
     background-image:
-      linear-gradient(rgba(16,185,129,0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(16,185,129,0.03) 1px, transparent 1px);
+      linear-gradient(rgba(16,185,129,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(16,185,129,0.025) 1px, transparent 1px);
     background-size: 40px 40px;
-    pointer-events: none;
   }
 
-  /* ── Navbar ── */
   nav {
     position: sticky; top: 0; z-index: 100;
-    background: rgba(7,9,15,0.92);
-    backdrop-filter: blur(12px);
+    background: rgba(7,9,15,0.92); backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border);
-    padding: 0 24px;
-    height: 58px;
-    display: flex; align-items: center; gap: 20px;
+    padding: 0 24px; height: 58px;
+    display: flex; align-items: center; gap: 14px;
   }
-  .logo {
-    font-family: var(--mono);
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--green);
-    letter-spacing: -0.3px;
-    white-space: nowrap;
+  .nav-logo { display: flex; align-items: center; gap: 9px; text-decoration: none; }
+  .nav-logo img { height: 26px; width: auto; }
+  .nav-div { width: 1px; height: 20px; background: var(--border2); }
+  .nav-tag {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    padding: 3px 8px; border: 1px solid var(--border2); border-radius: 4px;
   }
-  .logo span { color: var(--muted); }
   .url-bar {
-    flex: 1;
-    display: flex; align-items: center; gap: 8px;
-    background: var(--surface);
-    border: 1px solid var(--border2);
-    border-radius: 8px;
-    padding: 0 12px;
-    height: 36px;
+    flex: 1; display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border: 1px solid var(--border2);
+    border-radius: 8px; padding: 0 12px; height: 36px;
   }
-  .url-label {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--muted);
-    white-space: nowrap;
-  }
+  .url-lbl { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
   .url-bar input {
-    flex: 1;
-    background: none;
-    border: none;
-    outline: none;
-    color: var(--text);
-    font-family: var(--mono);
-    font-size: 13px;
+    flex: 1; background: none; border: none; outline: none;
+    color: var(--text); font-family: var(--mono); font-size: 13px;
   }
   .url-bar input::placeholder { color: var(--muted); }
-  .dot-status {
-    width: 7px; height: 7px;
-    border-radius: 50%;
-    background: var(--muted);
-    flex-shrink: 0;
-    transition: background 0.3s;
-  }
-  .dot-status.online  { background: var(--green); box-shadow: 0 0 6px var(--green); }
-  .dot-status.error   { background: var(--red); }
-  .dot-status.loading { background: var(--amber); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; transition: background .3s; }
+  .dot.on  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.err { background: var(--red); }
+  .dot.ld  { background: var(--amber); }
 
-  /* ── Layout principal ── */
   .main {
     position: relative; z-index: 1;
-    max-width: 1100px;
-    margin: 0 auto;
+    max-width: 1100px; margin: 0 auto;
     padding: 32px 24px;
-    display: grid;
-    grid-template-columns: 1fr 360px;
-    gap: 24px;
-    align-items: start;
+    display: grid; grid-template-columns: 1fr 360px;
+    gap: 24px; align-items: start;
   }
-
-  /* ── Steps container ── */
   .steps { display: flex; flex-direction: column; gap: 16px; }
 
-  /* ── Card ── */
   .card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    overflow: hidden;
-    transition: border-color 0.2s;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; overflow: hidden; transition: border-color .2s;
   }
-  .card.active { border-color: rgba(16,185,129,0.35); }
-  .card.done   { border-color: rgba(16,185,129,0.2); opacity: 0.85; }
-  .card.locked { opacity: 0.4; pointer-events: none; }
+  .card.active { border-color: rgba(16,185,129,.35); }
+  .card.done   { border-color: rgba(16,185,129,.2); opacity: .85; }
+  .card.locked { opacity: .4; pointer-events: none; }
 
-  .card-header {
+  .card-head {
     display: flex; align-items: center; gap: 14px;
-    padding: 18px 22px;
-    border-bottom: 1px solid var(--border);
-    cursor: pointer;
-    user-select: none;
+    padding: 18px 22px; border-bottom: 1px solid var(--border);
+    cursor: pointer; user-select: none;
   }
-  .step-num {
-    width: 30px; height: 30px;
-    border-radius: 50%;
-    background: var(--surface);
-    border: 1px solid var(--border2);
+  .sn {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--surface); border: 1px solid var(--border2);
     display: flex; align-items: center; justify-content: center;
-    font-family: var(--mono);
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--muted);
-    flex-shrink: 0;
-    transition: all 0.3s;
+    font-family: var(--mono); font-size: 12px; font-weight: 500;
+    color: var(--muted); flex-shrink: 0; transition: all .3s;
   }
-  .card.active .step-num {
-    background: rgba(16,185,129,0.15);
-    border-color: var(--green);
-    color: var(--green);
-  }
-  .card.done .step-num {
-    background: rgba(16,185,129,0.15);
-    border-color: var(--green);
-    color: var(--green);
+  .card.active .sn, .card.done .sn {
+    background: rgba(16,185,129,.15); border-color: var(--green); color: var(--green);
   }
   .card-title { font-weight: 500; font-size: 15px; flex: 1; }
-  .card-badge {
-    font-family: var(--mono);
-    font-size: 11px;
-    padding: 3px 9px;
-    border-radius: 20px;
-    background: rgba(16,185,129,0.1);
-    color: var(--green);
-    border: 1px solid rgba(16,185,129,0.2);
+  .badge {
+    font-family: var(--mono); font-size: 11px;
+    padding: 3px 9px; border-radius: 20px;
   }
-  .card-badge.pending { background: rgba(100,116,139,0.1); color: var(--muted); border-color: var(--border); }
+  .badge.pend { background: rgba(100,116,139,.1); color: var(--muted); border: 1px solid var(--border); }
+  .badge.ok   { background: rgba(16,185,129,.1); color: var(--green); border: 1px solid rgba(16,185,129,.2); }
 
   .card-body { padding: 22px; display: none; }
-  .card.active .card-body,
-  .card.done   .card-body { display: block; }
+  .card.active .card-body, .card.done .card-body { display: block; }
 
-  /* ── Form elements ── */
-  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-  .form-grid.full { grid-template-columns: 1fr; }
-  .field { display: flex; flex-direction: column; gap: 6px; }
-  .field label {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+  .fg { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .f  { display: flex; flex-direction: column; gap: 6px; }
+  .f label {
+    font-size: 12px; font-weight: 500; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .5px;
   }
-  .field input, .field select {
-    background: var(--surface);
-    border: 1px solid var(--border2);
-    border-radius: 8px;
-    padding: 9px 12px;
-    color: var(--text);
-    font-family: var(--sans);
-    font-size: 14px;
-    outline: none;
-    transition: border-color 0.2s;
+  .f input, .f select {
+    background: var(--surface); border: 1px solid var(--border2);
+    border-radius: 8px; padding: 9px 12px; width: 100%;
+    color: var(--text); font-family: var(--sans); font-size: 14px;
+    outline: none; transition: border-color .2s;
   }
-  .field input:focus, .field select:focus {
-    border-color: var(--green);
-  }
-  .field input.rut-field {
-    font-family: var(--mono);
-    letter-spacing: 0.5px;
-  }
-  .field input.rut-field.valid   { border-color: var(--green); }
-  .field input.rut-field.invalid { border-color: var(--red); }
-  .rut-hint {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--muted);
-    margin-top: 2px;
-  }
-  .rut-hint.ok  { color: var(--green); }
-  .rut-hint.bad { color: var(--red); }
+  .f input:focus, .f select:focus { border-color: var(--green); }
+  .f input.mono { font-family: var(--mono); letter-spacing: .5px; }
+  .f input.valid   { border-color: var(--green); }
+  .f input.invalid { border-color: var(--red); }
+  .hint { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .hint.ok  { color: var(--green); }
+  .hint.bad { color: var(--red); }
 
-  /* ── Upload zone ── */
-  .upload-zone {
-    border: 1.5px dashed var(--border2);
-    border-radius: 10px;
-    padding: 28px 20px;
-    text-align: center;
-    cursor: pointer;
-    transition: all 0.2s;
-    position: relative;
+  .uzone {
+    border: 1.5px dashed var(--border2); border-radius: 10px;
+    padding: 26px 20px; text-align: center;
+    cursor: pointer; transition: all .2s; position: relative;
   }
-  .upload-zone:hover, .upload-zone.dragover {
-    border-color: var(--green);
-    background: rgba(16,185,129,0.04);
-  }
-  .upload-zone input[type="file"] {
-    position: absolute; inset: 0;
-    opacity: 0; cursor: pointer;
-    width: 100%; height: 100%;
-  }
-  .upload-icon { font-size: 28px; margin-bottom: 8px; }
-  .upload-text { font-size: 13px; color: var(--muted); }
-  .upload-text strong { color: var(--text); display: block; margin-bottom: 4px; }
-  .file-selected {
-    margin-top: 12px;
-    background: rgba(16,185,129,0.08);
-    border: 1px solid rgba(16,185,129,0.2);
-    border-radius: 8px;
-    padding: 10px 14px;
-    display: none;
-    align-items: center;
-    gap: 10px;
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--green);
-  }
-  .file-selected.visible { display: flex; }
+  .uzone:hover, .uzone.over { border-color: var(--green); background: rgba(16,185,129,.04); }
+  .uzone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .uicon { font-size: 26px; margin-bottom: 8px; }
+  .utxt  { font-size: 13px; color: var(--muted); }
+  .utxt strong { color: var(--text); display: block; margin-bottom: 3px; }
 
-  /* CAF list */
-  .caf-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
-  .caf-item {
+  .chip {
+    display: none; margin-top: 10px;
+    background: rgba(16,185,129,.08); border: 1px solid rgba(16,185,129,.2);
+    border-radius: 8px; padding: 9px 13px;
+    align-items: center; gap: 9px;
+    font-family: var(--mono); font-size: 12px; color: var(--green);
+  }
+  .chip.show { display: flex; }
+
+  .clist { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  .crow {
     display: flex; align-items: center; gap: 10px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 9px 13px;
-    font-size: 13px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 9px 13px; font-size: 13px;
   }
-  .caf-item .tipo {
-    font-family: var(--mono);
-    font-size: 11px;
-    padding: 2px 7px;
-    border-radius: 4px;
-    background: rgba(59,130,246,0.12);
-    color: #60a5fa;
-    border: 1px solid rgba(59,130,246,0.2);
-    white-space: nowrap;
+  .ctipo {
+    font-family: var(--mono); font-size: 11px; padding: 2px 7px; border-radius: 4px;
+    background: rgba(59,130,246,.12); color: #60a5fa;
+    border: 1px solid rgba(59,130,246,.2); white-space: nowrap;
   }
-  .caf-item .nombre { flex: 1; color: var(--muted); font-size: 12px; }
-  .caf-item .remove {
-    cursor: pointer; color: var(--muted);
-    font-size: 16px; line-height: 1;
-    transition: color 0.15s;
-  }
-  .caf-item .remove:hover { color: var(--red); }
+  .cnombre { flex: 1; color: var(--muted); font-size: 12px; }
+  .cfile   { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .cdel { cursor: pointer; color: var(--muted); font-size: 18px; line-height: 1; transition: color .15s; }
+  .cdel:hover { color: var(--red); }
 
-  /* ── Buttons ── */
   .btn {
     display: inline-flex; align-items: center; justify-content: center;
-    gap: 8px;
-    padding: 10px 20px;
-    border-radius: 8px;
-    font-family: var(--sans);
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    border: none;
-    transition: all 0.15s;
+    gap: 8px; padding: 10px 20px; border-radius: 8px;
+    font-family: var(--sans); font-size: 14px; font-weight: 500;
+    cursor: pointer; border: none; transition: all .15s;
   }
-  .btn-primary {
-    background: var(--green);
-    color: #000;
-  }
-  .btn-primary:hover { background: #0ea572; transform: translateY(-1px); }
-  .btn-primary:active { transform: scale(0.98); }
-  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
-  .btn-ghost {
-    background: var(--surface);
-    color: var(--text);
-    border: 1px solid var(--border2);
-  }
-  .btn-ghost:hover { border-color: var(--green); color: var(--green); }
-  .btn-danger {
-    background: rgba(239,68,68,0.1);
-    color: var(--red);
-    border: 1px solid rgba(239,68,68,0.25);
-  }
-  .btn-danger:hover { background: rgba(239,68,68,0.2); }
-  .btn-full { width: 100%; }
-  .btn-row { display: flex; gap: 10px; margin-top: 18px; }
+  .bp  { background: var(--green); color: #000; }
+  .bp:hover { background: #0ea572; transform: translateY(-1px); }
+  .bp:active { transform: scale(.98); }
+  .bp:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+  .bg  { background: var(--surface); color: var(--text); border: 1px solid var(--border2); }
+  .bg:hover { border-color: var(--green); color: var(--green); }
+  .bfull { width: 100%; }
+  .brow  { display: flex; gap: 10px; margin-top: 18px; }
 
-  /* ── Result box ── */
-  .result-box {
-    margin-top: 16px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 14px 16px;
-    font-family: var(--mono);
-    font-size: 12px;
-    display: none;
+  .result {
+    display: none; margin-top: 16px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px;
+    font-family: var(--mono); font-size: 12px;
   }
-  .result-box.visible { display: block; }
-  .result-box.ok   { border-color: rgba(16,185,129,0.3); }
-  .result-box.fail { border-color: rgba(239,68,68,0.3); }
-  .result-label {
-    font-size: 11px;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-bottom: 8px;
-  }
-  .result-label.ok   { color: var(--green); }
-  .result-label.fail { color: var(--red); }
-  .result-content { color: #94a3b8; white-space: pre-wrap; word-break: break-all; }
+  .result.show { display: block; }
+  .result.ok   { border-color: rgba(16,185,129,.3); }
+  .result.fail { border-color: rgba(239,68,68,.3); }
+  .rlbl { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .rlbl.ok   { color: var(--green); }
+  .rlbl.fail { color: var(--red); }
+  .rbody { color: #94a3b8; white-space: pre-wrap; word-break: break-all; }
 
-  /* ── Panel derecho: Console ── */
-  .console-panel {
+  .chklist {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px; margin-bottom: 18px;
+  }
+  .chk-t { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px; }
+  .chk-i { font-size: 13px; padding: 3px 0; }
+
+  .ccases { display: flex; flex-direction: column; gap: 9px; margin-top: 16px; }
+  .ccase {
+    display: flex; align-items: center; gap: 11px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 9px; padding: 10px 14px; font-size: 13px;
+  }
+  .cn { font-family: var(--mono); font-size: 11px; padding: 2px 7px; border-radius: 4px; background: var(--card); color: var(--muted); border: 1px solid var(--border2); }
+  .cd { flex: 1; font-size: 12px; color: var(--muted); }
+  .cs { font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 4px; }
+  .cs.ok   { background: rgba(16,185,129,.1); color: var(--green); }
+  .cs.fail { background: rgba(239,68,68,.1);  color: var(--red); }
+
+  .tbox {
+    margin-top: 18px; background: rgba(16,185,129,.06);
+    border: 1px solid rgba(16,185,129,.25); border-radius: 12px;
+    padding: 20px; text-align: center;
+  }
+  .tlbl { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .tid  { font-family: var(--mono); font-size: 24px; font-weight: 500; color: var(--green); letter-spacing: 2px; }
+  .tsub { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+  .con {
     position: sticky; top: 78px;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    overflow: hidden;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; overflow: hidden;
   }
-  .console-header {
+  .con-h {
     display: flex; align-items: center; gap: 10px;
-    padding: 14px 18px;
-    border-bottom: 1px solid var(--border);
+    padding: 13px 18px; border-bottom: 1px solid var(--border);
   }
-  .console-title {
-    font-family: var(--mono);
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--muted);
-    flex: 1;
+  .con-t  { font-family: var(--mono); font-size: 12px; color: var(--muted); flex: 1; }
+  .con-cl { font-size: 11px; color: var(--muted); cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: color .15s; }
+  .con-cl:hover { color: var(--red); }
+  .con-b  { height: 460px; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 5px; }
+  .lg {
+    font-family: var(--mono); font-size: 11px; line-height: 1.5;
+    padding: 6px 10px; border-radius: 6px; border-left: 2px solid transparent;
   }
-  .console-clear {
-    font-size: 11px; color: var(--muted);
-    cursor: pointer; padding: 2px 6px;
-    border-radius: 4px;
-    transition: color 0.15s;
-  }
-  .console-clear:hover { color: var(--red); }
-  .console-body {
-    height: 460px;
-    overflow-y: auto;
-    padding: 14px;
-    display: flex; flex-direction: column; gap: 6px;
-  }
-  .log-entry {
-    font-family: var(--mono);
-    font-size: 11px;
-    line-height: 1.5;
-    padding: 6px 10px;
-    border-radius: 6px;
-    border-left: 2px solid transparent;
-  }
-  .log-entry.info  { border-color: var(--blue);  background: rgba(59,130,246,0.05); color: #93c5fd; }
-  .log-entry.ok    { border-color: var(--green); background: rgba(16,185,129,0.05); color: #6ee7b7; }
-  .log-entry.error { border-color: var(--red);   background: rgba(239,68,68,0.05);  color: #fca5a5; }
-  .log-entry.warn  { border-color: var(--amber); background: rgba(245,158,11,0.05); color: #fcd34d; }
-  .log-time { color: var(--muted); margin-right: 6px; }
+  .lg.info { border-color: var(--blue);  background: rgba(59,130,246,.05); color: #93c5fd; }
+  .lg.ok   { border-color: var(--green); background: rgba(16,185,129,.05); color: #6ee7b7; }
+  .lg.err  { border-color: var(--red);   background: rgba(239,68,68,.05);  color: #fca5a5; }
+  .lg.warn { border-color: var(--amber); background: rgba(245,158,11,.05); color: #fcd34d; }
+  .lgt { color: var(--muted); margin-right: 6px; }
 
-  /* ── Cert resultado panel ── */
-  .cert-results { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
-  .cert-case {
-    display: flex; align-items: center; gap: 12px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 9px;
-    padding: 11px 14px;
-    font-size: 13px;
-  }
-  .case-num {
-    font-family: var(--mono);
-    font-size: 11px;
-    padding: 2px 7px;
-    border-radius: 4px;
-    background: var(--card);
-    color: var(--muted);
-    border: 1px solid var(--border2);
-    white-space: nowrap;
-  }
-  .case-desc { flex: 1; font-size: 12px; color: var(--muted); }
-  .case-status {
-    font-family: var(--mono);
-    font-size: 11px;
-    padding: 2px 8px;
-    border-radius: 4px;
-  }
-  .case-status.ok   { background: rgba(16,185,129,0.1); color: var(--green); }
-  .case-status.fail { background: rgba(239,68,68,0.1);  color: var(--red); }
-  .track-box {
-    margin-top: 16px;
-    background: rgba(16,185,129,0.06);
-    border: 1px solid rgba(16,185,129,0.25);
-    border-radius: 10px;
-    padding: 18px;
-    text-align: center;
-  }
-  .track-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-  .track-id {
-    font-family: var(--mono);
-    font-size: 22px;
-    font-weight: 500;
-    color: var(--green);
-    letter-spacing: 2px;
-  }
-
-  /* scrollbar */
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 
   @media (max-width: 768px) {
     .main { grid-template-columns: 1fr; }
-    .console-panel { position: static; }
-    .form-grid { grid-template-columns: 1fr; }
+    .con  { position: static; }
+    .fg   { grid-template-columns: 1fr; }
   }
 </style>
 </head>
 <body>
 
-<!-- ── Navbar ── -->
 <nav>
-  <div class="logo">yepar<span>/</span>dtecore</div>
+  <a class="nav-logo" href="/">
+    <img src="/static/isotipo.svg" alt="YeparDTEcore">
+  </a>
+  <div class="nav-div"></div>
+  <span class="nav-tag">panel admin</span>
   <div class="url-bar">
-    <span class="url-label">API&nbsp;</span>
-    <input id="apiUrl" type="text"
-      placeholder="https://tu-app.railway.app"
-      value="https://tu-app.railway.app">
-    <div class="dot-status" id="dotStatus"></div>
+    <span class="url-lbl">API&nbsp;</span>
+    <input id="apiUrl" type="text" placeholder="https://app.yepardte.cl">
+    <div class="dot" id="dot"></div>
   </div>
-  <button class="btn btn-ghost" onclick="testConnection()" style="white-space:nowrap;padding:7px 14px;font-size:13px">
+  <button class="btn bg" onclick="testConn()" style="white-space:nowrap;padding:7px 14px;font-size:13px">
     Probar conexión
   </button>
 </nav>
 
-<!-- ── Main ── -->
 <div class="main">
+<div class="steps">
 
-  <!-- Steps -->
-  <div class="steps">
-
-    <!-- ══ Step 1: Emisor ══ -->
-    <div class="card active" id="card1">
-      <div class="card-header" onclick="toggleCard(1)">
-        <div class="step-num">1</div>
-        <div class="card-title">Crear Emisor</div>
-        <div class="card-badge pending" id="badge1">pendiente</div>
-      </div>
-      <div class="card-body">
-        <div class="form-grid">
-
-          <div class="field">
-            <label>RUT Empresa</label>
-            <input type="text" id="e_rut" class="rut-field"
-              placeholder="78.377.021-0"
-              oninput="handleRutInput(this, 'hint_rut_e')">
-            <div class="rut-hint" id="hint_rut_e">Ingresa el RUT con o sin puntos</div>
-          </div>
-
-          <div class="field">
-            <label>Razón Social</label>
-            <input type="text" id="e_razon" placeholder="Yepar Solutions SpA">
-          </div>
-
-          <div class="field" style="grid-column:1/-1">
-            <label>Giro Comercial</label>
-            <input type="text" id="e_giro" placeholder="Servicios de tecnología">
-          </div>
-
-          <div class="field" style="grid-column:1/-1">
-            <label>Dirección</label>
-            <input type="text" id="e_dir" placeholder="Av. Providencia 1234, Of. 501">
-          </div>
-
-          <div class="field">
-            <label>Comuna</label>
-            <input type="text" id="e_comuna" placeholder="Providencia">
-          </div>
-
-          <div class="field">
-            <label>Ciudad</label>
-            <input type="text" id="e_ciudad" placeholder="Santiago">
-          </div>
-
-          <div class="field">
-            <label>Teléfono (opcional)</label>
-            <input type="text" id="e_tel" placeholder="+56 2 1234 5678">
-          </div>
-
-          <div class="field">
-            <label>Ambiente</label>
-            <select id="e_ambiente">
-              <option value="certificacion" selected>Certificación (maullin)</option>
-              <option value="produccion">Producción (palena)</option>
-            </select>
-          </div>
-
-        </div>
-
-        <div class="btn-row">
-          <button class="btn btn-primary" onclick="crearEmisor()">
-            Crear emisor
-          </button>
-        </div>
-
-        <div class="result-box" id="res1">
-          <div class="result-label" id="res1_label"></div>
-          <div class="result-content" id="res1_content"></div>
-        </div>
-      </div>
+  <!-- Paso 1 -->
+  <div class="card active" id="c1">
+    <div class="card-head" onclick="tgl(1)">
+      <div class="sn">1</div>
+      <div class="card-title">Crear Emisor</div>
+      <span class="badge pend" id="b1">pendiente</span>
     </div>
-
-
-    <!-- ══ Step 2: Certificado .p12 ══ -->
-    <div class="card locked" id="card2">
-      <div class="card-header" onclick="toggleCard(2)">
-        <div class="step-num">2</div>
-        <div class="card-title">Subir Certificado Digital (.p12)</div>
-        <div class="card-badge pending" id="badge2">pendiente</div>
-      </div>
-      <div class="card-body">
-        <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
-          Sube el archivo <code style="font-family:var(--mono);color:var(--text)">.p12</code>
-          que descargaste del SII. Se guarda en PostgreSQL —
-          nunca en archivos de Railway.
-        </p>
-
-        <div class="upload-zone" id="zone_p12"
-          ondragover="handleDragOver(event,'zone_p12')"
-          ondragleave="handleDragLeave('zone_p12')"
-          ondrop="handleDrop(event,'p12_file','zone_p12','.p12',showP12Name)">
-          <input type="file" id="p12_file" accept=".p12,.pfx"
-            onchange="showP12Name(this)">
-          <div class="upload-icon">🔐</div>
-          <div class="upload-text">
-            <strong>Arrastra el .p12 aquí o haz clic</strong>
-            Formatos: .p12 / .pfx
-          </div>
+    <div class="card-body">
+      <div class="fg">
+        <div class="f">
+          <label>RUT Empresa</label>
+          <input id="e_rut" class="mono" type="text" placeholder="78.377.021-0" oninput="onRut(this,'hr')">
+          <div class="hint" id="hr">Con o sin puntos — se formatea automáticamente para el SII</div>
         </div>
-
-        <div class="file-selected" id="p12_selected">
-          <span>📄</span>
-          <span id="p12_name"></span>
+        <div class="f">
+          <label>Razón Social</label>
+          <input id="e_rs" type="text" placeholder="Yepar Solutions SpA">
         </div>
-
-        <div class="field" style="margin-top:14px">
-          <label>Contraseña del certificado</label>
-          <input type="password" id="p12_pass" placeholder="••••••••">
+        <div class="f" style="grid-column:1/-1">
+          <label>Giro Comercial</label>
+          <input id="e_giro" type="text" placeholder="Servicios de tecnología">
         </div>
-
-        <div class="btn-row">
-          <button class="btn btn-primary" onclick="subirCertificado()">
-            Subir certificado
-          </button>
+        <div class="f" style="grid-column:1/-1">
+          <label>Dirección</label>
+          <input id="e_dir" type="text" placeholder="Av. Providencia 1234, Of. 501">
         </div>
-
-        <div class="result-box" id="res2">
-          <div class="result-label" id="res2_label"></div>
-          <div class="result-content" id="res2_content"></div>
+        <div class="f">
+          <label>Comuna</label>
+          <input id="e_comuna" type="text" placeholder="Santiago">
+        </div>
+        <div class="f">
+          <label>Ciudad</label>
+          <input id="e_ciudad" type="text" placeholder="Santiago">
+        </div>
+        <div class="f">
+          <label>Teléfono (opcional)</label>
+          <input id="e_tel" type="text" placeholder="+56 2 1234 5678">
+        </div>
+        <div class="f">
+          <label>Ambiente</label>
+          <select id="e_amb">
+            <option value="certificacion" selected>Certificación (maullin)</option>
+            <option value="produccion">Producción (palena)</option>
+          </select>
         </div>
       </div>
-    </div>
-
-
-    <!-- ══ Step 3: CAFs ══ -->
-    <div class="card locked" id="card3">
-      <div class="card-header" onclick="toggleCard(3)">
-        <div class="step-num">3</div>
-        <div class="card-title">Cargar CAFs del SII</div>
-        <div class="card-badge pending" id="badge3">pendiente</div>
+      <div class="brow">
+        <button class="btn bp" onclick="crearEmisor()">Crear emisor</button>
       </div>
-      <div class="card-body">
-        <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
-          Para certificar boletas necesitas al menos los CAFs
-          <code style="font-family:var(--mono);color:#60a5fa">tipo 39</code> y
-          <code style="font-family:var(--mono);color:#60a5fa">tipo 41</code>.
-          Puedes subir todos los demás también.
-        </p>
-
-        <div class="upload-zone" id="zone_caf"
-          ondragover="handleDragOver(event,'zone_caf')"
-          ondragleave="handleDragLeave('zone_caf')"
-          ondrop="handleDropMulti(event)">
-          <input type="file" id="caf_files" accept=".xml" multiple
-            onchange="agregarCAFs(this.files)">
-          <div class="upload-icon">📑</div>
-          <div class="upload-text">
-            <strong>Arrastra los XML de CAF o haz clic</strong>
-            Puedes seleccionar varios a la vez (.xml)
-          </div>
-        </div>
-
-        <div class="caf-list" id="caf_list"></div>
-
-        <div class="btn-row">
-          <button class="btn btn-primary" id="btnSubirCAFs"
-            onclick="subirTodosCAFs()" disabled>
-            Subir CAFs a la BD
-          </button>
-          <button class="btn btn-ghost" onclick="clearCAFs()">
-            Limpiar lista
-          </button>
-        </div>
-
-        <div class="result-box" id="res3">
-          <div class="result-label" id="res3_label"></div>
-          <div class="result-content" id="res3_content"></div>
-        </div>
-      </div>
-    </div>
-
-
-    <!-- ══ Step 4: Certificación ══ -->
-    <div class="card locked" id="card4">
-      <div class="card-header" onclick="toggleCard(4)">
-        <div class="step-num">4</div>
-        <div class="card-title">Ejecutar Certificación SII</div>
-        <div class="card-badge pending" id="badge4">pendiente</div>
-      </div>
-      <div class="card-body">
-        <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
-          Envía el set de 5 boletas a <code style="font-family:var(--mono);color:var(--green)">maullin.sii.cl</code>.
-          El motor firma cada boleta individualmente (con TED) y luego
-          las empaqueta en un solo <code style="font-family:var(--mono);color:var(--text)">EnvioBOLETA</code>.
-        </p>
-
-        <!-- Checklist pre-certificación -->
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:18px">
-          <div style="font-size:12px;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px">
-            Checklist previo
-          </div>
-          <div style="display:flex;flex-direction:column;gap:7px;font-size:13px">
-            <div class="check-item" id="chk_emisor">⬜ Emisor creado</div>
-            <div class="check-item" id="chk_cert">⬜ Certificado .p12 cargado</div>
-            <div class="check-item" id="chk_caf39">⬜ CAF tipo 39 (Boleta) cargado</div>
-            <div class="check-item" id="chk_caf41">⬜ CAF tipo 41 (Boleta exenta) cargado</div>
-          </div>
-        </div>
-
-        <div class="btn-row" style="flex-direction:column;gap:10px">
-          <button class="btn btn-primary btn-full" id="btnCertificar"
-            onclick="ejecutarCertificacion()" style="padding:13px">
-            🚀 &nbsp;Enviar set de certificación al SII
-          </button>
-          <button class="btn btn-ghost btn-full"
-            onclick="previewCertificacion()" style="font-size:13px">
-            Ver preview de los 5 casos (sin enviar)
-          </button>
-        </div>
-
-        <div id="certResults" style="display:none">
-          <div class="cert-results" id="certCases"></div>
-          <div class="track-box" id="trackBox" style="display:none">
-            <div class="track-label">Track ID recibido del SII</div>
-            <div class="track-id" id="trackIdValue"></div>
-            <div style="font-size:12px;color:var(--muted);margin-top:8px">
-              Guarda este número — con él consultas el estado de la certificación
-            </div>
-          </div>
-        </div>
-
-        <div class="result-box" id="res4">
-          <div class="result-label" id="res4_label"></div>
-          <div class="result-content" id="res4_content"></div>
-        </div>
-      </div>
-    </div>
-
-  </div><!-- /steps -->
-
-
-  <!-- ── Console panel ── -->
-  <div class="console-panel">
-    <div class="console-header">
-      <div class="console-title">▸ consola API</div>
-      <div class="console-clear" onclick="clearConsole()">limpiar</div>
-    </div>
-    <div class="console-body" id="consoleBody">
-      <div class="log-entry info">
-        <span class="log-time">--:--:--</span>
-        Panel listo. Configura la URL de tu API en Railway arriba.
-      </div>
+      <div class="result" id="r1"><div class="rlbl" id="r1l"></div><div class="rbody" id="r1c"></div></div>
     </div>
   </div>
 
-</div><!-- /main -->
+  <!-- Paso 2 -->
+  <div class="card locked" id="c2">
+    <div class="card-head" onclick="tgl(2)">
+      <div class="sn">2</div>
+      <div class="card-title">Subir Certificado Digital (.p12)</div>
+      <span class="badge pend" id="b2">pendiente</span>
+    </div>
+    <div class="card-body">
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+        El <code style="font-family:var(--mono);color:var(--text)">.p12</code>
+        se guarda en PostgreSQL — no en el filesystem efímero de Railway.
+      </p>
+      <div class="uzone" id="z2" ondragover="dOv(event,'z2')" ondragleave="dLv('z2')" ondrop="dDp(event,'fp12','z2',showP12)">
+        <input type="file" id="fp12" accept=".p12,.pfx" onchange="showP12(this)">
+        <div class="uicon">🔐</div>
+        <div class="utxt"><strong>Arrastra el .p12 aquí o haz clic</strong>Formatos: .p12 / .pfx</div>
+      </div>
+      <div class="chip" id="chip2"><span>📄</span><span id="name2"></span></div>
+      <div class="f" style="margin-top:14px">
+        <label>Contraseña del certificado</label>
+        <input type="password" id="p12pw" placeholder="••••••••">
+      </div>
+      <div class="brow">
+        <button class="btn bp" onclick="subirCert()">Subir certificado</button>
+      </div>
+      <div class="result" id="r2"><div class="rlbl" id="r2l"></div><div class="rbody" id="r2c"></div></div>
+    </div>
+  </div>
 
+  <!-- Paso 3 -->
+  <div class="card locked" id="c3">
+    <div class="card-head" onclick="tgl(3)">
+      <div class="sn">3</div>
+      <div class="card-title">Cargar CAFs del SII</div>
+      <span class="badge pend" id="b3">pendiente</span>
+    </div>
+    <div class="card-body">
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+        Mínimo necesitas <code style="font-family:var(--mono);color:#60a5fa">tipo 39</code> y
+        <code style="font-family:var(--mono);color:#60a5fa">tipo 41</code> para la certificación.
+        Puedes subir todos a la vez.
+      </p>
+      <div class="uzone" id="z3" ondragover="dOv(event,'z3')" ondragleave="dLv('z3')" ondrop="dpCAFs(event)">
+        <input type="file" id="fcafs" accept=".xml" multiple onchange="addCAFs(this.files)">
+        <div class="uicon">📑</div>
+        <div class="utxt"><strong>Arrastra los XML de CAF o haz clic</strong>Puedes seleccionar varios a la vez</div>
+      </div>
+      <div class="clist" id="clist"></div>
+      <div class="brow">
+        <button class="btn bp" id="bcafs" onclick="subirCAFs()" disabled>Subir CAFs a la BD</button>
+        <button class="btn bg" onclick="clrCAFs()">Limpiar</button>
+      </div>
+      <div class="result" id="r3"><div class="rlbl" id="r3l"></div><div class="rbody" id="r3c"></div></div>
+    </div>
+  </div>
+
+  <!-- Paso 4 -->
+  <div class="card locked" id="c4">
+    <div class="card-head" onclick="tgl(4)">
+      <div class="sn">4</div>
+      <div class="card-title">Ejecutar Certificación SII</div>
+      <span class="badge pend" id="b4">pendiente</span>
+    </div>
+    <div class="card-body">
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+        Envía el set oficial de 5 boletas a
+        <code style="font-family:var(--mono);color:var(--green)">maullin.sii.cl</code>.
+        Cada boleta se firma con TED individual antes de armar el
+        <code style="font-family:var(--mono)">EnvioBOLETA</code>.
+      </p>
+      <div class="chklist">
+        <div class="chk-t">Checklist previo</div>
+        <div class="chk-i" id="chke">⬜ Emisor creado</div>
+        <div class="chk-i" id="chkc">⬜ Certificado .p12 cargado</div>
+        <div class="chk-i" id="chk39">⬜ CAF tipo 39 (Boleta) cargado</div>
+        <div class="chk-i" id="chk41">⬜ CAF tipo 41 (Boleta exenta) cargado</div>
+      </div>
+      <div class="brow" style="flex-direction:column;gap:10px">
+        <button class="btn bp bfull" id="bcert" onclick="certificar()" style="padding:13px">
+          🚀 &nbsp;Enviar set de certificación al SII
+        </button>
+        <button class="btn bg bfull" onclick="previewCert()" style="font-size:13px">
+          Ver preview de los 5 casos (sin enviar)
+        </button>
+      </div>
+      <div id="cout" style="display:none">
+        <div class="ccases" id="ccases"></div>
+        <div class="tbox" id="tbox" style="display:none">
+          <div class="tlbl">Track ID recibido del SII</div>
+          <div class="tid" id="tid"></div>
+          <div class="tsub">Guarda este número — con él consultas el estado de la certificación</div>
+        </div>
+      </div>
+      <div class="result" id="r4"><div class="rlbl" id="r4l"></div><div class="rbody" id="r4c"></div></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Consola -->
+<div class="con">
+  <div class="con-h">
+    <div class="con-t">▸ consola API</div>
+    <div class="con-cl" onclick="clrLog()">limpiar</div>
+  </div>
+  <div class="con-b" id="conb"></div>
+</div>
+</div>
 
 <script>
-// ══════════════════════════════════════════════════════
-// Estado global
-// ══════════════════════════════════════════════════════
-const state = {
-  emisorId:   null,
-  rutEmisor:  null,
-  certOk:     false,
-  cafsOk:     false,
-  tiposCargados: new Set(),
-  cafFiles:   [],   // [{file, tipo, nombre}]
-};
+const S={id:null,cert:false,tipos:new Set(),cafs:[]};
 
-// ══════════════════════════════════════════════════════
-// RUT: formateo y validación
-// El SII exige: sin puntos, con guión  → "78377021-0"
-// ══════════════════════════════════════════════════════
-function rutParaSII(raw) {
-  // 1. Quitar puntos y espacios, mayúscula
-  let clean = raw.replace(/[.\s]/g, '').toUpperCase();
-  // 2. Si no tiene guión, insertar antes del último carácter
-  if (!clean.includes('-') && clean.length > 1) {
-    clean = clean.slice(0, -1) + '-' + clean.slice(-1);
-  }
-  return clean; // "78377021-0"
-}
+// RUT — SII exige sin puntos con guión: "78377021-0"
+function rutSII(r){let c=r.replace(/[.\s]/g,'').toUpperCase();if(!c.includes('-')&&c.length>1)c=c.slice(0,-1)+'-'+c.slice(-1);return c;}
+function vRut(r){const c=r.replace(/[.\s-]/g,'').toUpperCase();if(c.length<2)return false;const dv=c.slice(-1),b=c.slice(0,-1);if(!/^\d+$/.test(b))return false;let s=0,m=2;for(let i=b.length-1;i>=0;i--){s+=parseInt(b[i])*m;m=m===7?2:m+1;}const e=11-(s%11);return dv===(e===11?'0':e===10?'K':String(e));}
+function onRut(inp,hid){const h=document.getElementById(hid);if(!inp.value){inp.className='mono';h.textContent='Con o sin puntos — se formatea automáticamente para el SII';h.className='hint';return;}const ok=vRut(inp.value);inp.classList.toggle('valid',ok);inp.classList.toggle('invalid',!ok);if(ok){h.textContent='✓ SII recibirá: '+rutSII(inp.value);h.className='hint ok';}else{h.textContent='✗ Dígito verificador inválido';h.className='hint bad';}}
 
-function rutConFormato(raw) {
-  // Para mostrar al usuario: con puntos y guión
-  let clean = raw.replace(/[.\s-]/g, '').toUpperCase();
-  if (clean.length < 2) return raw;
-  const dv   = clean.slice(-1);
-  const body = clean.slice(0, -1).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  return body + '-' + dv;
-}
+// Log
+function log(msg,t='info'){const b=document.getElementById('conb');const now=new Date().toLocaleTimeString('es-CL',{hour12:false});const d=document.createElement('div');d.className='lg '+t;d.innerHTML=`<span class="lgt">${now}</span>${msg}`;b.appendChild(d);b.scrollTop=b.scrollHeight;}
+function clrLog(){document.getElementById('conb').innerHTML='';}
 
-function validarRut(raw) {
-  // Validación módulo 11
-  const clean = raw.replace(/[.\s-]/g, '').toUpperCase();
-  if (clean.length < 2) return false;
-  const dv   = clean.slice(-1);
-  const body = clean.slice(0, -1);
-  if (!/^\d+$/.test(body)) return false;
-  let sum = 0, mul = 2;
-  for (let i = body.length - 1; i >= 0; i--) {
-    sum += parseInt(body[i]) * mul;
-    mul = mul === 7 ? 2 : mul + 1;
-  }
-  const expected = 11 - (sum % 11);
-  const dvCalc = expected === 11 ? '0' : expected === 10 ? 'K' : String(expected);
-  return dv === dvCalc;
-}
+// API
+function base(){return(document.getElementById('apiUrl').value||'').trim().replace(/\/$/,'');}
+async function api(path,opts={}){log(`→ ${opts.method||'GET'} ${path}`,'info');const r=await fetch(base()+path,opts);const txt=await r.text();let d;try{d=JSON.parse(txt);}catch{d=txt;}r.ok?log(`← ${r.status} OK`,'ok'):log(`← ${r.status} ${JSON.stringify(d).slice(0,100)}`,'err');if(!r.ok)throw{status:r.status,data:d};return d;}
 
-function handleRutInput(input, hintId) {
-  const val  = input.value;
-  const hint = document.getElementById(hintId);
-  if (!val) {
-    input.classList.remove('valid','invalid');
-    hint.textContent = 'Ingresa el RUT con o sin puntos';
-    hint.className = 'rut-hint';
-    return;
-  }
-  const sii = rutParaSII(val);
-  const ok  = validarRut(val);
-  input.classList.toggle('valid',   ok);
-  input.classList.toggle('invalid', !ok);
-  if (ok) {
-    hint.textContent = '✓ SII recibirá: ' + sii;
-    hint.className = 'rut-hint ok';
-  } else {
-    hint.textContent = '✗ RUT inválido (dígito verificador no coincide)';
-    hint.className = 'rut-hint bad';
-  }
-}
+// Resultado
+function res(n,ok,body){const box=document.getElementById('r'+n);box.className='result show '+(ok?'ok':'fail');document.getElementById('r'+n+'l').className='rlbl '+(ok?'ok':'fail');document.getElementById('r'+n+'l').textContent=ok?'✓ éxito':'✗ error';document.getElementById('r'+n+'c').textContent=typeof body==='string'?body:JSON.stringify(body,null,2);}
 
-// ══════════════════════════════════════════════════════
-// Consola de logs
-// ══════════════════════════════════════════════════════
-function log(msg, type = 'info') {
-  const body  = document.getElementById('consoleBody');
-  const now   = new Date().toLocaleTimeString('es-CL', {hour12: false});
-  const el    = document.createElement('div');
-  el.className = `log-entry ${type}`;
-  el.innerHTML = `<span class="log-time">${now}</span>${msg}`;
-  body.appendChild(el);
-  body.scrollTop = body.scrollHeight;
-}
-function clearConsole() {
-  document.getElementById('consoleBody').innerHTML = '';
-}
-
-// ══════════════════════════════════════════════════════
-// Helpers
-// ══════════════════════════════════════════════════════
-function apiBase() {
-  return document.getElementById('apiUrl').value.trim().replace(/\/$/, '');
-}
-
-function showResult(n, ok, content) {
-  const box = document.getElementById('res'+n);
-  const lbl = document.getElementById('res'+n+'_label');
-  const cnt = document.getElementById('res'+n+'_content');
-  box.className = 'result-box visible ' + (ok ? 'ok' : 'fail');
-  lbl.className = 'result-label ' + (ok ? 'ok' : 'fail');
-  lbl.textContent = ok ? '✓ éxito' : '✗ error';
-  cnt.textContent = typeof content === 'string'
-    ? content
-    : JSON.stringify(content, null, 2);
-}
-
-async function apiFetch(path, opts = {}) {
-  const url = apiBase() + path;
-  log(`→ ${opts.method || 'GET'} ${path}`, 'info');
-  const res = await fetch(url, opts);
-  const text = await res.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = text; }
-  if (res.ok) {
-    log(`← ${res.status} OK`, 'ok');
-  } else {
-    log(`← ${res.status} ${JSON.stringify(data).slice(0,120)}`, 'error');
-  }
-  if (!res.ok) throw { status: res.status, data };
-  return data;
-}
-
-// ══════════════════════════════════════════════════════
 // Conexión
-// ══════════════════════════════════════════════════════
-async function testConnection() {
-  const dot = document.getElementById('dotStatus');
-  dot.className = 'dot-status loading';
-  log('Probando conexión...', 'info');
-  try {
-    const data = await apiFetch('/v1/health');
-    dot.className = 'dot-status online';
-    log('API conectada ✓ ' + JSON.stringify(data), 'ok');
-  } catch(e) {
-    dot.className = 'dot-status error';
-    log('Sin conexión — verifica la URL', 'error');
-  }
-}
+async function testConn(){const dot=document.getElementById('dot');dot.className='dot ld';log('Probando conexión...','info');try{await api('/v1/health');dot.className='dot on';log('API conectada ✓','ok');}catch{dot.className='dot err';log('Sin respuesta — verifica la URL','err');}}
 
-// ══════════════════════════════════════════════════════
-// Step 1: Crear emisor
-// ══════════════════════════════════════════════════════
-async function crearEmisor() {
-  const rut = document.getElementById('e_rut').value;
-  if (!rut || !validarRut(rut)) {
-    showResult(1, false, 'RUT inválido. Verifica el dígito verificador.');
-    return;
-  }
+// Paso 1
+async function crearEmisor(){const rut=document.getElementById('e_rut').value;if(!vRut(rut)){res(1,false,'RUT inválido. Verifica el dígito verificador.');return;}const body={rut:rutSII(rut),razon_social:document.getElementById('e_rs').value,giro:document.getElementById('e_giro').value,direccion:document.getElementById('e_dir').value,comuna:document.getElementById('e_comuna').value,ciudad:document.getElementById('e_ciudad').value,telefono:document.getElementById('e_tel').value||null,ambiente:document.getElementById('e_amb').value};for(const[k,v]of Object.entries(body)){if(!v&&k!=='telefono'){res(1,false,'Campo requerido: '+k);return;}}log('Creando emisor RUT='+body.rut,'info');try{const d=await api('/v1/emisores/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});S.id=d.id;res(1,true,`Emisor creado ✓\nID: ${d.id}\nRUT: ${d.rut}\nAPI Key: ${d.api_key}`);log(`Emisor ID=${d.id}`,'ok');done(1,'✓ creado');unlock(2);upChk();}catch(e){res(1,false,e.data?.detail||JSON.stringify(e.data));}}
 
-  const payload = {
-    rut:          rutParaSII(rut),       // ← Sin puntos para la BD/SII
-    razon_social: document.getElementById('e_razon').value,
-    giro:         document.getElementById('e_giro').value,
-    direccion:    document.getElementById('e_dir').value,
-    comuna:       document.getElementById('e_comuna').value,
-    ciudad:       document.getElementById('e_ciudad').value,
-    telefono:     document.getElementById('e_tel').value || null,
-    ambiente:     document.getElementById('e_ambiente').value,
-  };
+// Paso 2
+function showP12(inp){if(!inp.files[0])return;document.getElementById('name2').textContent=inp.files[0].name;document.getElementById('chip2').classList.add('show');log('Archivo: '+inp.files[0].name,'info');}
+async function subirCert(){const fi=document.getElementById('fp12'),pw=document.getElementById('p12pw').value;if(!fi.files[0]){res(2,false,'Selecciona el .p12 primero.');return;}if(!pw){res(2,false,'Ingresa la contraseña.');return;}if(!S.id){res(2,false,'Primero crea el emisor.');return;}const fd=new FormData();fd.append('password',pw);fd.append('archivo',fi.files[0]);log('Subiendo certificado...','info');try{const d=await api(`/v1/certificados/${S.id}/subir`,{method:'POST',body:fd});S.cert=true;res(2,true,`Certificado cargado ✓\nTitular: ${d.rut||''}\nVence: ${d.vence||''}`);log(`Cert OK — vence ${d.vence}`,'ok');done(2,'✓ cargado');unlock(3);upChk();}catch(e){res(2,false,e.data?.detail||JSON.stringify(e.data));}}
 
-  for (const [k,v] of Object.entries(payload)) {
-    if (!v && k !== 'telefono') {
-      showResult(1, false, `Campo requerido: ${k}`);
-      return;
-    }
-  }
+// Paso 3
+const TN={33:'Factura',34:'Fact.Exenta',39:'Boleta',41:'Boleta Exenta',52:'Guía',56:'N.Débito',61:'N.Crédito'};
+async function tipoCaf(f){return new Promise(r=>{const rd=new FileReader();rd.onload=e=>{const m=e.target.result.match(/<TD>(\d+)<\/TD>/);r(m?parseInt(m[1]):null);};rd.readAsText(f);});}
+async function addCAFs(files){for(const f of files){if(S.cafs.find(c=>c.file.name===f.name))continue;const t=await tipoCaf(f);S.cafs.push({file:f,tipo:t});}rndrCAFs();document.getElementById('bcafs').disabled=S.cafs.length===0;}
+function rndrCAFs(){document.getElementById('clist').innerHTML=S.cafs.map((c,i)=>`<div class="crow"><span class="ctipo">tipo ${c.tipo}</span><span class="cnombre">${TN[c.tipo]||'Desconocido'}</span><span class="cfile">${c.file.name}</span><span class="cdel" onclick="delC(${i})">×</span></div>`).join('');}
+function delC(i){S.cafs.splice(i,1);rndrCAFs();document.getElementById('bcafs').disabled=S.cafs.length===0;}
+function clrCAFs(){S.cafs=[];rndrCAFs();document.getElementById('bcafs').disabled=true;}
+async function subirCAFs(){if(!S.id){res(3,false,'Primero crea el emisor.');return;}const amb=document.getElementById('e_amb').value;let ok=0,fail=0,msgs=[];for(const c of S.cafs){const fd=new FormData();fd.append('emisor_id',S.id);fd.append('ambiente',amb);fd.append('archivo',c.file);log(`Subiendo CAF tipo ${c.tipo}...`,'info');try{const d=await api('/v1/caf/cargar-archivo',{method:'POST',body:fd});ok++;S.tipos.add(c.tipo);msgs.push(`✓ Tipo ${c.tipo}: folios ${d.folio_desde}-${d.folio_hasta} (${d.disponibles} disponibles)`);log(`CAF tipo ${c.tipo} OK`,'ok');}catch(e){fail++;msgs.push(`✗ Tipo ${c.tipo}: ${e.data?.detail||JSON.stringify(e.data)}`);log(`CAF tipo ${c.tipo} ERROR`,'err');}}res(3,fail===0,`${ok} cargados${fail?', '+fail+' con error':''}\n\n${msgs.join('\n')}`);if(ok>0){S.cert=true;done(3,`✓ ${ok} CAFs`);unlock(4);upChk();}}
 
-  log(`Creando emisor RUT=${payload.rut}`, 'info');
-  try {
-    const data = await apiFetch('/v1/emisores/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+// Checklist
+function upChk(){const m=(id,ok,lbl)=>{document.getElementById(id).textContent=(ok?'✅':'⬜')+' '+lbl;};m('chke',!!S.id,'Emisor creado');m('chkc',S.cert,'Certificado .p12 cargado');m('chk39',S.tipos.has(39),'CAF tipo 39 (Boleta) cargado');m('chk41',S.tipos.has(41),'CAF tipo 41 (Boleta exenta) cargado');}
 
-    state.emisorId  = data.id;
-    state.rutEmisor = data.rut;
+// Paso 4
+async function previewCert(){if(!S.id){log('Completa los pasos anteriores','warn');return;}try{res(4,true,await api(`/v1/certificacion/set-boletas/${S.id}/preview`));}catch(e){res(4,false,e.data?.detail||JSON.stringify(e.data));}}
+async function certificar(){if(!S.id){log('Completa los pasos 1-3','warn');return;}const btn=document.getElementById('bcert');btn.disabled=true;btn.textContent='⏳  Enviando al SII...';document.getElementById('cout').style.display='none';log('Iniciando certificación SII...','info');try{const d=await api(`/v1/certificacion/set-boletas?emisor_id=${S.id}`,{method:'POST'});const cc=document.getElementById('ccases');cc.innerHTML=(d.documentos||[]).map(doc=>{const ok=doc.estado==='FIRMADO_OK';return`<div class="ccase"><span class="cn">caso ${doc.caso}</span><span class="cd">${doc.descripcion}</span>${doc.folio?`<span style="font-family:var(--mono);font-size:11px;color:var(--muted)">folio ${doc.folio}</span>`:''}<span class="cs ${ok?'ok':'fail'}">${ok?'firmado ✓':'error ✗'}</span></div>`;}).join('');document.getElementById('cout').style.display='block';if(d.track_id){document.getElementById('tid').textContent=d.track_id;document.getElementById('tbox').style.display='block';log('TrackID: '+d.track_id,'ok');done(4,'✓ enviado');upChk();res(4,true,`Estado: ${d.estado_envio}\nMensaje: ${d.mensaje}\nTrack ID: ${d.track_id}`);}else{log('Sin TrackID — '+d.estado_envio,'err');res(4,false,`Estado: ${d.estado_envio}\nMensaje: ${d.mensaje}`);}}catch(e){res(4,false,e.data?.detail||JSON.stringify(e.data));log('Error: '+(e.data?.detail||JSON.stringify(e.data)),'err');}finally{btn.disabled=false;btn.innerHTML='🚀 &nbsp;Enviar set de certificación al SII';}}
 
-    showResult(1, true,
-      `Emisor creado ✓\nID: ${data.id}\nRUT: ${data.rut}\nAPI Key: ${data.api_key}`);
+// Cards
+function tgl(n){const c=document.getElementById('c'+n);if(c.classList.contains('locked'))return;const b=c.querySelector('.card-body');b.style.display=b.style.display==='none'?'block':'none';}
+function unlock(n){const c=document.getElementById('c'+n);c.classList.remove('locked');c.classList.add('active');c.querySelector('.card-body').style.display='block';c.scrollIntoView({behavior:'smooth',block:'nearest'});}
+function done(n,txt){document.getElementById('c'+n).classList.replace('active','done');const b=document.getElementById('b'+n);b.textContent=txt;b.className='badge ok';}
 
-    log(`Emisor ID=${data.id} RUT=${data.rut}`, 'ok');
-    setBadge(1, '✓ listo');
-    setCardDone(1);
-    unlockCard(2);
-    updateChecklist();
-  } catch(e) {
-    const msg = e.data?.detail || JSON.stringify(e.data);
-    showResult(1, false, msg);
-  }
-}
-
-// ══════════════════════════════════════════════════════
-// Step 2: Subir certificado .p12
-// ══════════════════════════════════════════════════════
-function showP12Name(input) {
-  if (!input.files[0]) return;
-  document.getElementById('p12_name').textContent = input.files[0].name;
-  document.getElementById('p12_selected').classList.add('visible');
-  log(`Archivo seleccionado: ${input.files[0].name}`, 'info');
-}
-
-async function subirCertificado() {
-  const fileInput = document.getElementById('p12_file');
-  const pass      = document.getElementById('p12_pass').value;
-
-  if (!fileInput.files[0]) {
-    showResult(2, false, 'Selecciona el archivo .p12 primero.');
-    return;
-  }
-  if (!pass) {
-    showResult(2, false, 'Ingresa la contraseña del certificado.');
-    return;
-  }
-  if (!state.emisorId) {
-    showResult(2, false, 'Primero crea el emisor (paso 1).');
-    return;
-  }
-
-  const fd = new FormData();
-  fd.append('password', pass);
-  fd.append('archivo', fileInput.files[0]);
-
-  log(`Subiendo certificado para emisor ${state.emisorId}...`, 'info');
-  try {
-    const data = await apiFetch(`/v1/certificados/${state.emisorId}/subir`, {
-      method: 'POST',
-      body: fd,
-    });
-
-    state.certOk = true;
-    showResult(2, true,
-      `Certificado cargado ✓\nTitular: ${data.rut || ''}\nVence: ${data.vence || ''}`);
-
-    log(`Certificado OK — vence ${data.vence}`, 'ok');
-    setBadge(2, '✓ listo');
-    setCardDone(2);
-    unlockCard(3);
-    updateChecklist();
-  } catch(e) {
-    const msg = e.data?.detail || JSON.stringify(e.data);
-    showResult(2, false, msg);
-  }
-}
-
-// ══════════════════════════════════════════════════════
-// Step 3: CAFs
-// ══════════════════════════════════════════════════════
-const TIPO_NOMBRES = {
-  33:'Factura Electrónica', 34:'Factura Exenta',
-  39:'Boleta Electrónica',  41:'Boleta No Afecta/Exenta',
-  52:'Guía de Despacho',    56:'Nota de Débito',
-  61:'Nota de Crédito',
-};
-
-async function leerTipoCAF(file) {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const match = e.target.result.match(/<TD>(\d+)<\/TD>/);
-      resolve(match ? parseInt(match[1]) : null);
-    };
-    reader.readAsText(file);
-  });
-}
-
-async function agregarCAFs(files) {
-  for (const file of files) {
-    const tipo = await leerTipoCAF(file);
-    // Evitar duplicados por nombre de archivo
-    if (state.cafFiles.find(c => c.file.name === file.name)) continue;
-    state.cafFiles.push({ file, tipo, nombre: file.name });
-  }
-  renderCAFList();
-  document.getElementById('btnSubirCAFs').disabled = state.cafFiles.length === 0;
-}
-
-function renderCAFList() {
-  const list = document.getElementById('caf_list');
-  list.innerHTML = '';
-  state.cafFiles.forEach((c, idx) => {
-    const nombre = TIPO_NOMBRES[c.tipo] || `Tipo ${c.tipo}`;
-    list.innerHTML += `
-      <div class="caf-item">
-        <span class="tipo">tipo ${c.tipo}</span>
-        <span class="nombre">${nombre}</span>
-        <span style="font-size:11px;font-family:var(--mono);color:var(--muted)">${c.file.name}</span>
-        <span class="remove" onclick="removeCAF(${idx})">×</span>
-      </div>`;
-  });
-}
-
-function removeCAF(idx) {
-  state.cafFiles.splice(idx, 1);
-  renderCAFList();
-  document.getElementById('btnSubirCAFs').disabled = state.cafFiles.length === 0;
-}
-
-function clearCAFs() {
-  state.cafFiles = [];
-  renderCAFList();
-  document.getElementById('caf_list').innerHTML = '';
-  document.getElementById('btnSubirCAFs').disabled = true;
-}
-
-async function subirTodosCAFs() {
-  if (!state.emisorId) {
-    showResult(3, false, 'Primero crea el emisor.');
-    return;
-  }
-  if (state.cafFiles.length === 0) {
-    showResult(3, false, 'Agrega al menos un CAF.');
-    return;
-  }
-
-  const ambiente = document.getElementById('e_ambiente').value;
-  let ok = 0, fail = 0, msgs = [];
-  const tiposCargados = new Set();
-
-  for (const caf of state.cafFiles) {
-    const fd = new FormData();
-    fd.append('emisor_id', state.emisorId);
-    fd.append('ambiente',  ambiente);
-    fd.append('archivo',   caf.file);
-
-    log(`Subiendo CAF tipo ${caf.tipo} (${caf.file.name})...`, 'info');
-    try {
-      const data = await apiFetch('/v1/caf/cargar-archivo', { method:'POST', body: fd });
-      ok++;
-      tiposCargados.add(caf.tipo);
-      msgs.push(`✓ Tipo ${caf.tipo}: folios ${data.folio_desde}-${data.folio_hasta} (${data.disponibles} disponibles)`);
-      log(`CAF tipo ${caf.tipo} OK — ${data.disponibles} folios`, 'ok');
-    } catch(e) {
-      fail++;
-      const msg = e.data?.detail || JSON.stringify(e.data);
-      msgs.push(`✗ Tipo ${caf.tipo}: ${msg}`);
-      log(`CAF tipo ${caf.tipo} ERROR: ${msg}`, 'error');
-    }
-  }
-
-  state.tiposCargados = tiposCargados;
-
-  showResult(3, fail === 0,
-    `${ok} CAF(s) cargados${fail > 0 ? `, ${fail} con error` : ''}\n\n${msgs.join('\n')}`);
-
-  if (ok > 0) {
-    state.cafsOk = true;
-    setBadge(3, `✓ ${ok} CAFs`);
-    setCardDone(3);
-    unlockCard(4);
-    updateChecklist();
-  }
-}
-
-// ══════════════════════════════════════════════════════
-// Step 4: Certificación
-// ══════════════════════════════════════════════════════
-function updateChecklist() {
-  const set = (id, ok) => {
-    document.getElementById(id).textContent =
-      (ok ? '✅' : '⬜') + ' ' + document.getElementById(id).textContent.slice(2);
-  };
-  if (state.emisorId) set('chk_emisor', true);
-  if (state.certOk)   set('chk_cert', true);
-  if (state.tiposCargados.has(39)) set('chk_caf39', true);
-  if (state.tiposCargados.has(41)) set('chk_caf41', true);
-}
-
-async function previewCertificacion() {
-  if (!state.emisorId) { log('Primero completa los pasos anteriores', 'warn'); return; }
-  try {
-    const data = await apiFetch(
-      `/v1/certificacion/set-boletas/${state.emisorId}/preview`
-    );
-    showResult(4, true, JSON.stringify(data, null, 2));
-  } catch(e) {
-    showResult(4, false, e.data?.detail || JSON.stringify(e.data));
-  }
-}
-
-async function ejecutarCertificacion() {
-  if (!state.emisorId) {
-    log('Completa los pasos 1-3 antes de certificar', 'warn');
-    return;
-  }
-
-  const btn = document.getElementById('btnCertificar');
-  btn.disabled = true;
-  btn.textContent = '⏳  Enviando al SII...';
-
-  document.getElementById('certResults').style.display = 'none';
-  document.getElementById('trackBox').style.display    = 'none';
-
-  log('Iniciando set de certificación SII...', 'info');
-
-  try {
-    const data = await apiFetch(
-      `/v1/certificacion/set-boletas?emisor_id=${state.emisorId}`,
-      { method: 'POST' }
-    );
-
-    // Mostrar casos
-    const casesEl = document.getElementById('certCases');
-    casesEl.innerHTML = '';
-    for (const doc of (data.documentos || [])) {
-      const ok = doc.estado === 'FIRMADO_OK';
-      casesEl.innerHTML += `
-        <div class="cert-case">
-          <span class="case-num">caso ${doc.caso}</span>
-          <span class="case-desc">${doc.descripcion}</span>
-          ${doc.folio ? `<span style="font-family:var(--mono);font-size:11px;color:var(--muted)">folio ${doc.folio}</span>` : ''}
-          <span class="case-status ${ok?'ok':'fail'}">${ok ? 'firmado ✓' : 'error ✗'}</span>
-        </div>`;
-    }
-
-    document.getElementById('certResults').style.display = 'block';
-
-    // Track ID
-    if (data.track_id) {
-      document.getElementById('trackIdValue').textContent = data.track_id;
-      document.getElementById('trackBox').style.display = 'block';
-      log(`TrackID recibido: ${data.track_id}`, 'ok');
-      setBadge(4, '✓ enviado');
-      setCardDone(4);
-      showResult(4, true,
-        `Estado SII: ${data.estado_envio}\nMensaje: ${data.mensaje}\nTrack ID: ${data.track_id}`);
-    } else {
-      log(`Sin TrackID — ${data.estado_envio}: ${data.mensaje}`, 'error');
-      showResult(4, false,
-        `Estado: ${data.estado_envio}\nMensaje: ${data.mensaje}`);
-    }
-
-  } catch(e) {
-    const msg = e.data?.detail || JSON.stringify(e.data);
-    showResult(4, false, msg);
-    log('Error en certificación: ' + msg, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '🚀 &nbsp;Enviar set de certificación al SII';
-  }
-}
-
-// ══════════════════════════════════════════════════════
-// Card helpers
-// ══════════════════════════════════════════════════════
-function toggleCard(n) {
-  const card = document.getElementById('card'+n);
-  if (card.classList.contains('locked')) return;
-  const body = card.querySelector('.card-body');
-  body.style.display = body.style.display === 'none' ? 'block' : 'none';
-}
-function unlockCard(n) {
-  const card = document.getElementById('card'+n);
-  card.classList.remove('locked');
-  card.classList.add('active');
-  card.querySelector('.card-body').style.display = 'block';
-  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-function setCardDone(n) {
-  document.getElementById('card'+n).classList.replace('active','done');
-}
-function setBadge(n, text) {
-  const b = document.getElementById('badge'+n);
-  b.textContent = text;
-  b.classList.replace('pending','');
-  b.style.background = 'rgba(16,185,129,0.1)';
-  b.style.color = 'var(--green)';
-  b.style.borderColor = 'rgba(16,185,129,0.2)';
-}
-
-// ══════════════════════════════════════════════════════
 // Drag & drop
-// ══════════════════════════════════════════════════════
-function handleDragOver(e, zoneId) {
-  e.preventDefault();
-  document.getElementById(zoneId).classList.add('dragover');
-}
-function handleDragLeave(zoneId) {
-  document.getElementById(zoneId).classList.remove('dragover');
-}
-function handleDrop(e, inputId, zoneId, ext, callback) {
-  e.preventDefault();
-  document.getElementById(zoneId).classList.remove('dragover');
-  const file = e.dataTransfer.files[0];
-  if (!file || !file.name.endsWith(ext)) return;
-  const dt = new DataTransfer();
-  dt.items.add(file);
-  const input = document.getElementById(inputId);
-  input.files = dt.files;
-  callback(input);
-}
-function handleDropMulti(e) {
-  e.preventDefault();
-  document.getElementById('zone_caf').classList.remove('dragover');
-  agregarCAFs(e.dataTransfer.files);
-}
+function dOv(e,id){e.preventDefault();document.getElementById(id).classList.add('over');}
+function dLv(id){document.getElementById(id).classList.remove('over');}
+function dDp(e,fid,zid,cb){e.preventDefault();dLv(zid);const f=e.dataTransfer.files[0];if(!f)return;const dt=new DataTransfer();dt.items.add(f);const inp=document.getElementById(fid);inp.files=dt.files;cb(inp);}
+function dpCAFs(e){e.preventDefault();dLv('z3');addCAFs(e.dataTransfer.files);}
 
-// ══════════════════════════════════════════════════════
-// Init
-// ══════════════════════════════════════════════════════
-window.onload = () => {
-  log('Panel YeparDTEcore iniciado', 'info');
-  log('Ingresa la URL de tu API en Railway y presiona "Probar conexión"', 'info');
+// Init — detectar URL automáticamente
+window.onload=()=>{
+  document.getElementById('apiUrl').value=window.location.origin;
+  log('Panel YeparDTEcore listo','info');
+  log('URL detectada: '+window.location.origin,'info');
+  log('Presiona "Probar conexión" para verificar','info');
 };
 </script>
 </body>
