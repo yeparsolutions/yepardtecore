@@ -4,7 +4,7 @@
 # ══════════════════════════════════════════════════════════════
 
 from fastapi import APIRouter
-from app.api.v1.endpoints import health, emisores, auth, dte, caf, certificados, sii_auth
+from app.api.v1.endpoints import health, emisores, auth, dte, caf, certificados, sii_auth, certificacion
 
 api_router = APIRouter()
 
@@ -20,3 +20,6 @@ api_router.include_router(caf.router)
 api_router.include_router(dte.router)
 api_router.include_router(certificados.router)
 api_router.include_router(sii_auth.router)
+
+# Certificación SII
+api_router.include_router(certificacion.router)
