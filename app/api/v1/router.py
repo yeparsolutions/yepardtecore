@@ -1,5 +1,9 @@
+# app/api/v1/router.py
 from fastapi import APIRouter
-from app.api.v1.endpoints import health, emisores, auth, dte, caf, certificados, sii_auth, certificacion
+from app.api.v1.endpoints import (
+    health, emisores, auth, dte, caf,
+    certificados, sii_auth, certificacion
+)
 
 api_router = APIRouter()
 
