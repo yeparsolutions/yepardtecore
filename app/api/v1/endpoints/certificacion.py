@@ -293,16 +293,9 @@ async def generar_xml_certificacion(
         + (f" — errores: {errores}" if errores else " — sin errores ✓")
     )
 
-    # ── Agregar declaración XML ───────────────────────────────
-    # El SII exige <?xml version="1.0" encoding="ISO-8859-1"?> al inicio.
-    # firma_digital.firmar_sobre() serializa con xml_declaration=False,
-    # así que la agregamos aquí, DESPUÉS de que el sobre ya está firmado.
-    # Analogía: el sobre está sellado, pero le falta el membrete postal
-    # para que el correo lo procese correctamente.
-    if not sobre_xml.startswith("<?xml"):
-        sobre_xml = '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + sobre_xml
-
     # ── Devolver XML descargable ──────────────────────────────
+    # La declaración <?xml version="1.0" encoding="ISO-8859-1"?> ya viene
+    # incluida desde firma_digital.firmar_sobre() — no hay que agregarla aquí.
     rut_limpio     = emisor.rut.replace(".", "").replace("-", "")
     nombre_archivo = f"EnvioBOLETA_cert_{rut_limpio}_{fecha.replace('-','')}.xml"
 
