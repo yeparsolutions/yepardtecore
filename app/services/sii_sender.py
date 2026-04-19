@@ -117,10 +117,11 @@ class SIISender:
             except Exception as e:
                 raise ValueError(f"DTE XML invalido: {e}")
 
-        # pretty_print=True para que el XML tenga saltos de línea e indentación,
-        # igual que el ejemplo oficial del SII. Debe ir ANTES de firmar para
-        # que el DigestValue sea consistente con lo que el SII verifica.
-        sobre_sin_firma = etree.tostring(envio_el, encoding="unicode", pretty_print=True)
+        # Serializar SIN pretty_print — el sobre debe estar compacto (sin saltos de línea
+        # ni indentación) antes de pasarlo a firmar_sobre. El SII verifica la firma
+        # parseando con remove_blank_text=True, por lo que el C14N no incluye whitespace.
+        # Si usamos pretty_print=True el C14N al firmar y al verificar serían distintos → RFR.
+        sobre_sin_firma = etree.tostring(envio_el, encoding="unicode", pretty_print=False)
         return firma_service.firmar_sobre(sobre_sin_firma)
 
     async def enviar_sobre(self, sobre_xml: str, rut_emisor: str,
