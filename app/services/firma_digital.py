@@ -213,7 +213,11 @@ class FirmaDigital:
         ).decode()
 
         root.append(etree.fromstring(self._build_signature(signed_info, firma_b64).encode()))
-        return etree.tostring(root, encoding="unicode", xml_declaration=False)
+        # Agregar declaración XML con encoding ISO-8859-1 que exige el SII.
+        # Se agrega aquí (en firmar_sobre) para que NUNCA pueda faltar,
+        # independientemente de cómo se llame al método desde afuera.
+        xml_str = etree.tostring(root, encoding="unicode", xml_declaration=False)
+        return '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + xml_str
 
     @staticmethod
     def cargar_desde_base64(cert_b64: str, password: str) -> "FirmaDigital":
