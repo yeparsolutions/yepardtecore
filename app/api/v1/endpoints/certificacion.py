@@ -23,7 +23,7 @@
 import logging
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import Response, PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
@@ -344,3 +344,88 @@ async def preview(emisor_id: int, fecha_override: Optional[str] = None):
             for i, c in enumerate(casos)
         ],
     }
+
+
+# ── Endpoint de diagnóstico ───────────────────────────────────────────────
+@router.get(
+    "/debug-xml/{emisor_id}",
+    summary="Diagnóstico: muestra los primeros 400 chars del XML generado",
+    response_class=PlainTextResponse,
+)
+async def debug_xml(emisor_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Genera el sobre de certificación y retorna los primeros 400 caracteres
+    como texto plano. Útil para verificar que la declaración XML está presente
+    y que el formato es correcto antes de subir al SII.
+    """
+    from app.repositories.emisor_repository import EmisorRepository
+    from app.repositories.caf_repository import CAFRepository
+    from app.services.sii_sender import SIISender
+    from app.services.firma_digital import FirmaDigital
+    from datetime import date
+
+    try:
+        repo = EmisorRepository(db)
+        emisor = await repo.get_by_id(emisor_id)
+        if not emisor:
+            return PlainTextResponse(f"ERROR: Emisor {emisor_id} no encontrado", status_code=404)
+
+        cert_b64 = emisor.certificado_p12_b64
+        cert_pwd  = emisor.certificado_password
+        if not cert_b64 or not cert_pwd:
+            return PlainTextResponse("ERROR: Certificado no cargado", status_code=400)
+
+        import base64
+        firma = FirmaDigital(base64.b64decode(cert_b64), cert_pwd)
+
+        caf_repo = CAFRepository(db)
+        cafs = await caf_repo.get_by_emisor(emisor_id)
+        caf_39 = next((c for c in cafs if c.tipo_dte == 39), None)
+        if not caf_39:
+            return PlainTextResponse("ERROR: No hay CAF tipo 39", status_code=400)
+
+        fecha = date.today().isoformat()
+        casos = _casos_sii(fecha)
+        sender = SIISender()
+
+        from app.services.xml_builder import XMLBuilder, InputDTE, EmisorDTE, ReceptorDTE, ItemDTE, ReferenciaDTE
+        dtes_xml = []
+        for i, caso in enumerate(casos):
+            folio = caf_39.folio_siguiente
+            caf_39.folio_siguiente += 1
+            items = [ItemDTE(nombre=it["nombre"], cantidad=it["cantidad"],
+                             precio_unitario=it["precio_unitario"],
+                             unidad=it.get("unidad","UN"), exento=it.get("exento",False))
+                     for it in caso["items"]]
+            refs = [ReferenciaDTE(tipo_doc_ref="801", folio_ref=str(i+1), razon_ref=f"CASO-{i+1}")]
+            datos = InputDTE(tipo_dte=caso["tipo_dte"], folio=folio,
+                             fecha_emision=date.fromisoformat(fecha),
+                             emisor=EmisorDTE(rut=emisor.rut, razon_social=emisor.razon_social,
+                                              giro=emisor.giro, direccion=emisor.direccion,
+                                              comuna=emisor.comuna, ciudad=emisor.ciudad),
+                             receptor=ReceptorDTE(rut="66666666-6", razon_social="Consumidor Final"),
+                             items=items, referencias=refs, ambiente="certificacion")
+            xml_bytes = XMLBuilder(datos).construir()
+            xml_firmado = firma.firmar_dte(xml_bytes=xml_bytes, folio=folio,
+                                           tipo_dte=caso["tipo_dte"], xml_caf=caf_39.xml_caf,
+                                           fecha_emision=fecha, rut_emisor=emisor.rut,
+                                           monto_total=XMLBuilder(datos).monto_total,
+                                           it1_nombre=caso["items"][0]["nombre"])
+            dtes_xml.append(xml_firmado.decode("ISO-8859-1"))
+
+        sobre = sender.construir_sobre(dtes_xml, emisor.rut, "25648612-1", firma)
+        primeros = sobre[:400]
+
+        info = (
+            f"=== DIAGNÓSTICO XML (primeros 400 chars) ===\n"
+            f"Empieza con <?xml: {sobre.startswith('<?xml')}\n"
+            f"Contiene EnvioBOLETA: {'EnvioBOLETA' in sobre[:200]}\n"
+            f"Contiene schemaLocation: {'schemaLocation' in sobre[:300]}\n"
+            f"Total chars: {len(sobre)}\n"
+            f"=== CONTENIDO ===\n"
+            f"{primeros}\n"
+        )
+        return PlainTextResponse(info)
+    except Exception as e:
+        import traceback
+        return PlainTextResponse(f"ERROR: {e}\n{traceback.format_exc()}", status_code=500)
