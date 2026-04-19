@@ -187,27 +187,34 @@ class FirmaDigital:
     # ── Firma del sobre Corregido ─────────────────────────────
 
     def firmar_sobre(self, sobre_xml: str) -> str:
-        # remove_blank_text=False para preservar el formato del sobre.
-        # Si el sobre viene con pretty_print (saltos de línea e indentación),
-        # esta configuración los mantiene → el C14N de SetDTE es consistente
-        # entre lo que firmamos y lo que el SII verifica.
-        parser = etree.XMLParser(remove_blank_text=False)
+        # ══════════════════════════════════════════════════════════════
+        # BUG CRÍTICO CORREGIDO (2026-04-18):
+        # El parser DEBE usar remove_blank_text=True.
+        #
+        # Razón: el SII verifica la firma parseando el XML con su propio
+        # parser que descarta whitespace entre nodos. Si nosotros firmamos
+        # el SetDTE con saltos de línea/indentación (pretty_print=True),
+        # el C14N que calculamos incluye esos espacios. El SII calcula
+        # el C14N SIN esos espacios → DigestValues distintos → RFR.
+        #
+        # La solución: firmar siempre en modo "compacto" (sin whitespace),
+        # idéntico a cómo el SII lo verificará.
+        # ══════════════════════════════════════════════════════════════
+        parser = etree.XMLParser(remove_blank_text=True)
         root   = etree.fromstring(sobre_xml.encode("utf-8"), parser)
         ns     = {"sii": SII_NS}
 
         set_el = root.find(".//sii:SetDTE[@ID='SetDoc']", ns)
-        
-        # FIX: Virtual Root para herencia de namespaces en Digest del Sobre
-        set_raw = etree.tostring(set_el, encoding="unicode")
-        temp_root = etree.fromstring(f'<root xmlns="{SII_NS}">{set_raw}</root>')
-        set_virtual = temp_root[0]
 
-        set_c14n   = etree.tostring(set_virtual, method="c14n", exclusive=False)
+        # C14N directo del SetDTE tal como está en el árbol (sin wrapper).
+        # El elemento ya hereda xmlns=SII_NS y xmlns:xsi=XSI_NS del EnvioBOLETA,
+        # exactamente igual a como lo verá el SII → digest consistente.
+        set_c14n   = etree.tostring(set_el, method="c14n", exclusive=False)
         digest_val = b64encode(hashlib.sha1(set_c14n).digest()).decode()
 
         signed_info = self._build_signed_info("#SetDoc", digest_val)
 
-        # FIX: mismo contexto namespace que EnvioBOLETA para C14N correcto.
+        # SignedInfo también en contexto SII_NS+XSI_NS (igual que el DTE).
         si_wrapper = etree.fromstring(
             f'<w xmlns="{SII_NS}" xmlns:xsi="{XSI_NS}">{signed_info}</w>'
         )
@@ -217,9 +224,6 @@ class FirmaDigital:
         ).decode()
 
         root.append(etree.fromstring(self._build_signature(signed_info, firma_b64).encode()))
-        # La declaración XML va aquí, después de firmar.
-        # El formato (saltos de línea) viene del sobre_xml de entrada
-        # que ya fue construido con pretty_print=True en sii_sender.
         xml_str = etree.tostring(root, encoding="unicode", xml_declaration=False)
         return '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + xml_str
 
