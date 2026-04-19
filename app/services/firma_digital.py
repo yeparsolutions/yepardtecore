@@ -195,40 +195,78 @@ class FirmaDigital:
 
     # ── Firma del sobre Corregido ─────────────────────────────
 
-    def firmar_sobre(self, sobre_xml: str) -> str:
-        # remove_blank_text=False para preservar el formato del sobre.
-        # Si el sobre viene con pretty_print (saltos de línea e indentación),
-        # esta configuración los mantiene → el C14N de SetDTE es consistente
-        # entre lo que firmamos y lo que el SII verifica.
-        parser = etree.XMLParser(remove_blank_text=False)
-        root   = etree.fromstring(sobre_xml.encode("utf-8"), parser)
-        ns     = {"sii": SII_NS}
+    def firmar_documento_en_arbol(self, dte_el, doc_id: str) -> None:
+        """
+        Firma el <Documento> dentro de dte_el IN-TREE.
+        dte_el DEBE estar ya insertado en el árbol del sobre para que
+        la canonicalización C14N herede el contexto de namespace completo
+        (EnvioBOLETA > SetDTE > DTE), idéntico al que usa el SII al verificar.
+        Analogía: firmar el contrato ya impreso en papel membretado,
+        no en una fotocopia en blanco.
+        """
+        ns = {"sii": SII_NS}
+        doc_el = dte_el.find(f"sii:Documento[@ID='{doc_id}']", ns)
+        if doc_el is None:
+            raise ValueError(f"No se encontró <Documento ID='{doc_id}'> en el DTE")
 
-        set_el = root.find(".//sii:SetDTE[@ID='SetDoc']", ns)
-        
-        # FIX: Virtual Root para herencia de namespaces en Digest del Sobre
-        set_raw = etree.tostring(set_el, encoding="unicode")
-        temp_root = etree.fromstring(f'<root xmlns="{SII_NS}">{set_raw}</root>')
-        set_virtual = temp_root[0]
+        # C14N del Documento en contexto real del árbol
+        doc_c14n   = etree.tostring(doc_el, method="c14n", exclusive=False)
+        digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
-        set_c14n   = etree.tostring(set_virtual, method="c14n", exclusive=False)
-        digest_val = b64encode(hashlib.sha1(set_c14n).digest()).decode()
+        signed_info_str = self._build_signed_info(f"#{doc_id}", digest_doc)
 
-        signed_info = self._build_signed_info("#SetDoc", digest_val)
-
-        # FIX: mismo contexto namespace que EnvioBOLETA para C14N correcto.
-        si_wrapper = etree.fromstring(
-            f'<w xmlns="{SII_NS}" xmlns:xsi="{XSI_NS}">{signed_info}</w>'
+        # Para el C14N del SignedInfo: lo añadimos temporalmente al árbol
+        # para que herede el contexto de namespace correcto, luego lo reemplazamos
+        sig_temp = etree.fromstring(
+            f'<Signature xmlns="{XMLDSIG_NS}">{signed_info_str}</Signature>'
         )
-        si_c14n   = etree.tostring(si_wrapper[0], method="c14n", exclusive=False)
+        dte_el.append(sig_temp)
+        si_el   = sig_temp.find(f"{{{XMLDSIG_NS}}}SignedInfo")
+        si_c14n = etree.tostring(si_el, method="c14n", exclusive=False)
+        dte_el.remove(sig_temp)
+
         firma_b64 = b64encode(
             self._private_key.sign(si_c14n, padding.PKCS1v15(), hashes.SHA1())
         ).decode()
 
-        root.append(etree.fromstring(self._build_signature(signed_info, firma_b64).encode()))
-        # La declaración XML va aquí, después de firmar.
-        # El formato (saltos de línea) viene del sobre_xml de entrada
-        # que ya fue construido con pretty_print=True en sii_sender.
+        dte_el.append(etree.fromstring(
+            self._build_signature(signed_info_str, firma_b64).encode()
+        ))
+
+    def firmar_sobre(self, sobre_xml: str) -> str:
+        """
+        Firma el EnvioBOLETA completo (nivel sobre).
+        El sobre ya contiene los DTEs firmados in-tree por firmar_documento_en_arbol.
+        Usamos el mismo enfoque in-tree para el C14N del SetDTE y del SignedInfo.
+        """
+        parser = etree.XMLParser(remove_blank_text=True)
+        root   = etree.fromstring(sobre_xml.encode("utf-8"), parser)
+        ns     = {"sii": SII_NS}
+
+        set_el = root.find(".//sii:SetDTE[@ID='SetDoc']", ns)
+
+        # C14N del SetDTE directo del árbol — contexto correcto sin wrappers
+        set_c14n   = etree.tostring(set_el, method="c14n", exclusive=False)
+        digest_val = b64encode(hashlib.sha1(set_c14n).digest()).decode()
+
+        signed_info_str = self._build_signed_info("#SetDoc", digest_val)
+
+        # C14N del SignedInfo in-tree (temporal en root = EnvioBOLETA)
+        sig_temp = etree.fromstring(
+            f'<Signature xmlns="{XMLDSIG_NS}">{signed_info_str}</Signature>'
+        )
+        root.append(sig_temp)
+        si_el   = sig_temp.find(f"{{{XMLDSIG_NS}}}SignedInfo")
+        si_c14n = etree.tostring(si_el, method="c14n", exclusive=False)
+        root.remove(sig_temp)
+
+        firma_b64 = b64encode(
+            self._private_key.sign(si_c14n, padding.PKCS1v15(), hashes.SHA1())
+        ).decode()
+
+        root.append(etree.fromstring(
+            self._build_signature(signed_info_str, firma_b64).encode()
+        ))
         xml_str = etree.tostring(root, encoding="unicode", xml_declaration=False)
         return '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + xml_str
 
