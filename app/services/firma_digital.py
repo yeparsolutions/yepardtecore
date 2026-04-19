@@ -187,8 +187,12 @@ class FirmaDigital:
     # ── Firma del sobre Corregido ─────────────────────────────
 
     def firmar_sobre(self, sobre_xml: str) -> str:
-        parser = etree.XMLParser(remove_blank_text=True)
-        root   = etree.fromstring(sobre_xml.encode(), parser)
+        # remove_blank_text=False para preservar el formato del sobre.
+        # Si el sobre viene con pretty_print (saltos de línea e indentación),
+        # esta configuración los mantiene → el C14N de SetDTE es consistente
+        # entre lo que firmamos y lo que el SII verifica.
+        parser = etree.XMLParser(remove_blank_text=False)
+        root   = etree.fromstring(sobre_xml.encode("utf-8"), parser)
         ns     = {"sii": SII_NS}
 
         set_el = root.find(".//sii:SetDTE[@ID='SetDoc']", ns)
@@ -213,9 +217,9 @@ class FirmaDigital:
         ).decode()
 
         root.append(etree.fromstring(self._build_signature(signed_info, firma_b64).encode()))
-        # Agregar declaración XML con encoding ISO-8859-1 que exige el SII.
-        # Se agrega aquí (en firmar_sobre) para que NUNCA pueda faltar,
-        # independientemente de cómo se llame al método desde afuera.
+        # La declaración XML va aquí, después de firmar.
+        # El formato (saltos de línea) viene del sobre_xml de entrada
+        # que ya fue construido con pretty_print=True en sii_sender.
         xml_str = etree.tostring(root, encoding="unicode", xml_declaration=False)
         return '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + xml_str
 
