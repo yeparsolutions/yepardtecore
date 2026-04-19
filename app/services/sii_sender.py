@@ -1,13 +1,11 @@
 # app/services/sii_sender.py
 # ══════════════════════════════════════════════════════════════
-# Servicio de envio al SII
+# Servicio de envío al SII
 #
-# ── FIXES v1.3 ─────────────────────────────────────────────
-# - EnvioBOLETA incluye xmlns:xsi y xsi:schemaLocation
-#   El DTE ya trae xsi desde xml_builder, por lo que al
-#   insertar en el sobre el namespace NO hereda nuevamente
-#   y los digests se mantienen intactos.
-# - STATUS (no ESTADO) para parsear respuesta del SII
+# FIX 2026-04-19: construir_sobre ahora firma cada DTE
+# IN-TREE (dentro del árbol del sobre) antes de firmar el sobre.
+# Esto garantiza que el contexto de namespace al firmar ==
+# al verificar (EnvioBOLETA > SetDTE > DTE > Signature).
 # ══════════════════════════════════════════════════════════════
 
 import logging
@@ -44,11 +42,15 @@ class SIISender:
         """
         Construye y firma el sobre EnvioBOLETA o EnvioDTE.
 
-        ⚠️  xsi:schemaLocation se incluye en el root.
-            Esto funciona porque los DTEs YA traen xmlns:xsi
-            desde xml_builder, entonces al hacer C14N el
-            namespace no es "nuevo" en los hijos y el digest
-            no cambia.
+        FLUJO CORRECTO DE FIRMA (FIX 2026-04-19):
+        1. Se construye el árbol del sobre con todos los DTEs
+           (cada DTE contiene solo el <Documento>, sin <Signature>)
+        2. Se firma cada <DTE> IN-TREE con firmar_documento_en_arbol()
+           → el SignedInfo hereda el contexto EnvioBOLETA>SetDTE>DTE
+        3. Se firma el sobre completo con firmar_sobre()
+           → el SignedInfo hereda el contexto EnvioBOLETA
+
+        Esto garantiza que el C14N al firmar == C14N al verificar (SII).
         """
         NS    = SII_NS
         ahora = datetime.now(timezone.utc)
@@ -56,7 +58,7 @@ class SIISender:
         rut_emisor   = self.limpiar_rut(rut_emisor)
         rut_enviador = self.limpiar_rut(rut_enviador)
 
-        # Detectar tipos
+        # Detectar tipos de DTE en el lote
         tipos_en_sobre: dict[int, int] = {}
         for dte_xml in dtes_xml:
             try:
@@ -76,7 +78,6 @@ class SIISender:
             root_tag = f"{{{NS}}}EnvioDTE"
             schema   = f"{NS} EnvioDTE_v10.xsd"
 
-        # xsi en el sobre — los DTEs ya lo tienen, no hereda de nuevo
         nsmap    = {None: NS, "xsi": XSI_NS}
         envio_el = etree.Element(root_tag, attrib={
             "version": "1.0",
@@ -105,22 +106,48 @@ class SIISender:
             etree.SubElement(subtot, f"{{{NS}}}TpoDTE").text = str(tipo)
             etree.SubElement(subtot, f"{{{NS}}}NroDTE").text = str(cantidad)
 
-        for i, dte_xml in enumerate(dtes_xml):
-            try:
-                parser = etree.XMLParser(remove_blank_text=True)
-                dte_el = etree.fromstring(dte_xml.encode(), parser)
-                # Agregar newline: tail del DTE anterior apunta al texto
-                # que va entre </DTE anterior> y <DTE siguiente>
-                if i < len(dtes_xml) - 1:
-                    dte_el.tail = "\n"
-                set_el.append(dte_el)
-            except Exception as e:
-                raise ValueError(f"DTE XML invalido: {e}")
+        # ── PASO 1: Insertar DTEs en el árbol (solo Documento, sin Signature) ──
+        parser     = etree.XMLParser(remove_blank_text=True)
+        dte_els    = []   # guardamos referencias para firmar después
 
-        # Serializar SIN pretty_print — el sobre debe estar compacto (sin saltos de línea
-        # ni indentación) antes de pasarlo a firmar_sobre. El SII verifica la firma
-        # parseando con remove_blank_text=True, por lo que el C14N no incluye whitespace.
-        # Si usamos pretty_print=True el C14N al firmar y al verificar serían distintos → RFR.
+        for dte_xml in dtes_xml:
+            try:
+                dte_root = etree.fromstring(dte_xml.encode(), parser)
+
+                # dte_xml puede venir como <DTE><Documento>...</DTE>
+                # o como solo <Documento>...</Documento>
+                if dte_root.tag == f"{{{NS}}}DTE":
+                    # Ya tiene wrapper DTE — tomamos el Documento adentro
+                    doc_el = dte_root.find(f"{{{NS}}}Documento")
+                    # Crear DTE fresco en el árbol del sobre
+                    dte_en_sobre = etree.SubElement(set_el, f"{{{NS}}}DTE")
+                    dte_en_sobre.set("version", "1.0")
+                    dte_en_sobre.append(doc_el)
+                    # Si ya tiene Signature (de emisión standalone), la descartamos
+                    # y firmaremos de nuevo in-tree
+                elif dte_root.tag == f"{{{NS}}}Documento":
+                    dte_en_sobre = etree.SubElement(set_el, f"{{{NS}}}DTE")
+                    dte_en_sobre.set("version", "1.0")
+                    dte_en_sobre.append(dte_root)
+                else:
+                    raise ValueError(f"Tag inesperado: {dte_root.tag}")
+
+                dte_els.append(dte_en_sobre)
+
+            except Exception as e:
+                raise ValueError(f"DTE XML inválido: {e}")
+
+        # ── PASO 2: Firmar cada DTE IN-TREE ───────────────────────────────────
+        for dte_en_sobre in dte_els:
+            doc_el = dte_en_sobre.find(f"{{{NS}}}Documento")
+            if doc_el is None:
+                raise ValueError("DTE sin <Documento>")
+            doc_id = doc_el.get("ID")
+            if not doc_id:
+                raise ValueError("<Documento> sin atributo ID")
+            firma_service.firmar_documento_en_arbol(dte_en_sobre, doc_id)
+
+        # ── PASO 3: Serializar y firmar el sobre ──────────────────────────────
         sobre_sin_firma = etree.tostring(envio_el, encoding="unicode", pretty_print=False)
         return firma_service.firmar_sobre(sobre_sin_firma)
 
