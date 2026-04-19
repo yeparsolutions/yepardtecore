@@ -62,7 +62,7 @@ def ref_caso(n: int, fecha: str) -> dict:
         "folio_ref":    n,
         "fecha_ref":    fecha,
         "razon_ref":    f"CASO-{n}",
-        "cod_ref":      0,
+        "cod_ref":      "SET",  # Identifica que es un set de prueba de certificación
     }
 
 
