@@ -1,6 +1,6 @@
 # app/services/firma_digital.py
 # ══════════════════════════════════════════════════════════════
-# Servicio de Firma Digital para DTE Chile - Versión Final Corregida.
+# Servicio de Firma Digital para DTE Chile - Versión Final Corregida
 # ══════════════════════════════════════════════════════════════
 
 from cryptography.hazmat.primitives.serialization import pkcs12
@@ -157,6 +157,7 @@ class FirmaDigital:
             f'<CanonicalizationMethod Algorithm="{C14N_ALGORITHM}"/>'
             f'<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>'
             f'<Reference URI="{reference_uri}">'
+            f'<Transforms><Transform Algorithm="{C14N_ALGORITHM}"/></Transforms>'
             f'<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>'
             f'<DigestValue>{digest_value}</DigestValue>'
             f'</Reference></SignedInfo>'
