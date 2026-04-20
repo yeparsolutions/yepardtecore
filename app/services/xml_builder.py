@@ -213,10 +213,10 @@ class XMLBuilder:
         etree.SubElement(emisor, f"{{{NS}}}RUTEmisor").text = em.rut
 
         if es_boleta:
-            etree.SubElement(emisor, f"{{{NS}}}RznSocEmisor").text = em.razon_social
+            etree.SubElement(emisor, f"{{{NS}}}RznSocEmisor").text = (em.razon_social or "").replace("\n", " ").strip()
             etree.SubElement(emisor, f"{{{NS}}}GiroEmisor").text   = em.giro[:80]
         else:
-            etree.SubElement(emisor, f"{{{NS}}}RznSoc").text   = em.razon_social
+            etree.SubElement(emisor, f"{{{NS}}}RznSoc").text   = (em.razon_social or "").replace("\n", " ").strip()
             etree.SubElement(emisor, f"{{{NS}}}GiroEmis").text = em.giro[:80]
             if em.telefono:
                 etree.SubElement(emisor, f"{{{NS}}}Telefono").text     = em.telefono
@@ -224,9 +224,9 @@ class XMLBuilder:
                 etree.SubElement(emisor, f"{{{NS}}}CorreoEmisor").text = em.correo
             etree.SubElement(emisor, f"{{{NS}}}Acteco").text    = "620100"
 
-        etree.SubElement(emisor, f"{{{NS}}}DirOrigen").text    = em.direccion
-        etree.SubElement(emisor, f"{{{NS}}}CmnaOrigen").text   = em.comuna
-        etree.SubElement(emisor, f"{{{NS}}}CiudadOrigen").text = em.ciudad
+        etree.SubElement(emisor, f"{{{NS}}}DirOrigen").text    = (em.direccion or "").replace("\n", " ").replace("\r", "").strip()
+        etree.SubElement(emisor, f"{{{NS}}}CmnaOrigen").text   = (em.comuna or "").replace("\n", " ").replace("\r", "").strip()
+        etree.SubElement(emisor, f"{{{NS}}}CiudadOrigen").text = (em.ciudad or "").replace("\n", " ").replace("\r", "").strip()
 
         rc       = d.receptor
         receptor = etree.SubElement(enc, f"{{{NS}}}Receptor")
@@ -261,7 +261,7 @@ class XMLBuilder:
 
         etree.SubElement(totales, f"{{{NS}}}MntTotal").text = str(self.monto_total)
 
-        # DscRcgGlobal va DESPUÉS de Totales según el schema EnvioDTE_v10.xsd
+        # DscRcgGlobal va DESPUES de Totales segun EnvioDTE_v10.xsd
         if self._desc_global_monto > 0:
             dscto = etree.SubElement(enc, f"{{{NS}}}DscRcgGlobal")
             etree.SubElement(dscto, f"{{{NS}}}NroLinDR").text  = "1"
