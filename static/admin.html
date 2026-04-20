@@ -644,7 +644,6 @@ function descargarXMLFacturas(){
   URL.revokeObjectURL(url);
   log('XML descargado: '+S.xmlNombreFact,'ok');
 }
-}
 
 function tgl(n){const c=document.getElementById('c'+n);if(c.classList.contains('locked'))return;const b=c.querySelector('.cb');b.style.display=b.style.display==='none'?'block':'none';}
 function unlock(n){const c=document.getElementById('c'+n);c.classList.remove('locked');c.classList.add('active');c.querySelector('.cb').style.display='block';c.scrollIntoView({behavior:'smooth',block:'nearest'});}
