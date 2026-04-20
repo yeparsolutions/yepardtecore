@@ -397,7 +397,7 @@ async def debug_xml(emisor_id: int, db: AsyncSession = Depends(get_db)):
                              precio_unitario=it["precio_unitario"],
                              unidad=it.get("unidad","UN"), exento=it.get("exento",False))
                      for it in caso["items"]]
-            refs = [ReferenciaDTE(tipo_doc_ref="801", folio_ref=str(i+1), razon_ref=f"CASO-{i+1}")]
+            refs = [ReferenciaDTE(tipo_doc_ref="801", folio_ref=str(i+1), cod_ref="SET", razon_ref=f"CASO-{i+1}")]
             datos = InputDTE(tipo_dte=caso["tipo_dte"], folio=folio,
                              fecha_emision=date.fromisoformat(fecha),
                              emisor=EmisorDTE(rut=emisor.rut, razon_social=emisor.razon_social,
