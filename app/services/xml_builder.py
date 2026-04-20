@@ -241,14 +241,6 @@ class XMLBuilder:
             etree.SubElement(receptor, f"{{{NS}}}CmnaRecep").text   = rc.comuna or "S/C"
             etree.SubElement(receptor, f"{{{NS}}}CiudadRecep").text = rc.ciudad or "S/C"
 
-        if self._desc_global_monto > 0:
-            dscto = etree.SubElement(enc, f"{{{NS}}}DscRcgGlobal")
-            etree.SubElement(dscto, f"{{{NS}}}NroLinDR").text  = "1"
-            etree.SubElement(dscto, f"{{{NS}}}TpoMov").text    = "D"
-            etree.SubElement(dscto, f"{{{NS}}}GlosaDR").text   = "Descuento Global"
-            etree.SubElement(dscto, f"{{{NS}}}TpoValor").text  = "%"
-            etree.SubElement(dscto, f"{{{NS}}}ValorDR").text   = f"{d.descuento_global_pct:.2f}"
-
         totales = etree.SubElement(enc, f"{{{NS}}}Totales")
 
         if tipo in TIPOS_FACTURA_EXENTA:
@@ -268,6 +260,15 @@ class XMLBuilder:
             etree.SubElement(totales, f"{{{NS}}}IVA").text      = str(self.monto_iva)
 
         etree.SubElement(totales, f"{{{NS}}}MntTotal").text = str(self.monto_total)
+
+        # DscRcgGlobal va DESPUÉS de Totales según el schema EnvioDTE_v10.xsd
+        if self._desc_global_monto > 0:
+            dscto = etree.SubElement(enc, f"{{{NS}}}DscRcgGlobal")
+            etree.SubElement(dscto, f"{{{NS}}}NroLinDR").text  = "1"
+            etree.SubElement(dscto, f"{{{NS}}}TpoMov").text    = "D"
+            etree.SubElement(dscto, f"{{{NS}}}GlosaDR").text   = "Descuento Global"
+            etree.SubElement(dscto, f"{{{NS}}}TpoValor").text  = "%"
+            etree.SubElement(dscto, f"{{{NS}}}ValorDR").text   = f"{d.descuento_global_pct:.2f}"
 
     def _build_detalle(self, parent, item: ItemDTE, numero_linea: int):
         NS  = self.NAMESPACE
