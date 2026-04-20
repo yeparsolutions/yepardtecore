@@ -453,7 +453,7 @@ async function cargarCAFs(eid,amb){
       activos.forEach(c=>S.tipos.add(c.tipo_dte));
       document.getElementById('cafs_info_b').textContent=activos.map(c=>'Tipo '+c.tipo_dte+' ('+TN[c.tipo_dte]+') — folios '+c.folio_actual+'-'+c.folio_hasta+' ('+c.disponibles+' disp.)').join('\n');
       document.getElementById('cafs_info').classList.add('show');
-      if(S.tipos.has(39)){done(3,activos.length+' CAFs');unlock(4);}
+      if(S.tipos.has(39)){done(3,activos.length+' CAFs');unlock(4);unlock(5);}
       log(activos.length+' CAFs detectados','ok');
     }
   }catch{log('No se pudieron cargar CAFs','warn');}
@@ -479,7 +479,7 @@ function cambiarEmisor(){
   document.getElementById('cafs_info').classList.remove('show');
   document.getElementById('dlbox').classList.remove('show');
   document.getElementById('sii_steps').classList.remove('show');
-  ['c2','c3','c4'].forEach(id=>{const c=document.getElementById(id);c.className='card locked';c.querySelector('.cb').style.display='none';});
+  ['c2','c3','c4','c5'].forEach(id=>{const c=document.getElementById(id);c.className='card locked';c.querySelector('.cb').style.display='none';});
   ['b1','b2','b3','b4'].forEach(id=>{document.getElementById(id).textContent='pendiente';document.getElementById(id).className='badge p';});
   document.getElementById('c1').className='card active';
   document.getElementById('c1').querySelector('.cb').style.display='block';
@@ -535,7 +535,7 @@ async function subirCAFs(){
     catch(e){fail++;msgs.push('✗ Tipo '+c.tipo+': '+(e.data?.detail||'Error'));}
   }
   res(3,fail===0,ok+' cargados'+(fail?', '+fail+' error':'')+'\\n\\n'+msgs.join('\\n'));
-  if(ok>0){done(3,'✓ '+ok+' CAFs');unlock(4);upChk();}
+  if(ok>0){done(3,'✓ '+ok+' CAFs');unlock(4);unlock(5);upChk();}
 }
 
 function upChk(){
