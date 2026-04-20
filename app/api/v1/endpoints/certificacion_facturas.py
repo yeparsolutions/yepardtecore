@@ -41,7 +41,7 @@ def _ref_set(n: int, fecha: str) -> dict:
         "tipo_doc_ref": 801,
         "folio_ref":    n,
         "fecha_ref":    fecha,
-        # cod_ref se omite — el schema EnvioDTE_v10 solo acepta 1,2,3 (no 'SET')
+        "cod_ref":      "SET",   # requerido por EnvioDTE_v10.xsd para TpoDocRef=801
         "razon_ref":    f"CASO-{NATENCION}-{n}",
     }
 
