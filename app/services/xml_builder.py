@@ -80,7 +80,7 @@ class ReferenciaDTE:
     folio_ref: int
     fecha_ref: date
     razon_ref: str = ""
-    cod_ref: int = 0
+    cod_ref: "str | int" = 0   # acepta "SET" o 1/2/3
 
 
 @dataclass
@@ -298,7 +298,7 @@ class XMLBuilder:
         etree.SubElement(r, f"{{{NS}}}NroLinRef").text  = str(numero)
         etree.SubElement(r, f"{{{NS}}}TpoDocRef").text  = str(ref.tipo_doc_ref)
         etree.SubElement(r, f"{{{NS}}}FolioRef").text   = str(ref.folio_ref)
-        if ref.cod_ref:
-            etree.SubElement(r, f"{{{NS}}}CodRef").text   = str(ref.cod_ref)
+        if ref.cod_ref not in (0, None, ""):
+            etree.SubElement(r, f"{{{NS}}}CodRef").text = str(ref.cod_ref)
         if ref.razon_ref:
             etree.SubElement(r, f"{{{NS}}}RazonRef").text = ref.razon_ref[:90]
