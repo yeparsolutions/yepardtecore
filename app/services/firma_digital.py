@@ -205,9 +205,11 @@ class FirmaDigital:
         ).decode()
 
         root.append(etree.fromstring(self._build_signature(signed_info, firma_b64).encode()))
-        # Serializar sobre como ISO-8859-1 (requerido por SII)
-        xml_bytes = etree.tostring(root, encoding="ISO-8859-1", xml_declaration=True)
-        return xml_bytes.decode("ISO-8859-1")
+        # Serializar sobre: construir declaración con comillas dobles y encoding ISO-8859-1
+        xml_sin_decl = etree.tostring(root, encoding="unicode")
+        declaracion = '<?xml version="1.0" encoding="ISO-8859-1"?>'
+        xml_completo = declaracion + xml_sin_decl
+        return xml_completo
 
     @staticmethod
     def cargar_desde_base64(cert_b64: str, password: str) -> "FirmaDigital":
