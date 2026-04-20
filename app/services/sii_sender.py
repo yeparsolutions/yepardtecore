@@ -78,12 +78,13 @@ class SIISender:
             schema   = f"{NS} EnvioBOLETA_v11.xsd"
         else:
             root_tag = f"{{{NS}}}EnvioDTE"
-            schema   = f"{NS} http://www.sii.cl/SiiDte/EnvioDTE_v10.xsd"
+            schema   = f"{NS} EnvioDTE_v10.xsd"
 
         nsmap    = {None: NS, "xsi": XSI_NS}
+        # xsi:schemaLocation DEBE ir ANTES de version — el validador SII lo lee primero
         envio_el = etree.Element(root_tag, attrib={
-            "version": "1.0",
             f"{{{XSI_NS}}}schemaLocation": schema,
+            "version": "1.0",
         }, nsmap=nsmap)
 
         set_el = etree.SubElement(envio_el, f"{{{NS}}}SetDTE",
