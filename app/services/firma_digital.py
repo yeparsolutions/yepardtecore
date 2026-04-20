@@ -205,9 +205,9 @@ class FirmaDigital:
         ).decode()
 
         root.append(etree.fromstring(self._build_signature(signed_info, firma_b64).encode()))
-        # Agregar declaración XML con encoding ISO-8859-1 para el sobre final
-        xml_bytes = etree.tostring(root, encoding="ISO-8859-1", xml_declaration=True)
-        return xml_bytes.decode("ISO-8859-1")
+        # Serializar sobre como UTF-8 (requerido por EnvioDTE_v10.xsd)
+        xml_bytes = etree.tostring(root, encoding="UTF-8", xml_declaration=True)
+        return xml_bytes.decode("UTF-8")
 
     @staticmethod
     def cargar_desde_base64(cert_b64: str, password: str) -> "FirmaDigital":
