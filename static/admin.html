@@ -321,6 +321,52 @@ nav{position:sticky;top:0;z-index:100;background:rgba(7,9,15,.95);backdrop-filte
     </div>
   </div>
 
+  <!-- Paso 5: SET BASICO de Facturas (Número de Atención 4784337) -->
+  <div class="card locked" id="c5">
+    <div class="ch" onclick="tgl(5)">
+      <div class="sn">5</div><div class="ct">SET BASICO Facturas — N° Atención 4784337</div>
+      <span class="badge p" id="b5">pendiente</span>
+    </div>
+    <div class="cb">
+      <p style="font-size:13px;color:#64748b;margin-bottom:16px">
+        Genera el <code style="font-family:'JetBrains Mono',monospace;color:#e2e8f0">EnvioDTE</code>
+        con los 8 documentos del SET BASICO de Facturas:
+        4 Facturas Electrónicas (tipo 33), 3 Notas de Crédito (tipo 61) y 1 Nota de Débito (tipo 56).
+        Número de Atención: <strong style="color:#10b981">4784337</strong>
+      </p>
+
+      <div class="chklist">
+        <div class="chkt">Documentos incluidos</div>
+        <div class="chki">📄 CASO 1 — Factura: Cajón AFECTO + Relleno AFECTO</div>
+        <div class="chki">📄 CASO 2 — Factura con descuentos por línea (12% y 30%)</div>
+        <div class="chki">📄 CASO 3 — Factura afecto + ítem exento</div>
+        <div class="chki">📄 CASO 4 — Factura con descuento global 28%</div>
+        <div class="chki">📋 CASO 5 — NC: Corrige giro receptor (ref CASO 1)</div>
+        <div class="chki">📋 CASO 6 — NC: Devolución parcial (ref CASO 2)</div>
+        <div class="chki">📋 CASO 7 — NC: Anula factura (ref CASO 3)</div>
+        <div class="chki">📋 CASO 8 — ND: Anula nota de crédito (ref CASO 5)</div>
+      </div>
+
+      <div class="brow" style="flex-direction:column;gap:10px">
+        <button class="btn bp bfull" id="btnGenerarFact" onclick="generarXMLFacturas()" style="padding:13px">
+          ⚙️ &nbsp;Generar SET BASICO Facturas
+        </button>
+      </div>
+
+      <!-- Descarga -->
+      <div class="download-box" id="dlbox5">
+        <div class="dl-icon">📥</div>
+        <div class="dl-name" id="dl_name5"></div>
+        <button class="btn bp" id="btnDescargar5" onclick="descargarXMLFacturas()" style="padding:11px 28px">
+          Descargar XML
+        </button>
+        <div class="dl-sub">Una vez descargado, súbelo en maullin.sii.cl → Envío de DTE</div>
+      </div>
+
+      <div class="result" id="r5"><div class="rlbl" id="r5l"></div><div class="rbody" id="r5c"></div></div>
+    </div>
+  </div>
+
 </div><!-- /steps -->
 
 <div class="conpanel">
@@ -553,6 +599,51 @@ function descargarXML(){
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
   log('XML descargado: '+S.xmlNombre,'ok');
+}
+
+/* Generar XML SET BASICO Facturas */
+async function generarXMLFacturas(){
+  if(!S.id){log('Carga el emisor primero','warn');return;}
+  const btn=document.getElementById('btnGenerarFact');
+  btn.disabled=true;btn.textContent='⚙️  Generando SET BASICO...';
+  log('Generando SET BASICO de Facturas (N° Atención 4784337)...','info');
+  try{
+    const r=await fetch(base()+'/v1/certificacion-facturas/generar-xml?emisor_id='+S.id,{method:'POST'});
+    if(!r.ok){
+      const txt=await r.text();
+      log('Error '+r.status,'err');
+      res(5,false,'Error '+r.status+': '+txt.slice(0,300));
+      return;
+    }
+    const cd=r.headers.get('Content-Disposition')||'';
+    const match=cd.match(/filename="([^"]+)"/);
+    S.xmlNombreFact=match?match[1]:'EnvioDTE_SetBasico.xml';
+    S.xmlBlobFact=await r.blob();
+    const casos=r.headers.get('X-Casos-Generados')||'?';
+    const errores=r.headers.get('X-Casos-Error')||'0';
+    log('SET BASICO generado — '+casos+'/8 documentos firmados'+(errores!=='0'?' ('+errores+' con error)':''),'ok');
+    document.getElementById('dl_name5').textContent=S.xmlNombreFact;
+    document.getElementById('dlbox5').classList.add('show');
+    done(5,'✓ SET BASICO listo');
+    res(5,true,'EnvioDTE generado con '+casos+'/8 documentos.\nNombre: '+S.xmlNombreFact+'\nDescárgalo y súbelo en maullin.sii.cl');
+  }catch(e){
+    log('Error generando SET BASICO: '+e,'err');
+    res(5,false,'Error: '+String(e));
+  }finally{
+    btn.disabled=false;btn.innerHTML='⚙️ &nbsp;Generar SET BASICO Facturas';
+  }
+}
+
+function descargarXMLFacturas(){
+  if(!S.xmlBlobFact){log('Primero genera el XML de facturas','warn');return;}
+  const url=URL.createObjectURL(S.xmlBlobFact);
+  const a=document.createElement('a');
+  a.href=url;a.download=S.xmlNombreFact;
+  document.body.appendChild(a);a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  log('XML descargado: '+S.xmlNombreFact,'ok');
+}
 }
 
 function tgl(n){const c=document.getElementById('c'+n);if(c.classList.contains('locked'))return;const b=c.querySelector('.cb');b.style.display=b.style.display==='none'?'block':'none';}
