@@ -76,14 +76,15 @@ class SIISender:
         if es_boleta:
             root_tag = f"{{{NS}}}EnvioBOLETA"
             schema   = f"{NS} EnvioBOLETA_v11.xsd"
-            attribs  = {"version": "1.0", f"{{{XSI_NS}}}schemaLocation": schema}
         else:
             root_tag = f"{{{NS}}}EnvioDTE"
-            # Sin schemaLocation — el namespace identifica el schema
-            attribs  = {"version": "1.0"}
+            schema   = f"{NS} EnvioDTE_v10.xsd"
 
         nsmap    = {None: NS, "xsi": XSI_NS}
-        envio_el = etree.Element(root_tag, attrib=attribs, nsmap=nsmap)
+        envio_el = etree.Element(root_tag, attrib={
+            "version": "1.0",
+            f"{{{XSI_NS}}}schemaLocation": schema,
+        }, nsmap=nsmap)
 
         set_el = etree.SubElement(envio_el, f"{{{NS}}}SetDTE",
                                   attrib={"ID": "SetDoc"})
