@@ -10,9 +10,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.db.base import get_db
 from app.models.emisor import Emisor
+from app.models.certificado import Certificado
 from app.services.dte_service import DTEService
 from app.services.firma_digital import FirmaDigital
 from app.services.sii_sender import SIISender
