@@ -75,10 +75,10 @@ class SIISender:
         es_boleta = all(t in TIPOS_BOLETA for t in tipos_en_sobre)
         if es_boleta:
             root_tag = f"{{{NS}}}EnvioBOLETA"
-            schema   = f"{NS} EnvioBOLETA_v11.xsd"
+            schema   = f"{NS} http://www.sii.cl/SiiDte/EnvioBOLETA_v11.xsd"
         else:
             root_tag = f"{{{NS}}}EnvioDTE"
-            schema   = f"{NS} EnvioDTE_v10.xsd"
+            schema   = f"{NS} http://www.sii.cl/SiiDte/EnvioDTE_v10.xsd"
 
         # xsi en el sobre — los DTEs ya lo tienen, no hereda de nuevo
         nsmap    = {None: NS, "xsi": XSI_NS}
