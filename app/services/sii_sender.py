@@ -75,17 +75,15 @@ class SIISender:
         es_boleta = all(t in TIPOS_BOLETA for t in tipos_en_sobre)
         if es_boleta:
             root_tag = f"{{{NS}}}EnvioBOLETA"
-            schema   = f"{NS} http://www.sii.cl/SiiDte/EnvioBOLETA_v11.xsd"
+            schema   = f"{NS} EnvioBOLETA_v11.xsd"
+            attribs  = {"version": "1.0", f"{{{XSI_NS}}}schemaLocation": schema}
         else:
             root_tag = f"{{{NS}}}EnvioDTE"
-            schema   = f"{NS} http://www.sii.cl/SiiDte/EnvioDTE_v10.xsd"
+            # Sin schemaLocation — el namespace identifica el schema
+            attribs  = {"version": "1.0"}
 
-        # xsi en el sobre — los DTEs ya lo tienen, no hereda de nuevo
         nsmap    = {None: NS, "xsi": XSI_NS}
-        envio_el = etree.Element(root_tag, attrib={
-            "version": "1.0",
-            f"{{{XSI_NS}}}schemaLocation": schema,
-        }, nsmap=nsmap)
+        envio_el = etree.Element(root_tag, attrib=attribs, nsmap=nsmap)
 
         set_el = etree.SubElement(envio_el, f"{{{NS}}}SetDTE",
                                   attrib={"ID": "SetDoc"})
