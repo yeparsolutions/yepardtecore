@@ -65,9 +65,18 @@ async def generar_xml_facturas(
     emisor = await db.get(Emisor, emisor_id)
     if not emisor:
         raise HTTPException(status_code=404, detail=f"Emisor {emisor_id} no encontrado")
-    cert = emisor.certificado_activo
+
+    # Obtener certificado con query directa (evita lazy loading en async)
+    cert_result = await db.execute(
+        select(Certificado).where(
+            Certificado.emisor_id == emisor_id,
+            Certificado.activo == True
+        ).limit(1)
+    )
+    cert = cert_result.scalar_one_or_none()
     if not cert or not cert.certificado_p12:
         raise HTTPException(status_code=400, detail="Sin certificado .p12 cargado")
+    logger.info(f"[CERT FAC] Certificado OK: {cert.rut_firmante}")
 
     fecha = fecha_override or date.today().isoformat()
     service = DTEService(db)
