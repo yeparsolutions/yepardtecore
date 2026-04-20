@@ -245,7 +245,7 @@ async def generar_xml_facturas(
     )
 
     return Response(
-        content=sobre_xml.encode("ISO-8859-1"),
+        content=sobre_xml.encode("UTF-8"),
         media_type="application/xml",
         headers={
             "Content-Disposition": f'attachment; filename="{nombre}"',
