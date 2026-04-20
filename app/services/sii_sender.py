@@ -78,7 +78,7 @@ class SIISender:
             schema   = f"{NS} EnvioBOLETA_v11.xsd"
         else:
             root_tag = f"{{{NS}}}EnvioDTE"
-            schema   = f"{NS} EnvioDTE_v10.xsd"
+            schema   = f"{NS} http://www.sii.cl/SiiDte/EnvioDTE_v10.xsd"
 
         nsmap    = {None: NS, "xsi": XSI_NS}
         envio_el = etree.Element(root_tag, attrib={
