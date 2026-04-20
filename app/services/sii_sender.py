@@ -60,7 +60,10 @@ class SIISender:
         tipos_en_sobre: dict[int, int] = {}
         for dte_xml in dtes_xml:
             try:
-                dte_root = etree.fromstring(dte_xml.encode("ISO-8859-1"))
+                dte_clean2 = dte_xml
+                if dte_clean2.startswith('<?xml'):
+                    dte_clean2 = dte_clean2[dte_clean2.index('?>') + 2:].lstrip()
+                dte_root = etree.fromstring(dte_clean2.encode("ISO-8859-1"))
                 tipo_el  = dte_root.find(f".//{{{NS}}}TipoDTE")
                 if tipo_el is not None:
                     t = int(tipo_el.text)
@@ -108,7 +111,11 @@ class SIISender:
         for i, dte_xml in enumerate(dtes_xml):
             try:
                 parser = etree.XMLParser(remove_blank_text=True)
-                dte_el = etree.fromstring(dte_xml.encode("ISO-8859-1"), parser)
+                # Remover declaración XML si existe (puede causar conflicto de encoding)
+                dte_clean = dte_xml
+                if dte_clean.startswith('<?xml'):
+                    dte_clean = dte_clean[dte_clean.index('?>') + 2:].lstrip()
+                dte_el = etree.fromstring(dte_clean.encode("ISO-8859-1"), parser)
                 # Agregar newline: tail del DTE anterior apunta al texto
                 # que va entre </DTE anterior> y <DTE siguiente>
                 if i < len(dtes_xml) - 1:
