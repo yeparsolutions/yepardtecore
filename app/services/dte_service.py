@@ -1,181 +1,185 @@
 # app/services/dte_service.py
 # ══════════════════════════════════════════════════════════════
-# Orquestador principal del motor DTE
+# Orquestador principal del motor DTE - Versión Sincronizada
 # ══════════════════════════════════════════════════════════════
 
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import date, datetime, timezone
-from typing import Optional, List, Dict, Any
+from typing import Any
 
-from app.models.dte import DTE, DTEItem, DTEReferencia
+# Importaciones corregidas según app/models/dte.py
+from app.models.dte    import DTE, ItemDTE
 from app.models.emisor import Emisor
-from app.models.caf import CAF
-from app.models.certificado import Certificado
-from app.services.xml_builder import XMLBuilder, InputDTE, EmisorDTE, ReceptorDTE, ItemDTE, ReferenciaDTE
-from app.services.firma_digital import FirmaDigital
-from app.services.sii_sender import SIISender
+from app.models.caf    import CAF
 
-logger = logging.getLogger("yepardtecore.services.dte_service")
+# Importaciones de servicios auxiliares
+from app.services.xml_builder   import XMLBuilder, InputDTE, EmisorDTE, ReceptorDTE
+from app.services.xml_builder   import ItemDTE as ItemDTEInput, ReferenciaDTE
+from app.services.firma_digital import FirmaDigital
+from app.services.caf_service   import CAFService
+from app.services.sii_sender    import SIISender
+
+logger = logging.getLogger("yepardtecore.dte")
+
+TIPOS_NOMBRES = {
+    33: "Factura",
+    34: "FactExenta",
+    39: "Boleta",
+    52: "Guía",
+    56: "ND",
+    61: "NC",
+}
 
 class DTEService:
     def __init__(self, db: AsyncSession):
-        self.db = db
+        self.db          = db
+        self.caf_service = CAFService(db)
 
-    async def emitir_dte(self, datos_input: Dict[str, Any], emisor_id: int) -> Dict[str, Any]:
-        """
-        Flujo completo de emisión: Validación -> Folio -> XML -> Firma -> Registro
-        """
-        # 1. Obtener Emisor y su Certificado
-        emisor = await self.db.get(Emisor, emisor_id)
-        if not emisor:
-            raise Exception(f"Emisor con ID {emisor_id} no encontrado")
+    async def emitir(self, emisor_id: int, datos: dict, auto_enviar: bool = True) -> dict:
+        # 1. Verificar idempotencia
+        idempotency_key = datos.get("idempotency_key") or datos.get("referencia_interna")
+        if idempotency_key:
+            dte_existente = await self._buscar_por_idempotency(emisor_id, idempotency_key)
+            if dte_existente:
+                return self._dte_a_dict(dte_existente)
 
-        stmt = select(Certificado).where(Certificado.emisor_id == emisor_id, Certificado.activo == True)
-        result = await self.db.execute(stmt)
-        cert = result.scalar_one_or_none()
-        if not cert:
-            raise Exception("No se encontró un certificado digital activo para este emisor")
+        # 2. Cargar emisor y obtener folio
+        emisor = await self._cargar_emisor(emisor_id)
+        tipo_dte = datos["tipo_dte"]
+        folio, caf = await self.caf_service.obtener_siguiente_folio(
+            emisor_id, tipo_dte, emisor.ambiente
+        )
 
-        # 2. Validar y obtener Folio (CAF)
-        tipo_dte = datos_input.get("tipo_dte")
-        caf = await self._obtener_caf_valido(emisor_id, tipo_dte, emisor.ambiente)
-        folio = caf.folio_actual
+        # 3. Construir XML
+        input_dte = self._construir_input(datos, folio, emisor)
+        builder = XMLBuilder(input_dte)
+        xml_sin_firma = builder.construir()
+
+        # 4. Firmar DTE
+        cert = emisor.certificado_activo
+        if not cert or not cert.certificado_p12:
+            raise ValueError(f"Emisor {emisor.rut} sin certificado .p12")
+
+        firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
         
-        # 3. Preparar datos para el XML Builder
-        input_dte = self._mapear_a_input_dte(datos_input, emisor, folio)
+        # Obtener primer item para el TED
+        it1 = datos.get("items", [{}])[0].get("nombre", "PRODUCTO")[:40]
+        
+        xml_firmado_bytes = firma.firmar_dte(
+            xml_bytes     = xml_sin_firma,
+            folio         = folio,
+            tipo_dte      = tipo_dte,
+            xml_caf       = caf.xml_caf,
+            fecha_emision = datos.get("fecha_emision", date.today().isoformat()),
+            rut_emisor    = emisor.rut,
+            monto_total   = builder.monto_total,
+            it1_nombre    = it1,
+        )
+        xml_firmado_str = xml_firmado_bytes.decode("ISO-8859-1")
 
-        try:
-            # 4. Construir XML Base
-            builder = XMLBuilder(input_dte)
-            xml_sin_firmar = builder.construir() # Retorna bytes en ISO-8859-1
+        # 5. Guardar en BD (Cabecera)
+        estado_inicial = "PENDIENTE_ENVIO" if auto_enviar else "BORRADOR"
+        dte_db = DTE(
+            emisor_id          = emisor_id,
+            tipo_dte           = tipo_dte,
+            folio              = folio,
+            folio_fmt          = f"{TIPOS_NOMBRES.get(tipo_dte, 'D')}-{folio:08d}",
+            rut_receptor       = datos.get("receptor", {}).get("rut"),
+            nombre_receptor    = datos.get("receptor", {}).get("razon_social"),
+            monto_neto         = builder.monto_neto,
+            monto_iva          = builder.monto_iva,
+            monto_total        = builder.monto_total,
+            estado             = estado_inicial,
+            xml_firmado        = xml_firmado_str,
+            referencia_interna = idempotency_key,
+            ambiente           = emisor.ambiente
+        )
+        self.db.add(dte_db)
+        await self.db.flush()
 
-            # 5. Firmar Documento
-            # Pasamos los datos necesarios para la firma del Nodo DTE
-            signer = FirmaDigital(cert.certificado_p12, cert.certificado_password)
-            xml_firmado = signer.firmar_dte(
-                xml_bytes=xml_sin_firmar,
-                folio=folio,
-                tipo_dte=tipo_dte,
-                xml_caf=caf.xml_caf,
-                fecha_emision=input_dte.fecha_emision,
-                rut_emisor=emisor.rut,
-                monto_total=builder.monto_total
+        # 6. Guardar Items (Relación corregida a ItemDTE)
+        for i, item_data in enumerate(input_dte.items, 1):
+            nuevo_item = ItemDTE(
+                dte_id          = dte_db.id,
+                numero_linea    = i,
+                nombre          = item_data.nombre,
+                cantidad        = item_data.cantidad,
+                precio_unitario = item_data.precio_unitario,
+                monto_item      = item_data.monto_item,
+                exento          = item_data.exento,
+                codigo          = item_data.codigo
             )
+            self.db.add(nuevo_item)
 
-            # 6. Registrar en Base de Datos
-            nuevo_dte = await self._guardar_dte_db(input_dte, builder, emisor_id, xml_firmado)
-            
-            # 7. Actualizar Folio en el CAF
-            caf.folio_actual += 1
-            await self.db.commit()
+        # 7. Envío automático si aplica
+        track_id = None
+        if auto_enviar:
+            try:
+                sender = SIISender(ambiente=emisor.ambiente)
+                sobre = sender.construir_sobre(
+                    dtes_xml=[xml_firmado_str],
+                    rut_emisor=emisor.rut,
+                    rut_enviador=firma.rut_certificado or emisor.rut,
+                    firma_service=firma
+                )
+                res = await sender.enviar_sobre(
+                    sobre, emisor.rut, firma.rut_certificado or emisor.rut,
+                    p12_bytes=cert.certificado_p12, password=cert.certificado_password
+                )
+                track_id = res.get("track_id")
+                dte_db.estado = "ENVIADO" if track_id else "ERROR_ENVIO"
+                dte_db.track_id = track_id
+            except Exception as e:
+                logger.error(f"Error envío: {e}")
+                dte_db.estado = "ERROR_ENVIO"
 
-            return {
-                "ok": True,
-                "dte_id": nuevo_dte.id,
-                "folio": folio,
-                "xml_base64": xml_firmado.decode('ISO-8859-1')
-            }
+        await self.db.commit()
+        return self._dte_a_dict(dte_db)
 
-        except Exception as e:
-            await self.db.rollback()
-            logger.error(f"Error en proceso de emisión: {str(e)}")
-            raise e
+    async def _cargar_emisor(self, emisor_id: int) -> Emisor:
+        emisor = await self.db.get(Emisor, emisor_id)
+        if not emisor or not emisor.activo:
+            raise ValueError("Emisor no encontrado o inactivo")
+        return emisor
 
-    async def _obtener_caf_valido(self, emisor_id: int, tipo_dte: int, ambiente: str) -> CAF:
-        stmt = select(CAF).where(
-            CAF.emisor_id == emisor_id,
-            CAF.tipo_dte == tipo_dte,
-            CAF.ambiente == ambiente,
-            CAF.activo == True
+    async def _buscar_por_idempotency(self, emisor_id: int, key: str) -> DTE | None:
+        res = await self.db.execute(
+            select(DTE).where(DTE.emisor_id == emisor_id, DTE.referencia_interna == key)
         )
-        result = await self.db.execute(stmt)
-        caf = result.scalar_one_or_none()
+        return res.scalar_one_or_none()
 
-        if not caf:
-            raise Exception(f"No hay CAF activo para tipo {tipo_dte} en ambiente {ambiente}")
-        if caf.folio_actual > caf.folio_hasta:
-            raise Exception(f"Folios agotados para tipo {tipo_dte}")
-        
-        return caf
+    def _dte_a_dict(self, dte: DTE) -> dict:
+        return {
+            "dte_id": dte.id,
+            "folio": dte.folio,
+            "estado": dte.estado,
+            "track_id": dte.track_id,
+            "monto_total": dte.monto_total
+        }
 
-    def _mapear_a_input_dte(self, datos: Dict[str, Any], emisor: Emisor, folio: int) -> InputDTE:
-        # Mapeo de lógica de negocio a estructura de XML
-        emisor_dte = EmisorDTE(
-            rut=emisor.rut,
-            razon_social=emisor.razon_social,
-            giro=emisor.giro,
-            direccion=emisor.direccion,
-            comuna=emisor.comuna,
-            ciudad=emisor.ciudad
-        )
-
-        receptor_data = datos.get("receptor", {})
-        receptor = ReceptorDTE(
-            rut=receptor_data.get("rut"),
-            razon_social=receptor_data.get("razon_social"),
-            giro=receptor_data.get("giro", "Particular"),
-            direccion=receptor_data.get("direccion", "Ciudad"),
-            comuna=receptor_data.get("comuna", "Santiago"),
-            ciudad=receptor_data.get("ciudad", "Santiago")
-        )
-
-        items = [
-            ItemDTE(
-                nombre=i["nombre"],
-                cantidad=i.get("cantidad", 1),
-                precio_unitario=i["precio_unitario"],
-                exento=i.get("exento", False)
-            ) for i in datos.get("items", [])
-        ]
-
-        referencias = [
-            ReferenciaDTE(
-                tipo_doc_ref=r["tipo_doc_ref"],
-                folio_ref=r["folio_ref"],
-                fecha_ref=date.fromisoformat(r["fecha_ref"]),
-                cod_ref=r.get("cod_ref", 0),
-                razon_ref=r.get("razon_ref", "")
-            ) for r in datos.get("referencias", [])
-        ]
-
+    def _construir_input(self, datos: dict, folio: int, emisor: Emisor) -> InputDTE:
         return InputDTE(
             tipo_dte=datos["tipo_dte"],
             folio=folio,
-            fecha_emision=date.today(),
-            emisor=emisor_dte,
-            receptor=receptor,
-            items=items,
-            referencias=referencias,
+            fecha_emision=date.fromisoformat(datos.get("fecha_emision", date.today().isoformat())),
+            emisor=EmisorDTE(
+                rut=emisor.rut, razon_social=emisor.razon_social, giro=emisor.giro,
+                direccion=emisor.direccion, comuna=emisor.comuna, ciudad=emisor.ciudad
+            ),
+            receptor=ReceptorDTE(
+                rut=datos.get("receptor", {}).get("rut", "66666666-6"),
+                razon_social=datos.get("receptor", {}).get("razon_social", "Consumidor Final")
+            ),
+            items=[
+                ItemDTEInput(
+                    nombre=i["nombre"],
+                    cantidad=float(i.get("cantidad", 1)),
+                    precio_unitario=float(i["precio_unitario"]),
+                    codigo=i.get("codigo", ""),
+                    exento=i.get("exento", False)
+                ) for i in datos.get("items", [])
+            ],
             ambiente=emisor.ambiente
         )
-
-    async def _guardar_dte_db(self, input_dte: InputDTE, builder: Any, emisor_id: int, xml_firmado: bytes) -> DTE:
-        nuevo_dte = DTE(
-            emisor_id=emisor_id,
-            tipo_dte=input_dte.tipo_dte,
-            folio=input_dte.folio,
-            rut_receptor=input_dte.receptor.rut,
-            nombre_receptor=input_dte.receptor.razon_social,
-            monto_neto=builder.monto_neto,
-            monto_iva=builder.monto_iva,
-            monto_total=builder.monto_total,
-            xml_firmado=xml_firmado.decode('ISO-8859-1'),
-            estado="PENDIENTE_ENVIO"
-        )
-        self.db.add(nuevo_dte)
-        await self.db.flush() # Para obtener el ID antes del commit
-
-        # Guardar items
-        for item in input_dte.items:
-            db_item = DTEItem(
-                dte_id=nuevo_dte.id,
-                nombre=item.nombre,
-                cantidad=item.cantidad,
-                precio_unitario=item.precio_unitario,
-                monto_item=int(item.cantidad * item.precio_unitario)
-            )
-            self.db.add(db_item)
-
-        return nuevo_dte
