@@ -1,4 +1,8 @@
 # app/services/dte_service.py
+# ══════════════════════════════════════════════════════════════
+# Orquestador principal del motor DTE - Versión Final Sincronizada
+# ══════════════════════════════════════════════════════════════
+
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -13,6 +17,17 @@ from app.services.firma_digital import FirmaDigital
 from app.services.caf_service   import CAFService
 
 logger = logging.getLogger("yepardtecore.dte")
+
+# Mapeo para generar el folio_fmt
+TIPOS_SIGLAS = {
+    33: "F",   # Factura
+    34: "FE",  # Factura Exenta
+    39: "B",   # Boleta
+    41: "BE",  # Boleta Exenta
+    52: "G",   # Guía
+    56: "ND",  # Nota Débito
+    61: "NC",  # Nota Crédito
+}
 
 class DTEService:
     def __init__(self, db: AsyncSession):
@@ -31,7 +46,7 @@ class DTEService:
             emisor_id, tipo_dte, emisor.ambiente
         )
 
-        # 3. Construir XML base (Siguiendo estructura del Ejemplo SII)
+        # 3. Construir XML base
         input_dte = self._construir_input(datos, folio, emisor)
         builder = XMLBuilder(input_dte)
         xml_sin_firma = builder.construir()
@@ -43,37 +58,37 @@ class DTEService:
 
         firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
         
-        # Generar el XML firmado
-        try:
-            xml_firmado_bytes = firma.firmar_dte(
-                xml_bytes = xml_sin_firma,
-                folio    = folio,
-                tipo_dte = tipo_dte,
-                xml_caf  = caf.xml_caf  # Importante para el TED
-            )
-            xml_firmado_str = xml_firmado_bytes.decode("ISO-8859-1")
-        except Exception as e:
-            logger.error(f"Error crítico en firma digital: {e}")
-            raise RuntimeError(f"Falla al firmar documento: {str(e)}")
+        # Generar el XML firmado (Pasando el CAF para el Timbre TED)
+        xml_firmado_bytes = firma.firmar_dte(
+            xml_bytes = xml_sin_firma,
+            folio    = folio,
+            tipo_dte = tipo_dte,
+            xml_caf  = caf.xml_caf
+        )
+        xml_firmado_str = xml_firmado_bytes.decode("ISO-8859-1")
 
         # 5. Guardar en Base de Datos (Cabecera)
-        # Aseguramos que todos los campos existan para evitar el Error 500
+        # FIX: Se agrega folio_fmt para cumplir con el constraint NOT NULL
+        sigla = TIPOS_SIGLAS.get(tipo_dte, "D")
+        folio_formateado = f"{sigla}-{folio:08d}"
+
         nuevo_dte = DTE(
             emisor_id       = emisor_id,
             tipo_dte        = tipo_dte,
             folio           = folio,
+            folio_fmt       = folio_formateado, # <--- CORRECCIÓN AQUÍ
             rut_receptor    = datos.get("receptor", {}).get("rut"),
             nombre_receptor = datos.get("receptor", {}).get("razon_social"),
             monto_neto      = builder.monto_neto,
             monto_iva       = builder.monto_iva,
             monto_total     = builder.monto_total,
-            xml_firmado     = xml_firmado_str,  # <-- Aquí estaba el error
+            xml_firmado     = xml_firmado_str,
             estado          = "PENDIENTE_ENVIO" if auto_enviar else "BORRADOR",
             ambiente        = emisor.ambiente
         )
         
         self.db.add(nuevo_dte)
-        await self.db.flush() # Para obtener el ID
+        await self.db.flush() 
 
         # 6. Guardar Items
         for i, item_data in enumerate(input_dte.items, 1):
@@ -93,22 +108,34 @@ class DTEService:
         return {
             "id": nuevo_dte.id,
             "folio": folio,
-            "status": "success",
-            "xml": xml_firmado_str[:100] + "..." # Solo para log
+            "folio_fmt": folio_formateado,
+            "status": "success"
         }
 
     def _construir_input(self, datos: dict, folio: int, emisor: Emisor) -> InputDTE:
+        # Extraer datos del receptor de forma segura
+        r_data = datos.get("receptor", {})
+        
         return InputDTE(
             tipo_dte      = datos["tipo_dte"],
             folio         = folio,
             fecha_emision = date.fromisoformat(datos.get("fecha_emision", date.today().isoformat())),
             emisor        = EmisorDTE(
-                rut=emisor.rut, razon_social=emisor.razon_social, giro=emisor.giro,
-                direccion=emisor.direccion, comuna=emisor.comuna, ciudad=emisor.ciudad
+                rut=emisor.rut, 
+                razon_social=emisor.razon_social, 
+                giro=emisor.giro,
+                direccion=emisor.direccion, 
+                comuna=emisor.comuna, 
+                ciudad=emisor.ciudad,
+                acteco=emisor.acteco # Asegúrate que el modelo Emisor tenga acteco
             ),
             receptor      = ReceptorDTE(
-                rut=datos.get("receptor", {}).get("rut"),
-                razon_social=datos.get("receptor", {}).get("razon_social")
+                rut=r_data.get("rut"),
+                razon_social=r_data.get("razon_social"),
+                giro=r_data.get("giro", "Particular"),
+                direccion=r_data.get("direccion", "Ciudad"),
+                comuna=r_data.get("comuna", "Santiago"),
+                ciudad=r_data.get("ciudad", "Santiago")
             ),
             items         = [
                 ItemDTEInput(
