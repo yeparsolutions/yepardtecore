@@ -14,10 +14,11 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.9
 
-# ── Firma digital DTE (CAMBIO: Usamos xmlsig en lugar de signxml) ──
+# ── Firma digital DTE ─────────────────────────────────────────────
 lxml==5.2.2
 cryptography==42.0.7
-xmlsig==0.1.9
+pyOpenSSL==24.1.0
+signxml==3.9.0
 
 # ── Generación de PDF ─────────────────────────────────────────────
 reportlab==4.2.0
