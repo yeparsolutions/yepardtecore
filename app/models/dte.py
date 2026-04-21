@@ -1,185 +1,130 @@
-# app/services/dte_service.py
+# app/models/dte.py
 # ══════════════════════════════════════════════════════════════
-# Orquestador principal del motor DTE - Versión Sincronizada
+# Modelo: DTE (Documento Tributario Electrónico)
+# Es el registro central — cada boleta o factura emitida.
+#
+# Analogia: si el Emisor es el restaurante y el CAF es el
+# talonario de boletas, el DTE es cada boleta individual
+# con el detalle de lo que comió cada cliente.
 # ══════════════════════════════════════════════════════════════
 
-import logging
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from datetime import date, datetime, timezone
-from typing import Any
+from sqlalchemy import String, Integer, Float, ForeignKey, Text, DateTime, Boolean
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.sql import func
+from app.db.base import Base
 
-# Importaciones corregidas según app/models/dte.py
-from app.models.dte    import DTE, ItemDTE
-from app.models.emisor import Emisor
-from app.models.caf    import CAF
 
-# Importaciones de servicios auxiliares
-from app.services.xml_builder   import XMLBuilder, InputDTE, EmisorDTE, ReceptorDTE
-from app.services.xml_builder   import ItemDTE as ItemDTEInput, ReferenciaDTE
-from app.services.firma_digital import FirmaDigital
-from app.services.caf_service   import CAFService
-from app.services.sii_sender    import SIISender
+class DTE(Base):
+    """
+    Documento Tributario Electrónico emitido.
+    Puede ser una Boleta (tipo 39) o Factura (tipo 33).
+    """
+    __tablename__ = "dtes"
 
-logger = logging.getLogger("yepardtecore.dte")
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
-TIPOS_NOMBRES = {
-    33: "Factura",
-    34: "FactExenta",
-    39: "Boleta",
-    52: "Guía",
-    56: "ND",
-    61: "NC",
-}
+    # ── Relación con el Emisor ────────────────────────────────
+    emisor_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("emisores.id"), nullable=False, index=True
+    )
+    emisor: Mapped["Emisor"] = relationship("Emisor", back_populates="documentos")
 
-class DTEService:
-    def __init__(self, db: AsyncSession):
-        self.db          = db
-        self.caf_service = CAFService(db)
+    # ── Tipo e identificación ─────────────────────────────────
+    tipo_dte: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 39 = Boleta, 33 = Factura, 61 = Nota de Crédito, 56 = Nota de Débito
 
-    async def emitir(self, emisor_id: int, datos: dict, auto_enviar: bool = True) -> dict:
-        # 1. Verificar idempotencia
-        idempotency_key = datos.get("idempotency_key") or datos.get("referencia_interna")
-        if idempotency_key:
-            dte_existente = await self._buscar_por_idempotency(emisor_id, idempotency_key)
-            if dte_existente:
-                return self._dte_a_dict(dte_existente)
+    folio: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
 
-        # 2. Cargar emisor y obtener folio
-        emisor = await self._cargar_emisor(emisor_id)
-        tipo_dte = datos["tipo_dte"]
-        folio, caf = await self.caf_service.obtener_siguiente_folio(
-            emisor_id, tipo_dte, emisor.ambiente
-        )
+    # folio_fmt es el folio con formato visual: "B-00000001", "F-00000001"
+    folio_fmt: Mapped[str] = mapped_column(String(20), nullable=False)
 
-        # 3. Construir XML
-        input_dte = self._construir_input(datos, folio, emisor)
-        builder = XMLBuilder(input_dte)
-        xml_sin_firma = builder.construir()
+    # ── Datos del receptor (quien recibe el documento) ────────
+    rut_receptor: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    nombre_receptor: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    giro_receptor: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    direccion_receptor: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    ciudad_receptor: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-        # 4. Firmar DTE
-        cert = emisor.certificado_activo
-        if not cert or not cert.certificado_p12:
-            raise ValueError(f"Emisor {emisor.rut} sin certificado .p12")
+    # ── Montos ────────────────────────────────────────────────
+    monto_neto: Mapped[float] = mapped_column(Float, default=0.0)
+    monto_iva: Mapped[float] = mapped_column(Float, default=0.0)
+    monto_total: Mapped[float] = mapped_column(Float, nullable=False)
+    tasa_iva: Mapped[int] = mapped_column(Integer, default=19)
 
-        firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
-        
-        # Obtener primer item para el TED
-        it1 = datos.get("items", [{}])[0].get("nombre", "PRODUCTO")[:40]
-        
-        xml_firmado_bytes = firma.firmar_dte(
-            xml_bytes     = xml_sin_firma,
-            folio         = folio,
-            tipo_dte      = tipo_dte,
-            xml_caf       = caf.xml_caf,
-            fecha_emision = datos.get("fecha_emision", date.today().isoformat()),
-            rut_emisor    = emisor.rut,
-            monto_total   = builder.monto_total,
-            it1_nombre    = it1,
-        )
-        xml_firmado_str = xml_firmado_bytes.decode("ISO-8859-1")
+    # ── Estado ante el SII ────────────────────────────────────
+    # Ciclo de vida:
+    # BORRADOR → ENVIADO → ACEPTADO / RECHAZADO
+    # ACEPTADO puede luego ser ANULADO (con nota de crédito)
+    estado: Mapped[str] = mapped_column(String(30), default="BORRADOR", index=True)
+    # Estados posibles:
+    # BORRADOR              — generado localmente, no enviado
+    # ENVIADO               — sobre enviado al SII, esperando respuesta
+    # ACEPTADO              — SII procesó y aceptó
+    # ACEPTADO_CON_REPAROS  — SII acepta con observaciones (igual es válido)
+    # RECHAZADO             — SII rechazó, hay que corregir y reenviar
+    # ANULADO               — nota de crédito emitida contra este DTE
 
-        # 5. Guardar en BD (Cabecera)
-        estado_inicial = "PENDIENTE_ENVIO" if auto_enviar else "BORRADOR"
-        dte_db = DTE(
-            emisor_id          = emisor_id,
-            tipo_dte           = tipo_dte,
-            folio              = folio,
-            folio_fmt          = f"{TIPOS_NOMBRES.get(tipo_dte, 'D')}-{folio:08d}",
-            rut_receptor       = datos.get("receptor", {}).get("rut"),
-            nombre_receptor    = datos.get("receptor", {}).get("razon_social"),
-            monto_neto         = builder.monto_neto,
-            monto_iva          = builder.monto_iva,
-            monto_total        = builder.monto_total,
-            estado             = estado_inicial,
-            xml_firmado        = xml_firmado_str,
-            referencia_interna = idempotency_key,
-            ambiente           = emisor.ambiente
-        )
-        self.db.add(dte_db)
-        await self.db.flush()
+    # TrackID que entrega el SII al recibir el sobre
+    # Se usa para hacer polling y saber si fue aceptado/rechazado
+    track_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
-        # 6. Guardar Items (Relación corregida a ItemDTE)
-        for i, item_data in enumerate(input_dte.items, 1):
-            nuevo_item = ItemDTE(
-                dte_id          = dte_db.id,
-                numero_linea    = i,
-                nombre          = item_data.nombre,
-                cantidad        = item_data.cantidad,
-                precio_unitario = item_data.precio_unitario,
-                monto_item      = item_data.monto_item,
-                exento          = item_data.exento,
-                codigo          = item_data.codigo
-            )
-            self.db.add(nuevo_item)
+    # ── Documentos generados ──────────────────────────────────
+    # XML firmado del DTE (el documento oficial)
+    xml_firmado: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-        # 7. Envío automático si aplica
-        track_id = None
-        if auto_enviar:
-            try:
-                sender = SIISender(ambiente=emisor.ambiente)
-                sobre = sender.construir_sobre(
-                    dtes_xml=[xml_firmado_str],
-                    rut_emisor=emisor.rut,
-                    rut_enviador=firma.rut_certificado or emisor.rut,
-                    firma_service=firma
-                )
-                res = await sender.enviar_sobre(
-                    sobre, emisor.rut, firma.rut_certificado or emisor.rut,
-                    p12_bytes=cert.certificado_p12, password=cert.certificado_password
-                )
-                track_id = res.get("track_id")
-                dte_db.estado = "ENVIADO" if track_id else "ERROR_ENVIO"
-                dte_db.track_id = track_id
-            except Exception as e:
-                logger.error(f"Error envío: {e}")
-                dte_db.estado = "ERROR_ENVIO"
+    # PDF en base64 (para descargar o mostrar en pantalla)
+    pdf_base64: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-        await self.db.commit()
-        return self._dte_a_dict(dte_db)
+    # ── Referencia interna del cliente ────────────────────────
+    # YeparStock puede enviar "VENTA-20250323-001" para rastrear
+    referencia_interna: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    async def _cargar_emisor(self, emisor_id: int) -> Emisor:
-        emisor = await self.db.get(Emisor, emisor_id)
-        if not emisor or not emisor.activo:
-            raise ValueError("Emisor no encontrado o inactivo")
-        return emisor
+    # ── Ambiente ──────────────────────────────────────────────
+    ambiente: Mapped[str] = mapped_column(String(20), default="certificacion")
 
-    async def _buscar_por_idempotency(self, emisor_id: int, key: str) -> DTE | None:
-        res = await self.db.execute(
-            select(DTE).where(DTE.emisor_id == emisor_id, DTE.referencia_interna == key)
-        )
-        return res.scalar_one_or_none()
+    # ── Timestamps ────────────────────────────────────────────
+    created_at: Mapped[str] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    updated_at: Mapped[str] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
-    def _dte_a_dict(self, dte: DTE) -> dict:
-        return {
-            "dte_id": dte.id,
-            "folio": dte.folio,
-            "estado": dte.estado,
-            "track_id": dte.track_id,
-            "monto_total": dte.monto_total
-        }
+    # ── Relaciones ────────────────────────────────────────────
+    # Un DTE tiene varios items (líneas de detalle)
+    items: Mapped[list["ItemDTE"]] = relationship(
+        "ItemDTE", back_populates="dte", cascade="all, delete-orphan", lazy="selectin"
+    )
 
-    def _construir_input(self, datos: dict, folio: int, emisor: Emisor) -> InputDTE:
-        return InputDTE(
-            tipo_dte=datos["tipo_dte"],
-            folio=folio,
-            fecha_emision=date.fromisoformat(datos.get("fecha_emision", date.today().isoformat())),
-            emisor=EmisorDTE(
-                rut=emisor.rut, razon_social=emisor.razon_social, giro=emisor.giro,
-                direccion=emisor.direccion, comuna=emisor.comuna, ciudad=emisor.ciudad
-            ),
-            receptor=ReceptorDTE(
-                rut=datos.get("receptor", {}).get("rut", "66666666-6"),
-                razon_social=datos.get("receptor", {}).get("razon_social", "Consumidor Final")
-            ),
-            items=[
-                ItemDTEInput(
-                    nombre=i["nombre"],
-                    cantidad=float(i.get("cantidad", 1)),
-                    precio_unitario=float(i["precio_unitario"]),
-                    codigo=i.get("codigo", ""),
-                    exento=i.get("exento", False)
-                ) for i in datos.get("items", [])
-            ],
-            ambiente=emisor.ambiente
-        )
+    def __repr__(self) -> str:
+        return f"<DTE tipo={self.tipo_dte} folio={self.folio} estado={self.estado}>"
+
+
+class ItemDTE(Base):
+    """
+    Línea de detalle de un DTE.
+    Cada producto o servicio del documento.
+    """
+    __tablename__ = "items_dte"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    # ── Relación con el DTE ───────────────────────────────────
+    dte_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("dtes.id"), nullable=False, index=True
+    )
+    dte: Mapped["DTE"] = relationship("DTE", back_populates="items")
+
+    # ── Datos del item ────────────────────────────────────────
+    numero_linea: Mapped[int] = mapped_column(Integer, nullable=False)
+    codigo: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    nombre: Mapped[str] = mapped_column(String(200), nullable=False)
+    descripcion: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    cantidad: Mapped[float] = mapped_column(Float, default=1.0)
+    unidad: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    precio_unitario: Mapped[float] = mapped_column(Float, nullable=False)
+    descuento_pct: Mapped[float] = mapped_column(Float, default=0.0)
+    monto_item: Mapped[float] = mapped_column(Float, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<ItemDTE {self.nombre} x{self.cantidad} = ${self.monto_item}>"
