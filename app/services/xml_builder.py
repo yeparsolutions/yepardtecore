@@ -1,4 +1,8 @@
 # app/services/xml_builder.py
+# ══════════════════════════════════════════════════════════════
+# Constructor de XML para DTE - Versión Final Sincronizada
+# ══════════════════════════════════════════════════════════════
+
 from lxml import etree
 from datetime import date
 from dataclasses import dataclass, field
@@ -39,6 +43,14 @@ class ItemDTEInput:
         return int(round(self.cantidad * self.precio_unitario))
 
 @dataclass
+class ReferenciaDTE:
+    tipo_doc_ref: str
+    folio_ref: int
+    fecha_ref: date
+    razon_ref: str = ""
+    cod_ref: int = 0
+
+@dataclass
 class InputDTE:
     tipo_dte: int
     folio: int
@@ -47,6 +59,7 @@ class InputDTE:
     receptor: ReceptorDTE
     items: List[ItemDTEInput]
     ambiente: str = "certificacion"
+    referencias: List[ReferenciaDTE] = field(default_factory=list)
 
 class XMLBuilder:
     def __init__(self, data: InputDTE):
@@ -64,7 +77,6 @@ class XMLBuilder:
         root = etree.Element("DTE", nsmap=ns_map, version="1.0")
         root.set(f"{{{XSI_NS}}}schemaLocation", f"{SII_NS} {schema_file}")
 
-        # IMPORTANTE: El tag Documento DEBE tener el namespace explícito para que el signer lo vea
         doc_id = f"T{self.data.tipo_dte}F{self.data.folio}"
         documento = etree.SubElement(root, "Documento", ID=doc_id)
 
@@ -94,8 +106,17 @@ class XMLBuilder:
             det = etree.SubElement(documento, "Detalle")
             etree.SubElement(det, "NroLinDet").text = str(i)
             etree.SubElement(det, "NmbItem").text = item.nombre[:80]
-            etree.SubElement(det, "QtyItem").text = str(item.cantidad)
+            etree.SubElement(det, "QtyItem").text = f"{item.cantidad:.2f}"
             etree.SubElement(det, "PrcItem").text = str(round(item.precio_unitario))
             etree.SubElement(det, "MontoItem").text = str(item.monto_item)
+
+        for i, ref in enumerate(self.data.referencias, 1):
+            r = etree.SubElement(documento, "Referencia")
+            etree.SubElement(r, "NroLinRef").text = str(i)
+            etree.SubElement(r, "TpoDocRef").text = str(ref.tipo_doc_ref)
+            etree.SubElement(r, "FolioRef").text = str(ref.folio_ref)
+            etree.SubElement(r, "FchRef").text = ref.fecha_ref.isoformat()
+            if ref.razon_ref:
+                etree.SubElement(r, "RazonRef").text = ref.razon_ref[:90]
 
         return etree.tostring(root, encoding="ISO-8859-1", xml_declaration=True)
