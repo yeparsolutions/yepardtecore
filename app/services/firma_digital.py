@@ -133,7 +133,7 @@ class FirmaDigital:
         
         # FIX: Virtual Root para herencia de namespaces en Digest
         doc_raw = etree.tostring(doc_el, encoding="unicode")
-        temp_root = etree.fromstring(f'<root xmlns="{SII_NS}">{doc_raw}</root>')
+        temp_root = etree.fromstring(f'<root xmlns="{SII_NS}" xmlns:xsi="{XSI_NS}">{doc_raw}</root>')
         doc_virtual = temp_root[0]
         
         doc_c14n   = etree.tostring(doc_virtual, method="c14n", exclusive=False)
@@ -191,7 +191,7 @@ class FirmaDigital:
         
         # FIX: Virtual Root para herencia de namespaces en Digest del Sobre
         set_raw = etree.tostring(set_el, encoding="unicode")
-        temp_root = etree.fromstring(f'<root xmlns="{SII_NS}">{set_raw}</root>')
+        temp_root = etree.fromstring(f'<root xmlns="{SII_NS}" xmlns:xsi="{XSI_NS}">{set_raw}</root>')
         set_virtual = temp_root[0]
 
         set_c14n   = etree.tostring(set_virtual, method="c14n", exclusive=False)
