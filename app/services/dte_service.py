@@ -12,9 +12,8 @@ from typing import Any
 # Importaciones de modelos
 from app.models.dte    import DTE, ItemDTE
 from app.models.emisor import Emisor
-from app.models.caf    import CAF
 
-# Importaciones de servicios auxiliares - NOMBRES SINCRONIZADOS
+# Importaciones de servicios auxiliares
 from app.services.xml_builder   import XMLBuilder, InputDTE, EmisorDTE, ReceptorDTE
 from app.services.xml_builder   import ItemDTEInput, ReferenciaDTE
 from app.services.firma_digital import FirmaDigital
@@ -91,7 +90,7 @@ class DTEService:
         self.db.add(dte_db)
         await self.db.flush()
 
-        # 6. Guardar Items (Modelo ItemDTE)
+        # 6. Guardar Items (Sincronizado con tu modelo de BD en dte.py)
         for i, item_data in enumerate(input_dte.items, 1):
             nuevo_item = ItemDTE(
                 dte_id          = dte_db.id,
@@ -100,21 +99,10 @@ class DTEService:
                 cantidad        = item_data.cantidad,
                 precio_unitario = item_data.precio_unitario,
                 monto_item      = item_data.monto_item,
-                exento          = item_data.exento,
                 codigo          = item_data.codigo
+                # 'exento' eliminado de aquí porque no existe en tu base de datos
             )
             self.db.add(nuevo_item)
-
-        # 7. Envío al SII
-        track_id = None
-        if auto_enviar:
-            try:
-                sender = SIISender(ambiente=emisor.ambiente)
-                # Nota: SIISender y el sobre requieren lógica adicional de empaquetado
-                # que se asume implementada en el servicio correspondiente.
-                pass 
-            except Exception as e:
-                logger.error(f"Error en envío automático: {e}")
 
         await self.db.commit()
         return self._dte_a_dict(dte_db)
@@ -139,14 +127,13 @@ class DTEService:
         }
 
     def _construir_input(self, datos: dict, folio: int, emisor: Emisor) -> InputDTE:
-        # Mapeo de items usando ItemDTEInput (el nombre de xml_builder)
         items_input = [
             ItemDTEInput(
                 nombre          = i["nombre"],
                 cantidad        = float(i.get("cantidad", 1)),
                 precio_unitario = float(i["precio_unitario"]),
                 codigo          = i.get("codigo", ""),
-                exento          = i.get("exento", False)
+                exento          = bool(i.get("exento", False))
             ) for i in datos.get("items", [])
         ]
 
