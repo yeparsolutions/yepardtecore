@@ -41,7 +41,7 @@ def _ref_set(n: int, fecha: str) -> dict:
         "tipo_doc_ref": 801,
         "folio_ref":    n,
         "fecha_ref":    fecha,
-        "cod_ref":      "SET",   # requerido por EnvioDTE_v10.xsd para TpoDocRef=801
+        "cod_ref":      "SET",
         "razon_ref":    f"CASO-{NATENCION}-{n}",
     }
 
@@ -68,7 +68,6 @@ async def generar_xml_facturas(
     if not emisor:
         raise HTTPException(status_code=404, detail=f"Emisor {emisor_id} no encontrado")
 
-    # Obtener certificado con query directa (evita lazy loading en async)
     cert_result = await db.execute(
         select(Certificado).where(
             Certificado.emisor_id == emisor_id,
@@ -83,7 +82,7 @@ async def generar_xml_facturas(
     fecha = fecha_override or date.today().isoformat()
     service = DTEService(db)
     xmls_firmados = []
-    folios: dict[int, int] = {}   # caso → folio asignado
+    folios: dict[int, int] = {}
     errores = []
 
     async def emitir(caso_n: int, datos: dict):
@@ -244,14 +243,14 @@ async def generar_xml_facturas(
         + (f" — errores: {errores}" if errores else " ✓")
     )
 
-return Response(
-    content=sobre_xml.encode("ISO-8859-1"),
-    media_type="application/octet-stream",
-    headers={
-        "Content-Disposition": f'attachment; filename="{nombre}"',
-        "X-Casos-Generados": str(len(xmls_firmados)),
-        "X-Casos-Error":     str(len(errores)),
-        "X-Errores-Detalle": " | ".join(errores) if errores else "",
-        "X-NroAtencion":     NATENCION,
-    }
-)
+    return Response(
+        content=sobre_xml.encode("ISO-8859-1"),
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{nombre}"',
+            "X-Casos-Generados": str(len(xmls_firmados)),
+            "X-Casos-Error":     str(len(errores)),
+            "X-Errores-Detalle": " | ".join(errores) if errores else "",
+            "X-NroAtencion":     NATENCION,
+        }
+    )
