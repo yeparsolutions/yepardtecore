@@ -2,7 +2,6 @@
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import date
-from typing import Any
 
 from app.models.dte    import DTE, ItemDTE
 from app.models.emisor import Emisor
@@ -23,16 +22,14 @@ class DTEService:
         self.caf_service = CAFService(db)
 
     async def emitir(self, emisor_id: int, datos: dict, auto_enviar: bool = True) -> dict:
-        # 1. Validar Emisor y existencia de Certificado
+        # 1. Validar Emisor
         emisor = await self.db.get(Emisor, emisor_id)
         if not emisor:
             raise ValueError("Emisor no encontrado")
 
         cert = emisor.certificado_activo
         if not cert or not cert.certificado_p12:
-            # Si llegamos aquí, el error es que no hay certificado cargado
-            logger.error(f"El emisor {emisor.rut} no tiene certificado digital.")
-            raise ValueError(f"Falta Certificado Digital: No se puede firmar el DTE porque el emisor {emisor.rut} no tiene su archivo .p12 cargado.")
+            raise ValueError(f"Falta Certificado Digital para el emisor {emisor.rut}")
 
         # 2. Obtener Folio y CAF
         tipo_dte = datos["tipo_dte"]
@@ -40,26 +37,28 @@ class DTEService:
             emisor_id, tipo_dte, emisor.ambiente
         )
 
-        # 3. Construir XML
+        # 3. Construir XML base
         input_dte = self._construir_input(datos, folio, emisor)
         builder = XMLBuilder(input_dte)
         xml_sin_firma = builder.construir()
 
-        # 4. Firma Digital
+        # 4. Proceso de Firma
         try:
             firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
             xml_firmado_bytes = firma.firmar_dte(
-                xml_bytes = xml_sin_firma,
-                folio    = folio,
-                tipo_dte = tipo_dte,
-                xml_caf  = caf.xml_caf
+                xml_bytes      = xml_sin_firma,
+                folio         = folio,
+                tipo_dte      = tipo_dte,
+                fecha_emision = input_dte.fecha_emision,
+                rut_emisor    = emisor.rut,
+                monto_total   = builder.monto_total
             )
             xml_firmado_str = xml_firmado_bytes.decode("ISO-8859-1")
         except Exception as e:
-            logger.error(f"Error en el proceso de firma: {str(e)}")
-            raise RuntimeError(f"Error al firmar digitalmente: {str(e)}. Verifique la clave del certificado.")
+            logger.error(f"Error en paso de firma: {str(e)}")
+            raise RuntimeError(f"Error al firmar digitalmente: {str(e)}")
 
-        # 5. Guardar en BD (Cabecera)
+        # 5. Persistencia en Base de Datos
         sigla = TIPOS_SIGLAS.get(tipo_dte, "D")
         nuevo_dte = DTE(
             emisor_id       = emisor_id,
@@ -71,7 +70,7 @@ class DTEService:
             monto_neto      = builder.monto_neto,
             monto_iva       = builder.monto_iva,
             monto_total     = builder.monto_total,
-            xml_firmado     = xml_firmado_str,  # Garantizado que tiene valor aquí
+            xml_firmado     = xml_firmado_str,
             estado          = "PENDIENTE_ENVIO" if auto_enviar else "BORRADOR",
             ambiente        = emisor.ambiente
         )
@@ -79,7 +78,7 @@ class DTEService:
         self.db.add(nuevo_dte)
         await self.db.flush() 
 
-        # 6. Guardar Items
+        # 6. Guardar Items detallados
         for i, item_data in enumerate(input_dte.items, 1):
             self.db.add(ItemDTE(
                 dte_id          = nuevo_dte.id,
@@ -93,21 +92,15 @@ class DTEService:
 
         await self.db.commit()
         
-        # 7. Respuesta
         return {
             "id": nuevo_dte.id,
             "folio": folio,
             "status": "success",
-            "xml_firmado": xml_firmado_str  # Incluimos la clave para evitar el KeyError
+            "xml_firmado": xml_firmado_str
         }
 
     def _construir_input(self, datos: dict, folio: int, emisor: Emisor) -> InputDTE:
         r_data = datos.get("receptor", {})
-        
-        # Protección para acteco
-        codigo_acteco = getattr(emisor, 'acteco', None)
-
-        # Reconstrucción de items
         items_input = [
             ItemDTEInput(
                 nombre          = i["nombre"],
@@ -125,7 +118,7 @@ class DTEService:
             emisor        = EmisorDTE(
                 rut=emisor.rut, razon_social=emisor.razon_social, giro=emisor.giro,
                 direccion=emisor.direccion, comuna=emisor.comuna, ciudad=emisor.ciudad,
-                acteco=codigo_acteco
+                acteco=getattr(emisor, 'acteco', None)
             ),
             receptor      = ReceptorDTE(
                 rut=r_data.get("rut"),
