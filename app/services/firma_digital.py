@@ -1,6 +1,6 @@
 # app/services/firma_digital.py
 # ══════════════════════════════════════════════════════════════
-# Servicio de Firma Digital para DTE Chile - Versión Final Corregida
+# Servicio de Firma Digital para DTE Chile - Versión Certificación
 # ══════════════════════════════════════════════════════════════
 
 from cryptography.hazmat.primitives.serialization import pkcs12
@@ -9,220 +9,109 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.backends import default_backend
 from lxml import etree
 from base64 import b64encode, b64decode
-from datetime import datetime, timezone
 import hashlib
-import re
 import textwrap
 
-XMLDSIG_NS     = "http://www.w3.org/2000/09/xmldsig#"
-SII_NS         = "http://www.sii.cl/SiiDte"
-XSI_NS         = "http://www.w3.org/2001/XMLSchema-instance"
-C14N_ALGORITHM = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
-TIPOS_BOLETA   = {39, 41}
+# Constantes de Namespaces
+XMLDSIG_NS = "http://www.w3.org/2000/09/xmldsig#"
+SII_NS     = "http://www.sii.cl/SiiDte"
+XSI_NS     = "http://www.w3.org/2001/XMLSchema-instance"
 
 def _wrap64(s: str) -> str:
-    """Envuelve base64 en lineas de 64 chars para cumplir CHR-00002 del SII."""
+    """Formatea base64 a 64 caracteres por línea (Estándar SII)."""
     clean = s.replace('\n', '').replace(' ', '')
     return '\n' + '\n'.join(textwrap.wrap(clean, 64)) + '\n'
 
 class FirmaDigital:
-    def __init__(self, p12_bytes: bytes, password: str):
-        pwd_bytes = password.encode("utf-8") if isinstance(password, str) else password
+    def __init__(self, p12_data: bytes, password: str):
         try:
-            private_key, certificate, _ = pkcs12.load_key_and_certificates(
-                p12_bytes, pwd_bytes, backend=default_backend()
-            )
+            # Cargar certificado y llave privada
+            password_bytes = password.encode() if password else None
+            p12 = pkcs12.load_key_and_certificates(p12_data, password_bytes, default_backend())
+            
+            self._private_key = p12[0]
+            self._certificate = p12[1]
+            
+            # Extraer el certificado en base64 para el XML
+            cert_bytes = self._certificate.public_bytes(serialization.Encoding.DER)
+            self._cert_b64 = _wrap64(b64encode(cert_bytes).decode())
+            
+            # Extraer el módulo de la llave pública (RSA)
+            pub_numbers = self._private_key.public_key().public_numbers()
+            self._modulus = _wrap64(b64encode(pub_numbers.n.to_bytes((pub_numbers.n.bit_length() + 7) // 8, 'big')).decode())
+            self._exponent = b64encode(pub_numbers.e.to_bytes((pub_numbers.e.bit_length() + 7) // 8, 'big')).decode()
+            
         except Exception as e:
-            raise ValueError(f"No se pudo cargar el certificado .p12: {e}")
-        
-        self._private_key  = private_key
-        self._certificate  = certificate
-        self._cert_der_b64 = b64encode(certificate.public_bytes(serialization.Encoding.DER)).decode()
+            raise Exception(f"Error al cargar certificado P12: {str(e)}")
 
-        pub = certificate.public_key().public_numbers()
-        self._rsa_mod = b64encode(pub.n.to_bytes((pub.n.bit_length() + 7) // 8, "big")).decode()
-        self._rsa_exp = b64encode(pub.e.to_bytes((pub.e.bit_length() + 7) // 8, "big")).decode()
-
-    @property
-    def rut_certificado(self) -> str:
-        subject = self._certificate.subject.rfc4514_string()
-        match   = re.search(r"(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])", subject, re.IGNORECASE)
-        return match.group(1) if match else ""
-
-    @property
-    def vigente_hasta(self) -> datetime:
-        return self._certificate.not_valid_after_utc
-
-    @property
-    def esta_vigente(self) -> bool:
-        return datetime.now(timezone.utc) < self.vigente_hasta
-
-    # ── Firma del DTE ─────────────────────────────────────────
-
-    def firmar_dte(self, xml_bytes: bytes, folio: int, tipo_dte: int,
-                   xml_caf: str, fecha_emision: str, rut_emisor: str,
-                   monto_total: int, it1_nombre: str = "PRODUCTO") -> bytes:
-        
+    def firmar_dte(self, xml_bytes: bytes, folio: int, tipo_dte: int, **kwargs) -> bytes:
+        """
+        Firma un documento DTE individual.
+        """
         parser = etree.XMLParser(remove_blank_text=True)
-        root   = etree.fromstring(xml_bytes, parser)
-
-        ted_xml = self._generar_ted(folio, tipo_dte, xml_caf, fecha_emision,
-                                    rut_emisor, monto_total, it1_nombre)
-
-        ns = {"sii": SII_NS}
-        ted_placeholder = root.find(".//sii:TED", ns)
-        if ted_placeholder is not None:
-            parent = ted_placeholder.getparent()
-            idx = list(parent).index(ted_placeholder)
-            parent.remove(ted_placeholder)
-            # ted_xml es bytes ISO-8859-1; agregar declaración XML para que
-            # lxml lo parsee correctamente con ñ, ó, &, etc.
-            ted_con_enc = b'<?xml version="1.0" encoding="ISO-8859-1"?>' + ted_xml
-            parent.insert(idx, etree.fromstring(ted_con_enc))
-
-        xml_con_ted = etree.tostring(root, encoding="unicode")
-        xml_firmado = self._firmar_xml(xml_con_ted, f"DTE-{tipo_dte}-{folio}")
-        return xml_firmado.encode("ISO-8859-1")
-
-    def _generar_ted(self, folio: int, tipo_dte: int, xml_caf: str,
-                      fecha_emision: str, rut_emisor: str, monto_total: int,
-                      it1_nombre: str = "PRODUCTO") -> bytes:
-        caf_root = etree.fromstring(xml_caf.encode())
-        rsk_el   = caf_root.find(".//RSASK")
-        caf_str  = etree.tostring(caf_root.find(".//CAF"), encoding="unicode")
+        root = etree.fromstring(xml_bytes, parser)
         
-        # Escapar caracteres XML especiales en IT1 (& < > para evitar XML inválido)
-        it1_safe = it1_nombre[:40].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        # El ID del documento debe coincidir con lo que el Builder generó
+        doc_id = f"T{tipo_dte}F{folio}"
+        documento = root.find("Documento")
+        if documento is None or documento.get("ID") != doc_id:
+             # Si no tiene ID o no coincide, lo forzamos (necesario para el Reference URI)
+             documento.set("ID", doc_id)
 
-        dd_xml  = (
-            f"<DD>"
-            f"<RE>{rut_emisor}</RE><TD>{tipo_dte}</TD><F>{folio}</F>"
-            f"<FE>{fecha_emision}</FE><RR>66666666-6</RR>"
-            f"<RSR>CONSUMIDOR FINAL</RSR><MNT>{monto_total}</MNT>"
-            f"<IT1>{it1_safe}</IT1>{caf_str}"
-            f"<TSTED>{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')}</TSTED>"
-            f"</DD>"
-        )
+        # 1. Calcular Digest del Documento (C14N)
+        # Importante: No usar exclusive=True para el SII
+        c14n_doc = etree.tostring(documento, method="c14n", exclusive=False)
+        digest_val = b64encode(hashlib.sha1(c14n_doc).digest()).decode()
 
-        firma_b64 = b64encode(
-            self._firmar_rsa_sha1_raw(dd_xml.encode("ISO-8859-1"), rsk_el.text.strip())
-        ).decode()
-
-        tag = "FRMT" if tipo_dte in TIPOS_BOLETA else "FRMA"
-        return (
-            f'<TED version="1.0">{dd_xml}'
-            f'<{tag} algoritmo="SHA1withRSA">{firma_b64}</{tag}>'
-            f'</TED>'
-        ).encode("ISO-8859-1")
-
-    def _firmar_rsa_sha1_raw(self, data: bytes, pem_key_str: str) -> bytes:
-        from cryptography.hazmat.primitives.serialization import load_pem_private_key
-        if "-----" not in pem_key_str:
-            pem_key_str = "-----BEGIN RSA PRIVATE KEY-----\n" + pem_key_str + "\n-----END RSA PRIVATE KEY-----"
-        pk = load_pem_private_key(pem_key_str.encode(), password=None, backend=default_backend())
-        return pk.sign(data, padding.PKCS1v15(), hashes.SHA1())
-
-    # ── XMLDSig Corregido ─────────────────────────────────────
-
-    def _firmar_xml(self, xml_str: str, doc_id: str) -> str:
-        parser = etree.XMLParser(remove_blank_text=True)
-        root   = etree.fromstring(xml_str.encode(), parser)
-        ns     = {"sii": SII_NS}
-
-        doc_el = root.find(f".//sii:Documento[@ID='{doc_id}']", ns)
+        # 2. Construir SignedInfo
+        signed_info = self._build_signed_info(f"#{doc_id}", digest_val)
         
-        # FIX: Virtual Root para herencia de namespaces en Digest
-        doc_raw = etree.tostring(doc_el, encoding="unicode")
-        temp_root = etree.fromstring(f'<root xmlns="{SII_NS}" xmlns:xsi="{XSI_NS}">{doc_raw}</root>')
-        doc_virtual = temp_root[0]
+        # 3. Calcular Firma del SignedInfo
+        si_element = etree.fromstring(signed_info)
+        si_c14n = etree.tostring(si_element, method="c14n", exclusive=False)
         
-        doc_c14n   = etree.tostring(doc_virtual, method="c14n", exclusive=False)
-        digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
-
-        signed_info = self._build_signed_info(f"#{doc_id}", digest_doc)
-
-        # Firma del SignedInfo
-        si_el   = etree.fromstring(signed_info.encode())
-        si_c14n = etree.tostring(si_el, method="c14n", exclusive=False)
-        firma_b64 = b64encode(
+        signature_value = b64encode(
             self._private_key.sign(si_c14n, padding.PKCS1v15(), hashes.SHA1())
         ).decode()
 
-        root.append(etree.fromstring(self._build_signature(signed_info, firma_b64).encode()))
-        return etree.tostring(root, encoding="unicode", xml_declaration=False)
+        # 4. Construir Nodo Signature completo
+        signature_xml = self._build_signature_node(signed_info, signature_value)
+        root.append(etree.fromstring(signature_xml))
 
-    def _build_signed_info(self, reference_uri: str, digest_value: str) -> str:
+        # El SII requiere declaración XML con ISO-8859-1
+        return etree.tostring(root, encoding="ISO-8859-1", xml_declaration=True)
+
+    def _build_signed_info(self, uri: str, digest_val: str) -> str:
         return (
             f'<SignedInfo xmlns="{XMLDSIG_NS}">'
-            f'<CanonicalizationMethod Algorithm="{C14N_ALGORITHM}"/>'
-            f'<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>'
-            f'<Reference URI="{reference_uri}">'
-            f'<Transforms><Transform Algorithm="{C14N_ALGORITHM}"/></Transforms>'
-            f'<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>'
-            f'<DigestValue>{digest_value}</DigestValue>'
-            f'</Reference></SignedInfo>'
+            f'<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"></CanonicalizationMethod>'
+            f'<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"></SignatureMethod>'
+            f'<Reference URI="{uri}">'
+            f'<Transforms>'
+            f'<Transform Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"></Transform>'
+            f'</Transforms>'
+            f'<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"></DigestMethod>'
+            f'<DigestValue>{digest_val}</DigestValue>'
+            f'</Reference>'
+            f'</SignedInfo>'
         )
 
-    def _build_signature(self, signed_info: str, signature_value: str) -> str:
+    def _build_signature_node(self, signed_info: str, signature_val: str) -> str:
+        # El SII requiere que el nodo Signature NO tenga prefijos (ds:)
         return (
             f'<Signature xmlns="{XMLDSIG_NS}">'
             f'{signed_info}'
-            f'<SignatureValue>{signature_value}</SignatureValue>'
+            f'<SignatureValue>{_wrap64(signature_val)}</SignatureValue>'
             f'<KeyInfo>'
-            f'<KeyValue><RSAKeyValue>'
-            f'<Modulus>{_wrap64(self._rsa_mod)}</Modulus>'
-            f'<Exponent>{self._rsa_exp}</Exponent>'
-            f'</RSAKeyValue></KeyValue>'
+            f'<KeyValue>'
+            f'<RSAKeyValue>'
+            f'<Modulus>{self._modulus}</Modulus>'
+            f'<Exponent>{self._exponent}</Exponent>'
+            f'</RSAKeyValue>'
+            f'</KeyValue>'
             f'<X509Data>'
-            f'<X509Certificate>{_wrap64(self._cert_der_b64)}</X509Certificate>'
+            f'<X509Certificate>{self._cert_b64}</X509Certificate>'
             f'</X509Data>'
             f'</KeyInfo>'
             f'</Signature>'
         )
-
-    # ── Firma del sobre Corregido ─────────────────────────────
-
-    def firmar_sobre(self, sobre_xml: str) -> str:
-        parser = etree.XMLParser(remove_blank_text=True)
-        root   = etree.fromstring(sobre_xml.encode(), parser)
-        ns     = {"sii": SII_NS}
-
-        set_el = root.find(".//sii:SetDTE[@ID='SetDoc']", ns)
-        
-        # FIX: Virtual Root para herencia de namespaces en Digest del Sobre
-        set_raw = etree.tostring(set_el, encoding="unicode")
-        temp_root = etree.fromstring(f'<root xmlns="{SII_NS}" xmlns:xsi="{XSI_NS}">{set_raw}</root>')
-        set_virtual = temp_root[0]
-
-        set_c14n   = etree.tostring(set_virtual, method="c14n", exclusive=False)
-        digest_val = b64encode(hashlib.sha1(set_c14n).digest()).decode()
-
-        signed_info = self._build_signed_info("#SetDoc", digest_val)
-
-        si_el   = etree.fromstring(signed_info.encode())
-        si_c14n = etree.tostring(si_el, method="c14n", exclusive=False)
-        firma_b64 = b64encode(
-            self._private_key.sign(si_c14n, padding.PKCS1v15(), hashes.SHA1())
-        ).decode()
-
-        root.append(etree.fromstring(self._build_signature(signed_info, firma_b64).encode()))
-        # Serializar sobre: construir declaración con comillas dobles y encoding ISO-8859-1
-        xml_sin_decl = etree.tostring(root, encoding="unicode")
-        declaracion = '<?xml version="1.0" encoding="ISO-8859-1"?>'
-        xml_completo = declaracion + xml_sin_decl
-        return xml_completo
-
-    @staticmethod
-    def cargar_desde_base64(cert_b64: str, password: str) -> "FirmaDigital":
-        return FirmaDigital(b64decode(cert_b64), password)
-
-    def info_certificado(self) -> dict:
-        cert = self._certificate
-        return {
-            "subject": cert.subject.rfc4514_string(),
-            "emisor": cert.issuer.rfc4514_string(),
-            "valido_hasta": cert.not_valid_after_utc.isoformat(),
-            "vigente": self.esta_vigente,
-            "rut": self.rut_certificado,
-        }
-# Update: Parche SII v2.1 - 2026-04-14
