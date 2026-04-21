@@ -244,14 +244,14 @@ async def generar_xml_facturas(
         + (f" — errores: {errores}" if errores else " ✓")
     )
 
-    return Response(
-        content=sobre_xml.encode("ISO-8859-1"),
-        media_type="application/xml",
-        headers={
-            "Content-Disposition": f'attachment; filename="{nombre}"',
-            "X-Casos-Generados": str(len(xmls_firmados)),
-            "X-Casos-Error":     str(len(errores)),
-            "X-Errores-Detalle": " | ".join(errores) if errores else "",
-            "X-NroAtencion":     NATENCION,
-        }
-    )
+return Response(
+    content=sobre_xml.encode("ISO-8859-1"),
+    media_type="application/octet-stream",
+    headers={
+        "Content-Disposition": f'attachment; filename="{nombre}"',
+        "X-Casos-Generados": str(len(xmls_firmados)),
+        "X-Casos-Error":     str(len(errores)),
+        "X-Errores-Detalle": " | ".join(errores) if errores else "",
+        "X-NroAtencion":     NATENCION,
+    }
+)
