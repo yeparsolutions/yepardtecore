@@ -1,14 +1,27 @@
 # app/services/dte_service.py
+# ══════════════════════════════════════════════════════════════
+# Orquestador principal del motor DTE - Versión Final Sincronizada
+# ══════════════════════════════════════════════════════════════
+
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import date
-from app.models.dte import DTE, ItemDTE
+from typing import Any
+
+# Importaciones de modelos
+from app.models.dte    import DTE, ItemDTE
 from app.models.emisor import Emisor
-from app.services.xml_builder import XMLBuilder, InputDTE, EmisorDTE, ReceptorDTE, ItemDTEInput
+
+# Importaciones de servicios auxiliares
+from app.services.xml_builder   import XMLBuilder, InputDTE, EmisorDTE, ReceptorDTE, ItemDTEInput
 from app.services.firma_digital import FirmaDigital
-from app.services.caf_service import CAFService
+from app.services.caf_service   import CAFService
 
 logger = logging.getLogger("yepardtecore.dte")
+
+TIPOS_SIGLAS = {
+    33: "F", 34: "FE", 39: "B", 41: "BE", 52: "G", 56: "ND", 61: "NC"
+}
 
 class DTEService:
     def __init__(self, db: AsyncSession):
@@ -16,17 +29,15 @@ class DTEService:
         self.caf_service = CAFService(db)
 
     async def emitir(self, emisor_id: int, datos: dict, auto_enviar: bool = True) -> dict:
-        # 1. Cargar Emisor y su Certificado
+        # 1. Cargar Emisor y Validar Certificado
         emisor = await self.db.get(Emisor, emisor_id)
         if not emisor:
             raise ValueError("Emisor no encontrado")
 
-        # VALIDACIÓN CRÍTICA: ¿Tiene certificado?
         cert = emisor.certificado_activo
         if not cert or not cert.certificado_p12:
-            # Este mensaje aparecerá en tu log de Railway para confirmarte el problema
-            logger.error(f"EMISOR {emisor.rut} SIN CERTIFICADO P12")
-            raise ValueError(f"El emisor {emisor.rut} no tiene un certificado digital (.p12) cargado en la base de datos.")
+            logger.error(f"Emisor {emisor.rut} no tiene certificado P12")
+            raise ValueError(f"El emisor {emisor.rut} no tiene un certificado digital cargado.")
 
         # 2. Obtener Folio y CAF
         tipo_dte = datos["tipo_dte"]
@@ -50,22 +61,23 @@ class DTEService:
             )
             xml_firmado_str = xml_firmado_bytes.decode("ISO-8859-1")
         except Exception as e:
-            logger.error(f"Error al firmar: {str(e)}")
-            raise RuntimeError(f"La firma digital falló. Verifica la contraseña del certificado. Error: {str(e)}")
+            logger.error(f"Falla en firma digital: {str(e)}")
+            raise RuntimeError(f"Error al firmar: {str(e)}")
 
-        # 5. Guardar en Base de Datos
+        # 5. Guardar en Base de Datos (Cabecera)
+        sigla = TIPOS_SIGLAS.get(tipo_dte, "D")
         nuevo_dte = DTE(
             emisor_id       = emisor_id,
             tipo_dte        = tipo_dte,
             folio           = folio,
-            folio_fmt       = f"{tipo_dte}-{folio}",
+            folio_fmt       = f"{sigla}-{folio:08d}",
             rut_receptor    = datos.get("receptor", {}).get("rut"),
             nombre_receptor = datos.get("receptor", {}).get("razon_social"),
             monto_neto      = builder.monto_neto,
             monto_iva       = builder.monto_iva,
             monto_total     = builder.monto_total,
-            xml_firmado     = xml_firmado_str, # Se guarda el XML ya firmado
-            estado          = "PENDIENTE_ENVIO",
+            xml_firmado     = xml_firmado_str,
+            estado          = "PENDIENTE_ENVIO" if auto_enviar else "BORRADOR",
             ambiente        = emisor.ambiente
         )
         
@@ -74,21 +86,62 @@ class DTEService:
 
         # 6. Guardar Items
         for i, item_data in enumerate(input_dte.items, 1):
-            self.db.add(ItemDTE(
-                dte_id=nuevo_dte.id, numero_linea=i, nombre=item_data.nombre,
-                cantidad=item_data.cantidad, precio_unitario=item_data.precio_unitario,
-                monto_item=item_data.monto_item
-            ))
+            db_item = ItemDTE(
+                dte_id          = nuevo_dte.id,
+                numero_linea    = i,
+                nombre          = item_data.nombre,
+                cantidad        = item_data.cantidad,
+                precio_unitario = item_data.precio_unitario,
+                monto_item      = item_data.monto_item,
+                codigo          = item_data.codigo
+            )
+            self.db.add(db_item)
 
         await self.db.commit()
         
         return {
             "id": nuevo_dte.id,
             "folio": folio,
-            "status": "success",
-            "xml_firmado": xml_firmado_str  # <--- Ahora garantizamos que esto existe
+            "status": "success"
         }
 
     def _construir_input(self, datos: dict, folio: int, emisor: Emisor) -> InputDTE:
-        # (Se mantiene igual que la versión anterior con la protección de acteco)
-        pass
+        r_data = datos.get("receptor", {})
+        
+        # Protección para el campo acteco
+        try:
+            codigo_acteco = getattr(emisor, 'acteco', None)
+        except AttributeError:
+            codigo_acteco = None
+
+        # Reconstrucción de la lista de ítems (Aquí estaba el fallo del None)
+        items_input = [
+            ItemDTEInput(
+                nombre          = i["nombre"],
+                cantidad        = float(i.get("cantidad", 1)),
+                precio_unitario = float(i["precio_unitario"]),
+                codigo          = i.get("codigo", ""),
+                exento          = bool(i.get("exento", False))
+            ) for i in datos.get("items", [])
+        ]
+
+        return InputDTE(
+            tipo_dte      = datos["tipo_dte"],
+            folio         = folio,
+            fecha_emision = date.fromisoformat(datos.get("fecha_emision", date.today().isoformat())),
+            emisor        = EmisorDTE(
+                rut=emisor.rut, razon_social=emisor.razon_social, giro=emisor.giro,
+                direccion=emisor.direccion, comuna=emisor.comuna, ciudad=emisor.ciudad,
+                acteco=codigo_acteco
+            ),
+            receptor      = ReceptorDTE(
+                rut=r_data.get("rut"),
+                razon_social=r_data.get("razon_social"),
+                giro=r_data.get("giro", "Particular"),
+                direccion=r_data.get("direccion", "Ciudad"),
+                comuna=r_data.get("comuna", "Santiago"),
+                ciudad=r_data.get("ciudad", "Santiago")
+            ),
+            items         = items_input,
+            ambiente      = emisor.ambiente
+        )
