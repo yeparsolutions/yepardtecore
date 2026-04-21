@@ -1,4 +1,4 @@
-# app/services/firma_digital.py
+# app/services/firma_digital.py v2
 import logging
 from lxml import etree
 from signxml import XMLSigner, methods
