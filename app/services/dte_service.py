@@ -1,18 +1,12 @@
 # app/services/dte_service.py
-# ══════════════════════════════════════════════════════════════
-# Orquestador principal del motor DTE - Versión Final Sincronizada
-# ══════════════════════════════════════════════════════════════
-
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import date
 from typing import Any
 
-# Importaciones de modelos
 from app.models.dte    import DTE, ItemDTE
 from app.models.emisor import Emisor
 
-# Importaciones de servicios auxiliares
 from app.services.xml_builder   import XMLBuilder, InputDTE, EmisorDTE, ReceptorDTE, ItemDTEInput
 from app.services.firma_digital import FirmaDigital
 from app.services.caf_service   import CAFService
@@ -29,15 +23,16 @@ class DTEService:
         self.caf_service = CAFService(db)
 
     async def emitir(self, emisor_id: int, datos: dict, auto_enviar: bool = True) -> dict:
-        # 1. Cargar Emisor y Validar Certificado
+        # 1. Validar Emisor y existencia de Certificado
         emisor = await self.db.get(Emisor, emisor_id)
         if not emisor:
             raise ValueError("Emisor no encontrado")
 
         cert = emisor.certificado_activo
         if not cert or not cert.certificado_p12:
-            logger.error(f"Emisor {emisor.rut} no tiene certificado P12")
-            raise ValueError(f"El emisor {emisor.rut} no tiene un certificado digital cargado.")
+            # Si llegamos aquí, el error es que no hay certificado cargado
+            logger.error(f"El emisor {emisor.rut} no tiene certificado digital.")
+            raise ValueError(f"Falta Certificado Digital: No se puede firmar el DTE porque el emisor {emisor.rut} no tiene su archivo .p12 cargado.")
 
         # 2. Obtener Folio y CAF
         tipo_dte = datos["tipo_dte"]
@@ -61,10 +56,10 @@ class DTEService:
             )
             xml_firmado_str = xml_firmado_bytes.decode("ISO-8859-1")
         except Exception as e:
-            logger.error(f"Falla en firma digital: {str(e)}")
-            raise RuntimeError(f"Error al firmar: {str(e)}")
+            logger.error(f"Error en el proceso de firma: {str(e)}")
+            raise RuntimeError(f"Error al firmar digitalmente: {str(e)}. Verifique la clave del certificado.")
 
-        # 5. Guardar en Base de Datos (Cabecera)
+        # 5. Guardar en BD (Cabecera)
         sigla = TIPOS_SIGLAS.get(tipo_dte, "D")
         nuevo_dte = DTE(
             emisor_id       = emisor_id,
@@ -76,7 +71,7 @@ class DTEService:
             monto_neto      = builder.monto_neto,
             monto_iva       = builder.monto_iva,
             monto_total     = builder.monto_total,
-            xml_firmado     = xml_firmado_str,
+            xml_firmado     = xml_firmado_str,  # Garantizado que tiene valor aquí
             estado          = "PENDIENTE_ENVIO" if auto_enviar else "BORRADOR",
             ambiente        = emisor.ambiente
         )
@@ -86,7 +81,7 @@ class DTEService:
 
         # 6. Guardar Items
         for i, item_data in enumerate(input_dte.items, 1):
-            db_item = ItemDTE(
+            self.db.add(ItemDTE(
                 dte_id          = nuevo_dte.id,
                 numero_linea    = i,
                 nombre          = item_data.nombre,
@@ -94,27 +89,25 @@ class DTEService:
                 precio_unitario = item_data.precio_unitario,
                 monto_item      = item_data.monto_item,
                 codigo          = item_data.codigo
-            )
-            self.db.add(db_item)
+            ))
 
         await self.db.commit()
         
+        # 7. Respuesta
         return {
             "id": nuevo_dte.id,
             "folio": folio,
-            "status": "success"
+            "status": "success",
+            "xml_firmado": xml_firmado_str  # Incluimos la clave para evitar el KeyError
         }
 
     def _construir_input(self, datos: dict, folio: int, emisor: Emisor) -> InputDTE:
         r_data = datos.get("receptor", {})
         
-        # Protección para el campo acteco
-        try:
-            codigo_acteco = getattr(emisor, 'acteco', None)
-        except AttributeError:
-            codigo_acteco = None
+        # Protección para acteco
+        codigo_acteco = getattr(emisor, 'acteco', None)
 
-        # Reconstrucción de la lista de ítems (Aquí estaba el fallo del None)
+        # Reconstrucción de items
         items_input = [
             ItemDTEInput(
                 nombre          = i["nombre"],
