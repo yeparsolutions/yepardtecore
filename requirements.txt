@@ -18,7 +18,7 @@ python-multipart==0.0.9
 lxml==5.2.2
 cryptography==42.0.7
 pyOpenSSL==24.1.0
-signxml==3.9.0
+signxml==3.2.2
 
 # ── Generación de PDF ─────────────────────────────────────────────
 reportlab==4.2.0
