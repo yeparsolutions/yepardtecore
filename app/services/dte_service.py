@@ -3,10 +3,10 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import date
 
-from app.models.dte    import DTE, ItemDTE
+from app.models.dte    import DTE, ItemDTE as ItemDTEModel
 from app.models.emisor import Emisor
 
-from app.services.xml_builder   import XMLBuilder, InputDTE, EmisorDTE, ReceptorDTE, ItemDTEInput
+from app.services.xml_builder   import XMLBuilder, InputDTE, EmisorDTE, ReceptorDTE, ItemDTE, ReferenciaDTE
 from app.services.firma_digital import FirmaDigital
 from app.services.caf_service   import CAFService
 
@@ -16,13 +16,14 @@ TIPOS_SIGLAS = {
     33: "F", 34: "FE", 39: "B", 41: "BE", 52: "G", 56: "ND", 61: "NC"
 }
 
+
 class DTEService:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.caf_service = CAFService(db)
 
     async def emitir(self, emisor_id: int, datos: dict, auto_enviar: bool = True) -> dict:
-        # 1. Validar Emisor
+        # 1. Validar emisor
         emisor = await self.db.get(Emisor, emisor_id)
         if not emisor:
             raise ValueError("Emisor no encontrado")
@@ -31,7 +32,7 @@ class DTEService:
         if not cert or not cert.certificado_p12:
             raise ValueError(f"Falta Certificado Digital para el emisor {emisor.rut}")
 
-        # 2. Obtener Folio y CAF
+        # 2. Obtener folio y CAF
         tipo_dte = datos["tipo_dte"]
         folio, caf = await self.caf_service.obtener_siguiente_folio(
             emisor_id, tipo_dte, emisor.ambiente
@@ -39,27 +40,33 @@ class DTEService:
 
         # 3. Construir XML base
         input_dte = self._construir_input(datos, folio, emisor)
-        builder = XMLBuilder(input_dte)
+        builder   = XMLBuilder(input_dte)
         xml_sin_firma = builder.construir()
 
-        # 4. Proceso de Firma
+        # 4. Firma digital — se necesita el CAF para generar el TED
         try:
             firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
+
+            # it1_nombre: primer item del documento (va en el TED)
+            it1 = input_dte.items[0].nombre if input_dte.items else "PRODUCTO"
+
             xml_firmado_bytes = firma.firmar_dte(
-                xml_bytes      = xml_sin_firma,
+                xml_bytes     = xml_sin_firma,
                 folio         = folio,
                 tipo_dte      = tipo_dte,
-                fecha_emision = input_dte.fecha_emision,
+                xml_caf       = caf.xml_caf,           # CAF para generar el TED
+                fecha_emision = input_dte.fecha_emision.isoformat(),
                 rut_emisor    = emisor.rut,
-                monto_total   = builder.monto_total
+                monto_total   = builder.monto_total,
+                it1_nombre    = it1,
             )
             xml_firmado_str = xml_firmado_bytes.decode("ISO-8859-1")
         except Exception as e:
-            logger.error(f"Error en paso de firma: {str(e)}")
-            raise RuntimeError(f"Error al firmar digitalmente: {str(e)}")
+            logger.error(f"Falla en firma: {e}", exc_info=True)
+            raise RuntimeError(f"Error al firmar digitalmente: Falla en firma individual: {e}. Verifique la clave del certificado.")
 
-        # 5. Persistencia en Base de Datos
-        sigla = TIPOS_SIGLAS.get(tipo_dte, "D")
+        # 5. Persistencia
+        sigla     = TIPOS_SIGLAS.get(tipo_dte, "D")
         nuevo_dte = DTE(
             emisor_id       = emisor_id,
             tipo_dte        = tipo_dte,
@@ -72,62 +79,91 @@ class DTEService:
             monto_total     = builder.monto_total,
             xml_firmado     = xml_firmado_str,
             estado          = "PENDIENTE_ENVIO" if auto_enviar else "BORRADOR",
-            ambiente        = emisor.ambiente
+            ambiente        = emisor.ambiente,
         )
-        
         self.db.add(nuevo_dte)
-        await self.db.flush() 
+        await self.db.flush()
 
-        # 6. Guardar Items detallados
+        # 6. Guardar items
         for i, item_data in enumerate(input_dte.items, 1):
-            self.db.add(ItemDTE(
+            self.db.add(ItemDTEModel(
                 dte_id          = nuevo_dte.id,
                 numero_linea    = i,
                 nombre          = item_data.nombre,
                 cantidad        = item_data.cantidad,
                 precio_unitario = item_data.precio_unitario,
                 monto_item      = item_data.monto_item,
-                codigo          = item_data.codigo
+                codigo          = item_data.codigo,
             ))
 
         await self.db.commit()
-        
+
         return {
-            "id": nuevo_dte.id,
-            "folio": folio,
-            "status": "success",
-            "xml_firmado": xml_firmado_str
+            "id":          nuevo_dte.id,
+            "folio":       folio,
+            "status":      "success",
+            "xml_firmado": xml_firmado_str,
+            "monto_total": builder.monto_total,   # requerido por certificacion_facturas.py
+            "monto_neto":  builder.monto_neto,
+            "monto_iva":   builder.monto_iva,
         }
 
     def _construir_input(self, datos: dict, folio: int, emisor: Emisor) -> InputDTE:
         r_data = datos.get("receptor", {})
+
+        # Items — usar ItemDTE (nombre correcto en xml_builder)
         items_input = [
-            ItemDTEInput(
+            ItemDTE(
                 nombre          = i["nombre"],
                 cantidad        = float(i.get("cantidad", 1)),
                 precio_unitario = float(i["precio_unitario"]),
+                descuento_pct   = float(i.get("descuento_pct", 0)),
                 codigo          = i.get("codigo", ""),
-                exento          = bool(i.get("exento", False))
-            ) for i in datos.get("items", [])
+                unidad          = i.get("unidad", ""),
+                exento          = bool(i.get("exento", False)),
+            )
+            for i in datos.get("items", [])
+        ]
+
+        # Referencias — convertir dicts a ReferenciaDTE
+        refs_data = datos.get("referencias", [])
+        referencias = [
+            ReferenciaDTE(
+                tipo_doc_ref = int(r["tipo_doc_ref"]),
+                folio_ref    = int(r["folio_ref"]),
+                fecha_ref    = date.fromisoformat(r["fecha_ref"]) if isinstance(r.get("fecha_ref"), str) else date.today(),
+                razon_ref    = r.get("razon_ref", ""),
+                cod_ref      = r.get("cod_ref", 0),
+            )
+            for r in refs_data
         ]
 
         return InputDTE(
-            tipo_dte      = datos["tipo_dte"],
-            folio         = folio,
-            fecha_emision = date.fromisoformat(datos.get("fecha_emision", date.today().isoformat())),
-            emisor        = EmisorDTE(
-                rut=emisor.rut, razon_social=emisor.razon_social, giro=emisor.giro,
-                direccion=emisor.direccion, comuna=emisor.comuna, ciudad=emisor.ciudad,
-                acteco=getattr(emisor, 'acteco', None)
+            tipo_dte             = datos["tipo_dte"],
+            folio                = folio,
+            fecha_emision        = date.fromisoformat(datos.get("fecha_emision", date.today().isoformat())),
+            emisor               = EmisorDTE(
+                rut          = emisor.rut,
+                razon_social = emisor.razon_social,
+                giro         = emisor.giro,
+                direccion    = emisor.direccion,
+                comuna       = emisor.comuna,
+                ciudad       = emisor.ciudad,
+                telefono     = getattr(emisor, "telefono", "") or "",
+                correo       = getattr(emisor, "correo", "") or "",
             ),
-            receptor      = ReceptorDTE(
-                rut=r_data.get("rut"),
-                razon_social=r_data.get("razon_social"),
-                giro=r_data.get("giro", "Particular"),
-                direccion=r_data.get("direccion", "Ciudad"),
-                comuna=r_data.get("comuna", "Santiago"),
-                ciudad=r_data.get("ciudad", "Santiago")
+            receptor             = ReceptorDTE(
+                rut          = r_data.get("rut", "66666666-6"),
+                razon_social = r_data.get("razon_social", "Consumidor Final"),
+                giro         = r_data.get("giro", ""),
+                direccion    = r_data.get("direccion", ""),
+                comuna       = r_data.get("comuna", ""),
+                ciudad       = r_data.get("ciudad", ""),
+                correo       = r_data.get("correo", ""),
             ),
-            items         = items_input,
-            ambiente      = emisor.ambiente
+            items                = items_input,
+            referencias          = referencias,
+            ambiente             = emisor.ambiente,
+            forma_pago           = int(datos.get("forma_pago", 1)),
+            descuento_global_pct = float(datos.get("descuento_global_pct", 0)),
         )
