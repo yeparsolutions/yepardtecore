@@ -96,8 +96,11 @@ class SIISender:
         etree.SubElement(caratula, f"{{{NS}}}RutEnvia").text    = rut_enviador
         etree.SubElement(caratula, f"{{{NS}}}RutReceptor").text = "60803000-K"
 
-        fch_resol = "2006-01-20" if self.ambiente == "certificacion" else "2014-08-22"
-        nro_resol = "0"          if self.ambiente == "certificacion" else "80"
+        # FchResol y NroResol deben coincidir con la resolucion real del emisor.
+        # Por defecto: NroResol=0 para certificacion (valor exigido por el SII).
+        # En produccion se debe configurar segun la resolucion de autorizacion del emisor.
+        fch_resol = getattr(self, 'fch_resol', '2003-09-02' if self.ambiente == 'certificacion' else '2014-08-22')
+        nro_resol = getattr(self, 'nro_resol', '0')
         etree.SubElement(caratula, f"{{{NS}}}FchResol").text     = fch_resol
         etree.SubElement(caratula, f"{{{NS}}}NroResol").text     = nro_resol
         etree.SubElement(caratula, f"{{{NS}}}TmstFirmaEnv").text = (
