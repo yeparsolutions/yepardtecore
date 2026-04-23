@@ -24,6 +24,8 @@ class EmisorCrear(BaseModel):
     comuna: str
     ciudad: str
     telefono: str | None = None
+    correo: str | None = None
+    acteco: str | None = None       # Código actividad económica SII (ej: 620100)
     ambiente: str = "certificacion"
 
 
@@ -37,6 +39,7 @@ class EmisorRespuesta(BaseModel):
     ciudad: str
     activo: bool
     ambiente: str
+    acteco: str | None
     api_key: str | None
 
     class Config:
@@ -74,6 +77,8 @@ async def crear_emisor(datos: EmisorCrear, db: AsyncSession = Depends(get_db)):
         comuna=datos.comuna,
         ciudad=datos.ciudad,
         telefono=datos.telefono,
+        correo=datos.correo,
+        acteco=datos.acteco,
         ambiente=datos.ambiente,
         api_key=api_key,
     )
@@ -100,6 +105,30 @@ async def obtener_emisor(emisor_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Emisor no encontrado")
     return emisor
 
+
+
+@router.patch("/{emisor_id}", response_model=EmisorRespuesta)
+async def actualizar_emisor(
+    emisor_id: int,
+    datos: EmisorCrear,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Actualiza los datos de un emisor existente.
+    Útil para corregir giro, dirección, acteco, etc.
+    """
+    resultado = await db.execute(select(Emisor).where(Emisor.id == emisor_id))
+    emisor = resultado.scalar_one_or_none()
+    if not emisor:
+        raise HTTPException(status_code=404, detail="Emisor no encontrado")
+
+    for campo, valor in datos.model_dump(exclude_unset=True).items():
+        if hasattr(emisor, campo) and valor is not None:
+            setattr(emisor, campo, valor)
+
+    await db.commit()
+    await db.refresh(emisor)
+    return emisor
 
 @router.get("/{emisor_id}/folios")
 async def folios_disponibles(emisor_id: int, db: AsyncSession = Depends(get_db)):
