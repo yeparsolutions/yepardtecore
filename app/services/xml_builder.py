@@ -24,6 +24,7 @@ class EmisorDTE:
     ciudad: str
     telefono: str = ""
     correo: str = ""
+    acteco: str = "620200"    # Código actividad económica
 
 
 @dataclass
@@ -211,7 +212,7 @@ class XMLBuilder:
                 etree.SubElement(emisor, f"{{{NS}}}Telefono").text     = em.telefono
             if em.correo:
                 etree.SubElement(emisor, f"{{{NS}}}CorreoEmisor").text = em.correo
-            etree.SubElement(emisor, f"{{{NS}}}Acteco").text = "620100"
+            etree.SubElement(emisor, f"{{{NS}}}Acteco").text = em.acteco or "620200"
 
         etree.SubElement(emisor, f"{{{NS}}}DirOrigen").text    = (em.direccion or "").strip()
         etree.SubElement(emisor, f"{{{NS}}}CmnaOrigen").text   = (em.comuna or "").strip()
