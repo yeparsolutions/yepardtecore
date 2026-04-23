@@ -110,13 +110,13 @@ class FirmaDigital:
 
         it1_safe = it1_nombre[:40].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
+        # DD sin TSTED — la firma cubre solo el DD
         dd_xml = (
             f"<DD>"
             f"<RE>{rut_emisor}</RE><TD>{tipo_dte}</TD><F>{folio}</F>"
             f"<FE>{fecha_emision}</FE><RR>66666666-6</RR>"
             f"<RSR>CONSUMIDOR FINAL</RSR><MNT>{monto_total}</MNT>"
             f"<IT1>{it1_safe}</IT1>{caf_str}"
-            f"<TSTED>{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')}</TSTED>"
             f"</DD>"
         )
 
@@ -124,10 +124,13 @@ class FirmaDigital:
             self._firmar_rsa_sha1_raw(dd_xml.encode("ISO-8859-1"), rsk_el.text.strip())
         ).decode()
 
-        tag = "FRMT" if tipo_dte in TIPOS_BOLETA else "FRMA"
+        # Orden XSD: DD → FRMA/FRMT → TSTED
+        tag   = "FRMT" if tipo_dte in TIPOS_BOLETA else "FRMA"
+        tsted = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
         return (
             f'<TED version="1.0">{dd_xml}'
             f'<{tag} algoritmo="SHA1withRSA">{firma_b64}</{tag}>'
+            f'<TSTED>{tsted}</TSTED>'
             f'</TED>'
         ).encode("ISO-8859-1")
 
