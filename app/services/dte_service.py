@@ -151,6 +151,7 @@ class DTEService:
                 ciudad       = emisor.ciudad,
                 telefono     = getattr(emisor, "telefono", "") or "",
                 correo       = getattr(emisor, "correo", "") or "",
+                acteco       = getattr(emisor, "acteco", "") or "",
             ),
             receptor             = ReceptorDTE(
                 rut          = r_data.get("rut", "66666666-6"),
