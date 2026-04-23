@@ -31,6 +31,10 @@ class Emisor(Base):
     razon_social: Mapped[str] = mapped_column(String(200), nullable=False)
     giro: Mapped[str] = mapped_column(String(200), nullable=False)
 
+    # Código de Actividad Económica (ej: 620100 = Servicios de Informática)
+    # Se obtiene del SII en: sii.cl → Mis datos → Actividades económicas
+    acteco: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
     # ── Dirección ─────────────────────────────────────────────
     direccion: Mapped[str] = mapped_column(String(300), nullable=False)
     comuna: Mapped[str] = mapped_column(String(100), nullable=False)
