@@ -5,7 +5,7 @@
 # qué ingredientes necesita y cómo preparar el plato.
 # ══════════════════════════════════════════════════════════════
 
-# Imagen base oficial de Python — slim = sin extras innecesarios
+# Imagen base oficial de Python — slim = sin extras innecesario
 FROM python:3.11-slim
 
 # Cache bust — incrementar para forzar rebuild limpio
