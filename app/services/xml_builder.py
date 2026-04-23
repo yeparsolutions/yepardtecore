@@ -24,7 +24,6 @@ class EmisorDTE:
     ciudad: str
     telefono: str = ""
     correo: str = ""
-    acteco: str = "620200"    # Código actividad económica — configurable por emisor
 
 
 @dataclass
@@ -36,7 +35,6 @@ class ReceptorDTE:
     comuna: str = ""
     ciudad: str = ""
     correo: str = ""
-    acteco: str = "620200"    # Código actividad económica — configurable por emisor
 
 
 @dataclass
@@ -213,7 +211,7 @@ class XMLBuilder:
                 etree.SubElement(emisor, f"{{{NS}}}Telefono").text     = em.telefono
             if em.correo:
                 etree.SubElement(emisor, f"{{{NS}}}CorreoEmisor").text = em.correo
-            etree.SubElement(emisor, f"{{{NS}}}Acteco").text = em.acteco or "620200"
+            etree.SubElement(emisor, f"{{{NS}}}Acteco").text = "620100"
 
         etree.SubElement(emisor, f"{{{NS}}}DirOrigen").text    = (em.direccion or "").strip()
         etree.SubElement(emisor, f"{{{NS}}}CmnaOrigen").text   = (em.comuna or "").strip()
@@ -296,6 +294,9 @@ class XMLBuilder:
         etree.SubElement(r, f"{{{NS}}}NroLinRef").text = str(numero)
         etree.SubElement(r, f"{{{NS}}}TpoDocRef").text = str(ref.tipo_doc_ref)
         etree.SubElement(r, f"{{{NS}}}FolioRef").text  = str(ref.folio_ref)
+        # FchRef es obligatorio segun XSD antes de CodRef
+        fecha_ref = ref.fecha_ref.strftime("%Y-%m-%d") if hasattr(ref.fecha_ref, "strftime") else str(ref.fecha_ref)
+        etree.SubElement(r, f"{{{NS}}}FchRef").text = fecha_ref
         if ref.cod_ref not in (0, None, ""):
             etree.SubElement(r, f"{{{NS}}}CodRef").text = str(ref.cod_ref)
         if ref.razon_ref:
