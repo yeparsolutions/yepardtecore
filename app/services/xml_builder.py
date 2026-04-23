@@ -192,9 +192,9 @@ class XMLBuilder:
         if es_boleta:
             etree.SubElement(iddoc, f"{{{NS}}}IndServicio").text = "3"
         else:
-            # TpoTranVenta ANTES que FmaPago segun XSD
-            etree.SubElement(iddoc, f"{{{NS}}}TpoTranVenta").text = "1"
+            # Orden correcto segun ejemplo SII: FmaPago → TpoTranVenta
             etree.SubElement(iddoc, f"{{{NS}}}FmaPago").text      = str(d.forma_pago)
+            etree.SubElement(iddoc, f"{{{NS}}}TpoTranVenta").text = "1"
 
         # Emisor: RUTEmisor, RznSoc, GiroEmis, [Telefono], [CorreoEmisor],
         # [Acteco], ..., DirOrigen, CmnaOrigen, CiudadOrigen
@@ -298,7 +298,9 @@ class XMLBuilder:
         # FchRef es obligatorio segun XSD antes de CodRef
         fecha_ref = ref.fecha_ref.strftime("%Y-%m-%d") if hasattr(ref.fecha_ref, "strftime") else str(ref.fecha_ref)
         etree.SubElement(r, f"{{{NS}}}FchRef").text = fecha_ref
-        if ref.cod_ref not in (0, None, ""):
+        # CodRef solo acepta valores 1, 2, 3 (XSD xs:positiveInteger enumeration)
+        # Las referencias a TpoDocRef=801 (set de prueba) NO llevan CodRef
+        if ref.cod_ref not in (0, None, "", "SET") and str(ref.cod_ref) in ("1","2","3"):
             etree.SubElement(r, f"{{{NS}}}CodRef").text = str(ref.cod_ref)
         if ref.razon_ref:
             etree.SubElement(r, f"{{{NS}}}RazonRef").text = ref.razon_ref[:90]
