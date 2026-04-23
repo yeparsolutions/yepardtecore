@@ -8,6 +8,9 @@
 # Imagen base oficial de Python — slim = sin extras innecesarios
 FROM python:3.11-slim
 
+# Cache bust — incrementar para forzar rebuild limpio
+ARG CACHEBUST=2
+
 # Directorio de trabajo dentro del contenedor
 WORKDIR /app
 
