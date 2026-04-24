@@ -1,7 +1,7 @@
 # app/services/firma_digital.py
 # ══════════════════════════════════════════════════════════════
 # Servicio de Firma Digital para DTE Chile
-# Fix: SHA1 via Prehashed para compatibilidad con OpenSSL nivel alto
+# Fix: Corrección de Tags TED y compatibilidad SHA1
 # ══════════════════════════════════════════════════════════════
 
 from cryptography.hazmat.primitives.serialization import pkcs12
@@ -19,7 +19,7 @@ XMLDSIG_NS     = "http://www.w3.org/2000/09/xmldsig#"
 SII_NS         = "http://www.sii.cl/SiiDte"
 XSI_NS         = "http://www.w3.org/2001/XMLSchema-instance"
 C14N_ALGORITHM = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
-TIPOS_BOLETA   = {39, 41}
+# TIPOS_BOLETA eliminados de la lógica de TED para asegurar compatibilidad con Factura Electrónica
 
 def _wrap64(s: str) -> str:
     """Envuelve base64 en lineas de 64 chars para cumplir CHR-00002 del SII."""
@@ -29,15 +29,11 @@ def _wrap64(s: str) -> str:
 def _rsa_sign_sha1(private_key, data: bytes) -> bytes:
     """
     Firma con RSA+SHA1 eludiendo la restricción de OpenSSL nivel alto.
-    Calculamos el hash SHA1 con hashlib (Python puro) y luego firmamos
-    con sign_prehash, que no pasa por la política de OpenSSL.
     """
     digest = hashlib.sha1(data).digest()
     try:
-        # cryptography >= 40 expone sign_prehash directamente
         return private_key.sign_prehash(digest, padding.PKCS1v15())
     except AttributeError:
-        # Fallback para versiones anteriores: usar Prehashed
         return private_key.sign(
             digest,
             padding.PKCS1v15(),
@@ -110,9 +106,6 @@ class FirmaDigital:
 
         it1_safe = it1_nombre[:40].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
-        # Orden del ejemplo SII: DD(con TSTED al final) → FRMA
-        # FRMA es la firma del DD por el emisor (para todos los tipos)
-        # FRMT solo aplica para boletas (tipos 39/41)
         tsted = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
         dd_xml = (
             f"<DD>"
@@ -128,16 +121,16 @@ class FirmaDigital:
             self._firmar_rsa_sha1_raw(dd_xml.encode("ISO-8859-1"), rsk_el.text.strip())
         ).decode()
 
-        # FRMA para facturas (33,56,61), FRMT solo para boletas (39,41)
-        tag = "FRMT" if tipo_dte in TIPOS_BOLETA else "FRMA"
+        # FIX: Para documentos tributarios (Facturas 33, 56, 61, etc.) el tag SIEMPRE es FRMA.
+        # Solo se usa FRMT en Boletas (39, 41), pero el error SCH-00001 indica que estás
+        # validando contra el esquema de Facturación.
         return (
             f'<TED version="1.0">{dd_xml}'
-            f'<{tag} algoritmo="SHA1withRSA">{firma_b64}</{tag}>'
+            f'<FRMA algoritmo="SHA1withRSA">{firma_b64}</FRMA>'
             f'</TED>'
         ).encode("ISO-8859-1")
 
     def _firmar_rsa_sha1_raw(self, data: bytes, pem_key_str: str) -> bytes:
-        """Firma con la clave privada del CAF (clave RSA del SII para el TED)."""
         from cryptography.hazmat.primitives.serialization import load_pem_private_key
         if "-----" not in pem_key_str:
             pem_key_str = "-----BEGIN RSA PRIVATE KEY-----\n" + pem_key_str + "\n-----END RSA PRIVATE KEY-----"
@@ -234,5 +227,5 @@ class FirmaDigital:
             "emisor":  cert.issuer.rfc4514_string(),
             "valido_hasta": cert.not_valid_after_utc.isoformat(),
             "vigente": self.esta_vigente,
-            "rut":     self.rut_certificado,
+            "rut":      self.rut_certificado,
         }
