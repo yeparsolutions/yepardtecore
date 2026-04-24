@@ -128,10 +128,11 @@ class FirmaDigital:
             self._firmar_rsa_sha1_raw(dd_xml.encode("ISO-8859-1"), rsk_el.text.strip())
         ).decode()
 
-        # El XSD exige FRMT para todos los tipos de DTE (facturas y boletas)
+        # FRMA para facturas (33,56,61), FRMT solo para boletas (39,41)
+        tag = "FRMT" if tipo_dte in TIPOS_BOLETA else "FRMA"
         return (
             f'<TED version="1.0">{dd_xml}'
-            f'<FRMT algoritmo="SHA1withRSA">{firma_b64}</FRMT>'
+            f'<{tag} algoritmo="SHA1withRSA">{firma_b64}</{tag}>'
             f'</TED>'
         ).encode("ISO-8859-1")
 
