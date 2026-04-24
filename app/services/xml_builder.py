@@ -192,9 +192,9 @@ class XMLBuilder:
         if es_boleta:
             etree.SubElement(iddoc, f"{{{NS}}}IndServicio").text = "3"
         else:
-            # Orden correcto segun ejemplo SII: FmaPago → TpoTranVenta
-            etree.SubElement(iddoc, f"{{{NS}}}FmaPago").text      = str(d.forma_pago)
+            # Orden XSD: TpoTranVenta → FmaPago
             etree.SubElement(iddoc, f"{{{NS}}}TpoTranVenta").text = "1"
+            etree.SubElement(iddoc, f"{{{NS}}}FmaPago").text      = str(d.forma_pago)
 
         # Emisor: RUTEmisor, RznSoc, GiroEmis, [Telefono], [CorreoEmisor],
         # [Acteco], ..., DirOrigen, CmnaOrigen, CiudadOrigen
