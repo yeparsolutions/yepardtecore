@@ -108,7 +108,18 @@ class FirmaDigital:
         rsk_el   = caf_root.find(".//RSASK")
         caf_str  = etree.tostring(caf_root.find(".//CAF"), encoding="unicode")
 
-        it1_safe = it1_nombre[:40].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        # IT1 va en el TED como raw string — el SII firma y verifica el DD directamente.
+        # & (ampersand) aunque sea &amp; en XML causa RFR en el verificador del SII.
+        # Solución: reemplazar & por ' y ' antes de escribir el IT1.
+        it1_safe = (
+            it1_nombre[:40]
+            .replace('&', ' y ')   # principal causante de RFR
+            .replace("'", '')       # comilla simple
+            .replace('"', '')       # comilla doble
+            .replace('#', '')       # gato
+            .replace('<', '&lt;')   # escape XML obligatorio
+            .replace('>', '&gt;')   # escape XML obligatorio
+        ).strip()
 
         # Orden del ejemplo SII: DD(con TSTED al final) → FRMA
         # FRMA es la firma del DD por el emisor (para todos los tipos)
