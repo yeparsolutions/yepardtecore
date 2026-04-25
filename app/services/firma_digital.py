@@ -161,9 +161,18 @@ class FirmaDigital:
 
         signed_info = self._build_signed_info(f"#{doc_id}", digest_doc)
 
-        si_el   = etree.fromstring(signed_info.encode())
-        si_c14n = etree.tostring(si_el, method="c14n", exclusive=False)
+        # FIX RFR: el C14N del SignedInfo debe calcularse en el contexto del documento
+        # (no como elemento standalone) para que coincida con lo que el SII verifica.
+        # El problema: el raíz DTE tiene xmlns:xsi que el SignedInfo hereda en scope.
+        # Solución: insertar Signature temporal → calcular C14N en contexto → firmar → reemplazar
+        temp_sig = etree.fromstring(
+            f'<Signature xmlns="{XMLDSIG_NS}">{signed_info}</Signature>'.encode()
+        )
+        root.append(temp_sig)
+        si_en_doc = temp_sig.find(f"{{{XMLDSIG_NS}}}SignedInfo")
+        si_c14n   = etree.tostring(si_en_doc, method="c14n", exclusive=False)
         firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
+        root.remove(temp_sig)
 
         root.append(etree.fromstring(self._build_signature(signed_info, firma_b64).encode()))
         return etree.tostring(root, encoding="unicode", xml_declaration=False)
@@ -214,9 +223,17 @@ class FirmaDigital:
 
         signed_info = self._build_signed_info("#SetDoc", digest_val)
 
-        si_el   = etree.fromstring(signed_info.encode())
-        si_c14n = etree.tostring(si_el, method="c14n", exclusive=False)
+        # FIX RFR: C14N del SignedInfo en contexto del documento (no standalone)
+        # EnvioDTE tiene xmlns:xsi que SignedInfo hereda en scope al ser verificado por SII.
+        # Si se firma en contexto standalone, el C14N difiere → firma inválida → RFR.
+        temp_sig = etree.fromstring(
+            f'<Signature xmlns="{XMLDSIG_NS}">{signed_info}</Signature>'.encode()
+        )
+        root.append(temp_sig)
+        si_en_doc = temp_sig.find(f"{{{XMLDSIG_NS}}}SignedInfo")
+        si_c14n   = etree.tostring(si_en_doc, method="c14n", exclusive=False)
         firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
+        root.remove(temp_sig)
 
         root.append(etree.fromstring(self._build_signature(signed_info, firma_b64).encode()))
         xml_sin_decl = etree.tostring(root, encoding="unicode")
