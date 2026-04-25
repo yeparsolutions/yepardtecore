@@ -229,7 +229,7 @@ async def generar_xml_facturas(
         sobre_xml = sender.construir_sobre(
             dtes_xml=xmls_firmados,
             rut_emisor=emisor.rut,
-            rut_enviador="25648612-1",
+            rut_enviador=firma.rut_certificado or emisor.rut,  # RUT del certificado que firma el sobre
             firma_service=firma,
         )
     except Exception as e:
