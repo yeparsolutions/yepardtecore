@@ -1,6 +1,6 @@
 # app/services/firma_digital.py
 # ══════════════════════════════════════════════════════════════
-# Servicio de Firma Digital para DTE Chile - VERSIÓN FINAL (SCHEMA FIX)
+# Servicio de Firma Digital para DTE Chile - VERSIÓN FINAL (TOTAL FIX)
 # ══════════════════════════════════════════════════════════════
 
 from cryptography.hazmat.primitives.serialization import pkcs12
@@ -64,12 +64,13 @@ class FirmaDigital:
                    xml_caf: str, fecha_emision: str, rut_emisor: str,
                    monto_total: int, it1_nombre: str = "PRODUCTO") -> bytes:
 
+        # 1. Generar el TED
         ted_xml_str = self._generar_ted(folio, tipo_dte, xml_caf, fecha_emision,
                                         rut_emisor, monto_total, it1_nombre).decode("ISO-8859-1")
 
         xml_str = xml_bytes.decode("ISO-8859-1") if isinstance(xml_bytes, bytes) else xml_bytes
 
-        # Sustitución limpia
+        # 2. Inyectar TED
         if "<TED/>" in xml_str:
             xml_con_ted = xml_str.replace("<TED/>", ted_xml_str)
         else:
@@ -77,6 +78,7 @@ class FirmaDigital:
             if xml_con_ted == xml_str:
                 xml_con_ted = re.sub(r'<TED>.*?</TED>', ted_xml_str, xml_str, flags=re.DOTALL)
 
+        # 3. Firmar (esta función ahora limpia los namespaces)
         xml_firmado = self._firmar_xml(xml_con_ted, f"DTE-{tipo_dte}-{folio}")
         return xml_firmado.encode("ISO-8859-1")
 
@@ -87,13 +89,11 @@ class FirmaDigital:
         caf_root = etree.fromstring(xml_caf.encode("ISO-8859-1") if isinstance(xml_caf, str) else xml_caf)
         rsk_el   = caf_root.find(".//RSASK")
         caf_el   = caf_root.find(".//CAF")
-        # Limpiar namespace del CAF para evitar prefijos en el TED
         caf_str  = etree.tostring(caf_el, encoding="unicode").replace(f' xmlns="{SII_NS}"', '')
 
         it1_safe = it1_nombre[:40].replace('&', ' y ').replace("'", '').replace('"', '').replace('#', '').strip()
         tsted = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
         
-        # Bloque DD (Datos del Documento) - Sin prefijos
         dd_xml = (
             f"<DD>"
             f"<RE>{rut_emisor}</RE><TD>{tipo_dte}</TD><F>{folio}</F>"
@@ -106,10 +106,9 @@ class FirmaDigital:
 
         firma_b64 = b64encode(self._firmar_rsa_sha1_raw(dd_xml.encode("ISO-8859-1"), rsk_el.text.strip())).decode()
 
-        # RETORNAR TED SIN xmlns="": Esto permite que herede el namespace del padre
-        # y pase la validación cvc-complex-type.
+        # Inyectamos con el namespace explícito en el tag TED para asegurar herencia
         return (
-            f'<TED version="1.0">{dd_xml}'
+            f'<TED version="1.0" xmlns="{SII_NS}">{dd_xml}'
             f'<FRMT algoritmo="SHA1withRSA">{firma_b64}</FRMT>'
             f'</TED>'
         ).encode("ISO-8859-1")
@@ -117,9 +116,16 @@ class FirmaDigital:
     def _firmar_xml(self, xml_str: str, doc_id: str) -> str:
         parser = etree.XMLParser(remove_blank_text=True, recover=True, encoding="ISO-8859-1")
         root = etree.fromstring(xml_str.encode("ISO-8859-1"), parser)
+        
+        # FIX MAESTRO: Forzar a todos los elementos sin namespace a usar el de SII
+        for el in root.iter():
+            if el.tag.startswith("{") is False:
+                el.tag = f"{{{SII_NS}}}{el.tag}"
+        
         ns = {"sii": SII_NS}
-
         doc_el = root.find(f".//sii:Documento[@ID='{doc_id}']", ns)
+        
+        # Canonización y Firma
         doc_c14n = etree.tostring(doc_el, method="c14n", exclusive=False)
         digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
@@ -132,6 +138,9 @@ class FirmaDigital:
         root.remove(temp_sig)
 
         root.append(etree.fromstring(self._build_signature(si_xml, firma_b64)))
+        
+        # Limpieza final de prefijos para el SII
+        etree.cleanup_namespaces(root)
         return etree.tostring(root, encoding="unicode")
 
     def _firmar_rsa_sha1_raw(self, data: bytes, pem_key_str: str) -> bytes:
@@ -169,8 +178,13 @@ class FirmaDigital:
     def firmar_sobre(self, sobre_xml: str) -> str:
         parser = etree.XMLParser(remove_blank_text=True, encoding="ISO-8859-1")
         root = etree.fromstring(sobre_xml.encode("ISO-8859-1"), parser)
+        
+        # Limpieza de namespaces en el sobre también
+        for el in root.iter():
+            if el.tag.startswith("{") is False:
+                el.tag = f"{{{SII_NS}}}{el.tag}"
+        
         ns = {"sii": SII_NS}
-
         set_el = root.find(".//sii:SetDTE[@ID='SetDoc']", ns)
         set_c14n = etree.tostring(set_el, method="c14n", exclusive=False)
         digest_val = b64encode(hashlib.sha1(set_c14n).digest()).decode()
@@ -184,6 +198,8 @@ class FirmaDigital:
         root.remove(temp_sig)
 
         root.append(etree.fromstring(self._build_signature(si_xml, firma_b64)))
+        
+        etree.cleanup_namespaces(root)
         return '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + etree.tostring(root, encoding="unicode")
 
     @staticmethod
