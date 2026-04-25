@@ -80,6 +80,28 @@ class InputDTE:
     descuento_global_monto: int = 0
 
 
+def _sanitizar_texto(texto: str, largo: int = 80) -> str:
+    """
+    Elimina caracteres especiales que el SII no acepta en campos de texto.
+    El & (ampersand) es el principal culpable del error RFR 'No hay estadísticas'.
+    El SII procesa el XML de forma no estándar y falla con estos caracteres.
+    Referencia: soporte OML Soluciones - artículo 'Rechazado por error en firma'.
+    """
+    reemplazos = {
+        '&': ' y ',   # & → causa RFR definitivo en SII
+        "'": '',      # comilla simple
+        '"': '',      # comilla doble
+        '#': '',      # gato
+    }
+    resultado = texto
+    for char, reemplazo in reemplazos.items():
+        resultado = resultado.replace(char, reemplazo)
+    # Limpiar espacios dobles que puedan quedar y truncar
+    import re
+    resultado = re.sub(r'  +', ' ', resultado).strip()
+    return resultado[:largo]
+
+
 class XMLBuilder:
 
     NAMESPACE = SII_NS
@@ -273,7 +295,8 @@ class XMLBuilder:
         if item.exento:
             etree.SubElement(det, f"{{{NS}}}IndExe").text = "1"
 
-        etree.SubElement(det, f"{{{NS}}}NmbItem").text = item.nombre[:80]
+        # Sanitizar: & ' " # causan RFR en SII aunque sean XML válido
+        etree.SubElement(det, f"{{{NS}}}NmbItem").text = _sanitizar_texto(item.nombre, 80)
         etree.SubElement(det, f"{{{NS}}}QtyItem").text = f"{item.cantidad:.2f}"
 
         if item.unidad:
