@@ -1,7 +1,7 @@
 # app/services/xml_builder.py
 # Validado contra DTE_v10.xsd oficial SII
 # FIXES: orden de elementos segun XSD, DscRcgGlobal en posicion correcta,
-#        cod_ref acepta "SET", FmaPago ANTES de TpoTranVenta (orden ejemplo SII)
+#        cod_ref acepta "SET", TpoTranVenta ANTES de FmaPago (orden XSD correcto)
 
 from lxml import etree
 from datetime import date, datetime, timezone
@@ -192,9 +192,11 @@ class XMLBuilder:
         if es_boleta:
             etree.SubElement(iddoc, f"{{{NS}}}IndServicio").text = "3"
         else:
-            # Orden correcto segun ejemplo SII: FmaPago → TpoTranVenta
-            etree.SubElement(iddoc, f"{{{NS}}}FmaPago").text      = str(d.forma_pago)
+            # ORDEN CORRECTO segun XSD DTE_v10.xsd (confirmado en lineas 182-194):
+            # secuencia obligatoria: ... TpoTranCompra → TpoTranVenta → FmaPago ...
+            # BUG PREVIO: FmaPago aparecia ANTES de TpoTranVenta → falla cvc-complex-type.2.4.a
             etree.SubElement(iddoc, f"{{{NS}}}TpoTranVenta").text = "1"
+            etree.SubElement(iddoc, f"{{{NS}}}FmaPago").text      = str(d.forma_pago)
 
         # Emisor: RUTEmisor, RznSoc, GiroEmis, [Telefono], [CorreoEmisor],
         # [Acteco], ..., DirOrigen, CmnaOrigen, CiudadOrigen
