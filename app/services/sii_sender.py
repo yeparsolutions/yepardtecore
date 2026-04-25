@@ -99,7 +99,10 @@ class SIISender:
         # FchResol y NroResol deben coincidir con la resolucion real del emisor.
         # Por defecto: NroResol=0 para certificacion (valor exigido por el SII).
         # En produccion se debe configurar segun la resolucion de autorizacion del emisor.
-        fch_resol = getattr(self, 'fch_resol', '2003-09-02' if self.ambiente == 'certificacion' else '2014-08-22')
+        # FechResol: para certificacion SII exige '2014-08-22' (resolucion estandar moderna).
+        # BUG PREVIO: '2003-09-02' no es reconocida por SII moderno -> SCH-00001
+        # Para produccion configurar con la fecha de resolucion real del emisor.
+        fch_resol = getattr(self, 'fch_resol', '2014-08-22')
         nro_resol = getattr(self, 'nro_resol', '0')
         etree.SubElement(caratula, f"{{{NS}}}FchResol").text     = fch_resol
         etree.SubElement(caratula, f"{{{NS}}}NroResol").text     = nro_resol
