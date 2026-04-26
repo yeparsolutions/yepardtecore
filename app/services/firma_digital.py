@@ -82,25 +82,46 @@ class FirmaDigital:
                    xml_caf: str, fecha_emision: str, rut_emisor: str,
                    monto_total: int, it1_nombre: str = "PRODUCTO") -> bytes:
 
-        # FIX FRMT: el TED usa elementos SIN namespace (DD, RE, TD...) pero lxml
-        # los trata como parte del namespace SiiDte si se insertan en el árbol.
-        # Solución: insertar el TED como reemplazo de texto en el XML string
-        # ANTES de parsear, para que los elementos queden como texto crudo y
-        # no hereden el namespace del DTE padre.
-        ted_xml_str = self._generar_ted(folio, tipo_dte, xml_caf, fecha_emision,
-                                        rut_emisor, monto_total, it1_nombre).decode("ISO-8859-1")
+        # Generar TED como bytes ISO-8859-1 (el TED es un bloque raw sin namespace)
+        ted_bytes = self._generar_ted(folio, tipo_dte, xml_caf, fecha_emision,
+                                      rut_emisor, monto_total, it1_nombre)
 
-        # El xml_bytes viene en ISO-8859-1 o unicode — normalizar a str
-        xml_str = xml_bytes.decode("ISO-8859-1") if isinstance(xml_bytes, bytes) else xml_bytes
+        # El xml_bytes viene de xml_builder en ISO-8859-1
+        # Parsear el DTE base para encontrar el placeholder del TED
+        parser   = etree.XMLParser(remove_blank_text=True, encoding="ISO-8859-1")
+        root     = etree.fromstring(xml_bytes, parser)
+        ns       = {"sii": SII_NS}
 
-        # Reemplazar el placeholder <TED...> por el TED real en el string
-        # (inserción como texto, sin pasar por el árbol XML → el namespace no se hereda)
-        import re as _re
-        xml_con_ted = _re.sub(r'<TED[^/]*/>', ted_xml_str, xml_str, count=1)
-        if xml_con_ted == xml_str:
-            # Placeholder extendido (<TED ...></TED>)
-            xml_con_ted = _re.sub(r'<TED[^>]*>.*?</TED>', ted_xml_str, xml_str, count=1, flags=_re.DOTALL)
+        # Localizar el placeholder <TED><DD/></TED>
+        ted_placeholder = root.find(".//sii:TED", ns)
+        if ted_placeholder is not None:
+            parent = ted_placeholder.getparent()
+            idx    = list(parent).index(ted_placeholder)
+            parent.remove(ted_placeholder)
 
+            # Parsear el TED SIN la declaración XML (para que lxml no asigne namespace)
+            # El truco: parsear como documento independiente con un root wrapper
+            # que tiene xmlns="" para que todos los hijos queden sin namespace
+            ted_str = ted_bytes.decode("ISO-8859-1")
+            # Quitar la declaración <?xml ...?> si existe
+            if ted_str.startswith('<?xml'):
+                ted_str = ted_str[ted_str.index('?>') + 2:].lstrip()
+
+            # Envolver en root con xmlns="" y declaración ISO-8859-1 para que:
+            # 1) lxml parsee los bytes iso-8859-1 (ñ, ó, á) correctamente
+            # 2) xmlns="" haga que todos los hijos queden SIN namespace en el árbol
+            #    → cuando se inserten en el DTE (que tiene xmlns=SiiDte) el DD
+            #      conserva namespace vacío y el FRMT puede verificarse correctamente
+            wrapper_bytes = (
+                b'<?xml version="1.0" encoding="ISO-8859-1"?>'
+                b'<_root xmlns="">' + ted_str.encode("ISO-8859-1") + b'</_root>'
+            )
+            w_root    = etree.fromstring(wrapper_bytes)
+            ted_el    = w_root[0]  # el <TED> real
+            parent.insert(idx, ted_el)
+
+        # Serializar el DTE completo (con TED ya insertado) como unicode
+        xml_con_ted = etree.tostring(root, encoding="unicode")
         xml_firmado = self._firmar_xml(xml_con_ted, f"DTE-{tipo_dte}-{folio}")
         return xml_firmado.encode("ISO-8859-1")
 
