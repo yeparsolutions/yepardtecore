@@ -1,6 +1,7 @@
 # app/services/firma_digital.py
 # ══════════════════════════════════════════════════════════════
-# Servicio de Firma Digital para DTE Chile - VERSIÓN FINAL (TOTAL FIX)
+# Servicio de Firma Digital para DTE Chile
+# Fix: SHA1 via Prehashed para compatibilidad con OpenSSL nivel alto
 # ══════════════════════════════════════════════════════════════
 
 from cryptography.hazmat.primitives.serialization import pkcs12
@@ -16,18 +17,32 @@ import textwrap
 
 XMLDSIG_NS     = "http://www.w3.org/2000/09/xmldsig#"
 SII_NS         = "http://www.sii.cl/SiiDte"
+XSI_NS         = "http://www.w3.org/2001/XMLSchema-instance"
 C14N_ALGORITHM = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
+TIPOS_BOLETA   = {39, 41}
 
 def _wrap64(s: str) -> str:
+    """Envuelve base64 en lineas de 64 chars para cumplir CHR-00002 del SII."""
     clean = s.replace('\n', '').replace(' ', '')
     return '\n' + '\n'.join(textwrap.wrap(clean, 64)) + '\n'
 
 def _rsa_sign_sha1(private_key, data: bytes) -> bytes:
+    """
+    Firma con RSA+SHA1 eludiendo la restricción de OpenSSL nivel alto.
+    Calculamos el hash SHA1 con hashlib (Python puro) y luego firmamos
+    con sign_prehash, que no pasa por la política de OpenSSL.
+    """
     digest = hashlib.sha1(data).digest()
     try:
+        # cryptography >= 40 expone sign_prehash directamente
         return private_key.sign_prehash(digest, padding.PKCS1v15())
     except AttributeError:
-        return private_key.sign(digest, padding.PKCS1v15(), utils.Prehashed(hashes.SHA1()))
+        # Fallback para versiones anteriores: usar Prehashed
+        return private_key.sign(
+            digest,
+            padding.PKCS1v15(),
+            utils.Prehashed(hashes.SHA1()),
+        )
 
 class FirmaDigital:
     def __init__(self, p12_bytes: bytes, password: str):
@@ -37,11 +52,12 @@ class FirmaDigital:
                 p12_bytes, pwd_bytes, backend=default_backend()
             )
         except Exception as e:
-            raise ValueError(f"Certificado inválido: {e}")
+            raise ValueError(f"No se pudo cargar el certificado .p12: {e}")
 
         self._private_key  = private_key
         self._certificate  = certificate
         self._cert_der_b64 = b64encode(certificate.public_bytes(serialization.Encoding.DER)).decode()
+
         pub = certificate.public_key().public_numbers()
         self._rsa_mod = b64encode(pub.n.to_bytes((pub.n.bit_length() + 7) // 8, "big")).decode()
         self._rsa_exp = b64encode(pub.e.to_bytes((pub.e.bit_length() + 7) // 8, "big")).decode()
@@ -49,8 +65,8 @@ class FirmaDigital:
     @property
     def rut_certificado(self) -> str:
         subject = self._certificate.subject.rfc4514_string()
-        match = re.search(r"(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])", subject, re.IGNORECASE)
-        return match.group(1).replace(".", "") if match else ""
+        match   = re.search(r"(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])", subject, re.IGNORECASE)
+        return match.group(1) if match else ""
 
     @property
     def vigente_hasta(self) -> datetime:
@@ -60,40 +76,58 @@ class FirmaDigital:
     def esta_vigente(self) -> bool:
         return datetime.now(timezone.utc) < self.vigente_hasta
 
+    # ── Firma del DTE ─────────────────────────────────────────
+
     def firmar_dte(self, xml_bytes: bytes, folio: int, tipo_dte: int,
                    xml_caf: str, fecha_emision: str, rut_emisor: str,
                    monto_total: int, it1_nombre: str = "PRODUCTO") -> bytes:
 
-        # 1. Generar el TED
+        # FIX FRMT: el TED usa elementos SIN namespace (DD, RE, TD...) pero lxml
+        # los trata como parte del namespace SiiDte si se insertan en el árbol.
+        # Solución: insertar el TED como reemplazo de texto en el XML string
+        # ANTES de parsear, para que los elementos queden como texto crudo y
+        # no hereden el namespace del DTE padre.
         ted_xml_str = self._generar_ted(folio, tipo_dte, xml_caf, fecha_emision,
                                         rut_emisor, monto_total, it1_nombre).decode("ISO-8859-1")
 
+        # El xml_bytes viene en ISO-8859-1 o unicode — normalizar a str
         xml_str = xml_bytes.decode("ISO-8859-1") if isinstance(xml_bytes, bytes) else xml_bytes
 
-        # 2. Inyectar TED
-        if "<TED/>" in xml_str:
-            xml_con_ted = xml_str.replace("<TED/>", ted_xml_str)
-        else:
-            xml_con_ted = re.sub(r'<TED\s*/>', ted_xml_str, xml_str)
-            if xml_con_ted == xml_str:
-                xml_con_ted = re.sub(r'<TED>.*?</TED>', ted_xml_str, xml_str, flags=re.DOTALL)
+        # Reemplazar el placeholder <TED...> por el TED real en el string
+        # (inserción como texto, sin pasar por el árbol XML → el namespace no se hereda)
+        import re as _re
+        xml_con_ted = _re.sub(r'<TED[^/]*/>', ted_xml_str, xml_str, count=1)
+        if xml_con_ted == xml_str:
+            # Placeholder extendido (<TED ...></TED>)
+            xml_con_ted = _re.sub(r'<TED[^>]*>.*?</TED>', ted_xml_str, xml_str, count=1, flags=_re.DOTALL)
 
-        # 3. Firmar (esta función ahora limpia los namespaces)
         xml_firmado = self._firmar_xml(xml_con_ted, f"DTE-{tipo_dte}-{folio}")
         return xml_firmado.encode("ISO-8859-1")
 
     def _generar_ted(self, folio: int, tipo_dte: int, xml_caf: str,
                       fecha_emision: str, rut_emisor: str, monto_total: int,
                       it1_nombre: str = "PRODUCTO") -> bytes:
-        
-        caf_root = etree.fromstring(xml_caf.encode("ISO-8859-1") if isinstance(xml_caf, str) else xml_caf)
+        caf_root = etree.fromstring(xml_caf.encode())
         rsk_el   = caf_root.find(".//RSASK")
-        caf_el   = caf_root.find(".//CAF")
-        caf_str  = etree.tostring(caf_el, encoding="unicode").replace(f' xmlns="{SII_NS}"', '')
+        caf_str  = etree.tostring(caf_root.find(".//CAF"), encoding="unicode")
 
-        it1_safe = it1_nombre[:40].replace('&', ' y ').replace("'", '').replace('"', '').replace('#', '').strip()
+        # IT1 va en el TED como raw string — el SII firma y verifica el DD directamente.
+        # & (ampersand) aunque sea &amp; en XML causa RFR en el verificador del SII.
+        # Solución: reemplazar & por ' y ' antes de escribir el IT1.
+        it1_safe = (
+            it1_nombre[:40]
+            .replace('&', ' y ')   # principal causante de RFR
+            .replace("'", '')       # comilla simple
+            .replace('"', '')       # comilla doble
+            .replace('#', '')       # gato
+            .replace('<', '&lt;')   # escape XML obligatorio
+            .replace('>', '&gt;')   # escape XML obligatorio
+        ).strip()
+
+        # Orden del ejemplo SII: DD(con TSTED al final) → FRMA
+        # FRMA es la firma del DD por el emisor (para todos los tipos)
+        # FRMT solo aplica para boletas (tipos 39/41)
         tsted = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-        
         dd_xml = (
             f"<DD>"
             f"<RE>{rut_emisor}</RE><TD>{tipo_dte}</TD><F>{folio}</F>"
@@ -104,60 +138,75 @@ class FirmaDigital:
             f"</DD>"
         )
 
-        firma_b64 = b64encode(self._firmar_rsa_sha1_raw(dd_xml.encode("ISO-8859-1"), rsk_el.text.strip())).decode()
+        # === DEBUG FRMT === Ver logs de Railway para verificar dd_xml
+        import logging as _log
+        _frmt_log = _log.getLogger("yepardtecore.frmt_debug")
+        _dd_sha1 = hashlib.sha1(dd_xml.encode("ISO-8859-1")).hexdigest()
+        _caf_len = len(caf_str)
+        _log.warning(f"[FRMT-DEBUG] folio={folio} tipo={tipo_dte} dd_sha1={_dd_sha1} caf_len={_caf_len} it1_safe={repr(it1_safe)} tsted={tsted}")
+        _log.warning(f"[FRMT-DEBUG] dd_xml_inicio={repr(dd_xml[:120])}")
+        # =====================
+        firma_b64 = b64encode(
+            self._firmar_rsa_sha1_raw(dd_xml.encode("ISO-8859-1"), rsk_el.text.strip())
+        ).decode()
 
-        # Inyectamos con el namespace explícito en el tag TED para asegurar herencia
+        # FRMT es siempre la firma del emisor sobre el DD (para todos los tipos)
+        # FRMA solo aparece dentro del CAF (firma del SII sobre el CAF)
         return (
-            f'<TED version="1.0" xmlns="{SII_NS}">{dd_xml}'
+            f'<TED version="1.0">{dd_xml}'
             f'<FRMT algoritmo="SHA1withRSA">{firma_b64}</FRMT>'
             f'</TED>'
         ).encode("ISO-8859-1")
 
+    def _firmar_rsa_sha1_raw(self, data: bytes, pem_key_str: str) -> bytes:
+        """Firma con la clave privada del CAF (clave RSA del SII para el TED)."""
+        from cryptography.hazmat.primitives.serialization import load_pem_private_key
+        if "-----" not in pem_key_str:
+            pem_key_str = "-----BEGIN RSA PRIVATE KEY-----\n" + pem_key_str + "\n-----END RSA PRIVATE KEY-----"
+        pk = load_pem_private_key(pem_key_str.encode(), password=None, backend=default_backend())
+        return _rsa_sign_sha1(pk, data)
+
+    # ── XMLDSig ───────────────────────────────────────────────
+
     def _firmar_xml(self, xml_str: str, doc_id: str) -> str:
-        parser = etree.XMLParser(remove_blank_text=True, recover=True, encoding="ISO-8859-1")
-        root = etree.fromstring(xml_str.encode("ISO-8859-1"), parser)
-        
-        # FIX MAESTRO: Forzar a todos los elementos sin namespace a usar el de SII
-        for el in root.iter():
-            if el.tag.startswith("{") is False:
-                el.tag = f"{{{SII_NS}}}{el.tag}"
-        
-        ns = {"sii": SII_NS}
-        doc_el = root.find(f".//sii:Documento[@ID='{doc_id}']", ns)
-        
-        # Canonización y Firma
-        doc_c14n = etree.tostring(doc_el, method="c14n", exclusive=False)
+        parser = etree.XMLParser(remove_blank_text=True)
+        root   = etree.fromstring(xml_str.encode(), parser)
+        ns     = {"sii": SII_NS}
+
+        doc_el  = root.find(f".//sii:Documento[@ID='{doc_id}']", ns)
+        doc_raw = etree.tostring(doc_el, encoding="unicode")
+        temp_root   = etree.fromstring(f'<root xmlns="{SII_NS}">{doc_raw}</root>')
+        doc_virtual = temp_root[0]
+
+        doc_c14n   = etree.tostring(doc_virtual, method="c14n", exclusive=False)
         digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
-        si_xml = self._build_signed_info(f"#{doc_id}", digest_doc)
-        temp_sig = etree.fromstring(f'<Signature xmlns="{XMLDSIG_NS}">{si_xml}</Signature>')
+        signed_info = self._build_signed_info(f"#{doc_id}", digest_doc)
+
+        # FIX RFR: el C14N del SignedInfo debe calcularse en el contexto del documento
+        # (no como elemento standalone) para que coincida con lo que el SII verifica.
+        # El problema: el raíz DTE tiene xmlns:xsi que el SignedInfo hereda en scope.
+        # Solución: insertar Signature temporal → calcular C14N en contexto → firmar → reemplazar
+        temp_sig = etree.fromstring(
+            f'<Signature xmlns="{XMLDSIG_NS}">{signed_info}</Signature>'.encode()
+        )
         root.append(temp_sig)
         si_en_doc = temp_sig.find(f"{{{XMLDSIG_NS}}}SignedInfo")
-        si_c14n = etree.tostring(si_en_doc, method="c14n", exclusive=False)
+        si_c14n   = etree.tostring(si_en_doc, method="c14n", exclusive=False)
         firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
         root.remove(temp_sig)
 
-        root.append(etree.fromstring(self._build_signature(si_xml, firma_b64)))
-        
-        # Limpieza final de prefijos para el SII
-        etree.cleanup_namespaces(root)
-        return etree.tostring(root, encoding="unicode")
-
-    def _firmar_rsa_sha1_raw(self, data: bytes, pem_key_str: str) -> bytes:
-        from cryptography.hazmat.primitives.serialization import load_pem_private_key
-        if "-----" not in pem_key_str:
-            pem_key_str = f"-----BEGIN RSA PRIVATE KEY-----\n{pem_key_str}\n-----END RSA PRIVATE KEY-----"
-        pk = load_pem_private_key(pem_key_str.encode(), password=None, backend=default_backend())
-        return _rsa_sign_sha1(pk, data)
+        root.append(etree.fromstring(self._build_signature(signed_info, firma_b64).encode()))
+        return etree.tostring(root, encoding="unicode", xml_declaration=False)
 
     def _build_signed_info(self, reference_uri: str, digest_value: str) -> str:
         return (
             f'<SignedInfo xmlns="{XMLDSIG_NS}">'
             f'<CanonicalizationMethod Algorithm="{C14N_ALGORITHM}"/>'
-            f'<SignatureMethod Algorithm="{XMLDSIG_NS}rsa-sha1"/>'
+            f'<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>'
             f'<Reference URI="{reference_uri}">'
             f'<Transforms><Transform Algorithm="{C14N_ALGORITHM}"/></Transforms>'
-            f'<DigestMethod Algorithm="{XMLDSIG_NS}sha1"/>'
+            f'<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>'
             f'<DigestValue>{digest_value}</DigestValue>'
             f'</Reference></SignedInfo>'
         )
@@ -167,41 +216,64 @@ class FirmaDigital:
             f'<Signature xmlns="{XMLDSIG_NS}">'
             f'{signed_info}'
             f'<SignatureValue>{signature_value}</SignatureValue>'
-            f'<KeyInfo><KeyValue><RSAKeyValue>'
+            f'<KeyInfo>'
+            f'<KeyValue><RSAKeyValue>'
             f'<Modulus>{_wrap64(self._rsa_mod)}</Modulus>'
             f'<Exponent>{self._rsa_exp}</Exponent>'
             f'</RSAKeyValue></KeyValue>'
-            f'<X509Data><X509Certificate>{_wrap64(self._cert_der_b64)}</X509Certificate></X509Data>'
-            f'</KeyInfo></Signature>'
+            f'<X509Data>'
+            f'<X509Certificate>{_wrap64(self._cert_der_b64)}</X509Certificate>'
+            f'</X509Data>'
+            f'</KeyInfo>'
+            f'</Signature>'
         )
 
+    # ── Firma del sobre ───────────────────────────────────────
+
     def firmar_sobre(self, sobre_xml: str) -> str:
-        parser = etree.XMLParser(remove_blank_text=True, encoding="ISO-8859-1")
-        root = etree.fromstring(sobre_xml.encode("ISO-8859-1"), parser)
-        
-        # Limpieza de namespaces en el sobre también
-        for el in root.iter():
-            if el.tag.startswith("{") is False:
-                el.tag = f"{{{SII_NS}}}{el.tag}"
-        
-        ns = {"sii": SII_NS}
-        set_el = root.find(".//sii:SetDTE[@ID='SetDoc']", ns)
-        set_c14n = etree.tostring(set_el, method="c14n", exclusive=False)
+        parser = etree.XMLParser(remove_blank_text=True)
+        root   = etree.fromstring(sobre_xml.encode(), parser)
+        ns     = {"sii": SII_NS}
+
+        set_el  = root.find(".//sii:SetDTE[@ID='SetDoc']", ns)
+        set_raw = etree.tostring(set_el, encoding="unicode")
+        temp_root   = etree.fromstring(f'<root xmlns="{SII_NS}">{set_raw}</root>')
+        set_virtual = temp_root[0]
+
+        set_c14n   = etree.tostring(set_virtual, method="c14n", exclusive=False)
         digest_val = b64encode(hashlib.sha1(set_c14n).digest()).decode()
 
-        si_xml = self._build_signed_info("#SetDoc", digest_val)
-        temp_sig = etree.fromstring(f'<Signature xmlns="{XMLDSIG_NS}">{si_xml}</Signature>')
+        signed_info = self._build_signed_info("#SetDoc", digest_val)
+
+        # FIX RFR: C14N del SignedInfo en contexto del documento (no standalone)
+        # EnvioDTE tiene xmlns:xsi que SignedInfo hereda en scope al ser verificado por SII.
+        # Si se firma en contexto standalone, el C14N difiere → firma inválida → RFR.
+        temp_sig = etree.fromstring(
+            f'<Signature xmlns="{XMLDSIG_NS}">{signed_info}</Signature>'.encode()
+        )
         root.append(temp_sig)
         si_en_doc = temp_sig.find(f"{{{XMLDSIG_NS}}}SignedInfo")
-        si_c14n = etree.tostring(si_en_doc, method="c14n", exclusive=False)
+        si_c14n   = etree.tostring(si_en_doc, method="c14n", exclusive=False)
         firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
         root.remove(temp_sig)
 
-        root.append(etree.fromstring(self._build_signature(si_xml, firma_b64)))
-        
-        etree.cleanup_namespaces(root)
-        return '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + etree.tostring(root, encoding="unicode")
+        root.append(etree.fromstring(self._build_signature(signed_info, firma_b64).encode()))
+        xml_sin_decl = etree.tostring(root, encoding="unicode")
+        # SII requiere declaracion en linea 1 y root element en linea 2
+        # sin \n el parser del SII no encuentra schemaLocation → SCH-00001
+        declaracion  = '<?xml version="1.0" encoding="ISO-8859-1"?>\n'
+        return declaracion + xml_sin_decl
 
     @staticmethod
     def cargar_desde_base64(cert_b64: str, password: str) -> "FirmaDigital":
         return FirmaDigital(b64decode(cert_b64), password)
+
+    def info_certificado(self) -> dict:
+        cert = self._certificate
+        return {
+            "subject": cert.subject.rfc4514_string(),
+            "emisor":  cert.issuer.rfc4514_string(),
+            "valido_hasta": cert.not_valid_after_utc.isoformat(),
+            "vigente": self.esta_vigente,
+            "rut":     self.rut_certificado,
+        }
