@@ -189,35 +189,53 @@ class FirmaDigital:
         doc_c14n   = etree.tostring(doc_standalone, method="c14n", exclusive=False)
         digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
-        signed_info = self._build_signed_info(f"#{doc_id}", digest_doc)
-
-        # FIX RFR: el C14N del SignedInfo debe calcularse en el contexto del documento
-        # (no como elemento standalone) para que coincida con lo que el SII verifica.
-        # El problema: el raíz DTE tiene xmlns:xsi que el SignedInfo hereda en scope.
-        # Solución: insertar Signature temporal → calcular C14N en contexto → firmar → reemplazar
-        temp_sig = etree.fromstring(
-            f'<Signature xmlns="{XMLDSIG_NS}">{signed_info}</Signature>'.encode()
-        )
-        root.append(temp_sig)
-        si_en_doc = temp_sig.find(f"{{{XMLDSIG_NS}}}SignedInfo")
-        si_c14n   = etree.tostring(si_en_doc, method="c14n", exclusive=False)
+        # Usar C14N manual para evitar el bug de lxml con xmlns="" espurios
+        si_c14n   = self._compute_signed_info_c14n(f"#{doc_id}", digest_doc, xmlns_xsi=True)
         firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
-        root.remove(temp_sig)
 
+        signed_info = si_c14n.decode('utf-8')
         root.append(etree.fromstring(self._build_signature(signed_info, firma_b64).encode()))
         return etree.tostring(root, encoding="unicode", xml_declaration=False)
 
-    def _build_signed_info(self, reference_uri: str, digest_value: str) -> str:
+    def _compute_signed_info_c14n(self, reference_uri: str, digest_value: str,
+                                   xmlns_xsi: bool = True) -> bytes:
+        """
+        Calcula el C14N del SignedInfo MANUALMENTE.
+        
+        lxml tiene un bug: al computar C14N del SignedInfo cuando está
+        dentro de un árbol con default namespace distinto (ej. SiiDte),
+        agrega xmlns="" espurios en los hijos de Reference (Transforms,
+        DigestMethod, DigestValue). Esto hace que el SHA1 del C14N difiera
+        del que calcula Chilkat/SII, causando que la verificación RSA falle.
+        
+        Como SignedInfo siempre tiene la misma estructura, lo generamos
+        directamente en forma canónica, evitando el bug de lxml.
+        """
+        # En C14N 1.0, los elementos vacíos se escriben con open+close tag
+        # Los atributos van en orden alfabético
+        # Los namespaces en scope se incluyen todos
+        XSI = "http://www.w3.org/2001/XMLSchema-instance"
+        c14n_algo = C14N_ALGORITHM
+        sha1_algo = f"{XMLDSIG_NS}sha1"
+        rsa_sha1  = f"{XMLDSIG_NS}rsa-sha1"
+        
+        ns_decls = f'xmlns="{XMLDSIG_NS}"'
+        if xmlns_xsi:
+            ns_decls += f' xmlns:xsi="{XSI}"'
+        
         return (
-            f'<SignedInfo xmlns="{XMLDSIG_NS}">'
-            f'<CanonicalizationMethod Algorithm="{C14N_ALGORITHM}"/>'
-            f'<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>'
+            f'<SignedInfo {ns_decls}>'
+            f'<CanonicalizationMethod Algorithm="{c14n_algo}"></CanonicalizationMethod>'
+            f'<SignatureMethod Algorithm="{rsa_sha1}"></SignatureMethod>'
             f'<Reference URI="{reference_uri}">'
-            f'<Transforms><Transform Algorithm="{C14N_ALGORITHM}"/></Transforms>'
-            f'<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>'
+            f'<Transforms>'
+            f'<Transform Algorithm="{c14n_algo}"></Transform>'
+            f'</Transforms>'
+            f'<DigestMethod Algorithm="{sha1_algo}"></DigestMethod>'
             f'<DigestValue>{digest_value}</DigestValue>'
-            f'</Reference></SignedInfo>'
-        )
+            f'</Reference>'
+            f'</SignedInfo>'
+        ).encode('utf-8')
 
     def _build_signature(self, signed_info: str, signature_value: str) -> str:
         return (
@@ -251,20 +269,11 @@ class FirmaDigital:
         set_c14n   = etree.tostring(set_standalone, method="c14n", exclusive=False)
         digest_val = b64encode(hashlib.sha1(set_c14n).digest()).decode()
 
-        signed_info = self._build_signed_info("#SetDoc", digest_val)
-
-        # FIX RFR: C14N del SignedInfo en contexto del documento (no standalone)
-        # EnvioDTE tiene xmlns:xsi que SignedInfo hereda en scope al ser verificado por SII.
-        # Si se firma en contexto standalone, el C14N difiere → firma inválida → RFR.
-        temp_sig = etree.fromstring(
-            f'<Signature xmlns="{XMLDSIG_NS}">{signed_info}</Signature>'.encode()
-        )
-        root.append(temp_sig)
-        si_en_doc = temp_sig.find(f"{{{XMLDSIG_NS}}}SignedInfo")
-        si_c14n   = etree.tostring(si_en_doc, method="c14n", exclusive=False)
+        # Usar C14N manual para evitar el bug de lxml con xmlns="" espurios
+        si_c14n   = self._compute_signed_info_c14n("#SetDoc", digest_val, xmlns_xsi=True)
         firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
-        root.remove(temp_sig)
 
+        signed_info = si_c14n.decode('utf-8')
         root.append(etree.fromstring(self._build_signature(signed_info, firma_b64).encode()))
         xml_sin_decl = etree.tostring(root, encoding="unicode")
         # El SII usa xmlsec1 con --id-attr:ID para resolver los IDs de los elementos.
