@@ -81,46 +81,30 @@ class FirmaDigital:
     def firmar_dte(self, xml_bytes: bytes, folio: int, tipo_dte: int,
                    xml_caf: str, fecha_emision: str, rut_emisor: str,
                    monto_total: int, it1_nombre: str = "PRODUCTO") -> bytes:
+        """
+        Genera el TED, lo inserta en el DTE y firma el Documento.
 
-        # Generar TED como bytes ISO-8859-1 (el TED es un bloque raw sin namespace)
+        El TED se inserta con el método lxml estándar. Esto hace que el DD herede
+        el namespace SiiDte del DTE padre, que es exactamente lo que el verificador
+        del SII asume cuando recalcula el DigestValue del Documento.
+        """
+        parser = etree.XMLParser(remove_blank_text=True)
+        root   = etree.fromstring(xml_bytes, parser)
+
         ted_bytes = self._generar_ted(folio, tipo_dte, xml_caf, fecha_emision,
                                       rut_emisor, monto_total, it1_nombre)
 
-        # El xml_bytes viene de xml_builder en ISO-8859-1
-        # Parsear el DTE base para encontrar el placeholder del TED
-        parser   = etree.XMLParser(remove_blank_text=True, encoding="ISO-8859-1")
-        root     = etree.fromstring(xml_bytes, parser)
-        ns       = {"sii": SII_NS}
-
-        # Localizar el placeholder <TED><DD/></TED>
+        ns = {"sii": SII_NS}
         ted_placeholder = root.find(".//sii:TED", ns)
         if ted_placeholder is not None:
             parent = ted_placeholder.getparent()
-            idx    = list(parent).index(ted_placeholder)
+            idx = list(parent).index(ted_placeholder)
             parent.remove(ted_placeholder)
+            # Insertar TED como elemento lxml — el DD hereda xmlns=SiiDte del DTE padre,
+            # lo cual es consistente con lo que el verificador SII calcula para DigestValue.
+            ted_con_enc = b'<?xml version="1.0" encoding="ISO-8859-1"?>' + ted_bytes
+            parent.insert(idx, etree.fromstring(ted_con_enc))
 
-            # Parsear el TED SIN la declaración XML (para que lxml no asigne namespace)
-            # El truco: parsear como documento independiente con un root wrapper
-            # que tiene xmlns="" para que todos los hijos queden sin namespace
-            ted_str = ted_bytes.decode("ISO-8859-1")
-            # Quitar la declaración <?xml ...?> si existe
-            if ted_str.startswith('<?xml'):
-                ted_str = ted_str[ted_str.index('?>') + 2:].lstrip()
-
-            # Envolver en root con xmlns="" y declaración ISO-8859-1 para que:
-            # 1) lxml parsee los bytes iso-8859-1 (ñ, ó, á) correctamente
-            # 2) xmlns="" haga que todos los hijos queden SIN namespace en el árbol
-            #    → cuando se inserten en el DTE (que tiene xmlns=SiiDte) el DD
-            #      conserva namespace vacío y el FRMT puede verificarse correctamente
-            wrapper_bytes = (
-                b'<?xml version="1.0" encoding="ISO-8859-1"?>'
-                b'<_root xmlns="">' + ted_str.encode("ISO-8859-1") + b'</_root>'
-            )
-            w_root    = etree.fromstring(wrapper_bytes)
-            ted_el    = w_root[0]  # el <TED> real
-            parent.insert(idx, ted_el)
-
-        # Serializar el DTE completo (con TED ya insertado) como unicode
         xml_con_ted = etree.tostring(root, encoding="unicode")
         xml_firmado = self._firmar_xml(xml_con_ted, f"DTE-{tipo_dte}-{folio}")
         return xml_firmado.encode("ISO-8859-1")
@@ -159,14 +143,6 @@ class FirmaDigital:
             f"</DD>"
         )
 
-        # === DEBUG FRMT === Ver logs de Railway para verificar dd_xml
-        import logging as _log
-        _frmt_log = _log.getLogger("yepardtecore.frmt_debug")
-        _dd_sha1 = hashlib.sha1(dd_xml.encode("ISO-8859-1")).hexdigest()
-        _caf_len = len(caf_str)
-        _log.warning(f"[FRMT-DEBUG] folio={folio} tipo={tipo_dte} dd_sha1={_dd_sha1} caf_len={_caf_len} it1_safe={repr(it1_safe)} tsted={tsted}")
-        _log.warning(f"[FRMT-DEBUG] dd_xml_inicio={repr(dd_xml[:120])}")
-        # =====================
         firma_b64 = b64encode(
             self._firmar_rsa_sha1_raw(dd_xml.encode("ISO-8859-1"), rsk_el.text.strip())
         ).decode()
