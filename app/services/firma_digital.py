@@ -263,10 +263,19 @@ class FirmaDigital:
 
         root.append(etree.fromstring(self._build_signature(signed_info, firma_b64).encode()))
         xml_sin_decl = etree.tostring(root, encoding="unicode")
-        # SII requiere declaracion en linea 1 y root element en linea 2
-        # sin \n el parser del SII no encuentra schemaLocation → SCH-00001
-        declaracion  = '<?xml version="1.0" encoding="ISO-8859-1"?>\n'
-        return declaracion + xml_sin_decl
+        # El DOCTYPE declara los atributos ID como tipo XML-ID.
+        # Sin esto, los parsers (Chilkat, libxml2/SII) no pueden resolver
+        # id('DTE-33-1') al hacer la verificación XMLDSig, y el resumen
+        # calculado no coincide con el almacenado → RFR "error en firma".
+        # El DOCTYPE no cambia el contenido ni los DigestValues ya calculados.
+        doctype = (
+            '<!DOCTYPE EnvioDTE [\n'
+            '  <!ATTLIST Documento ID ID #REQUIRED>\n'
+            '  <!ATTLIST SetDTE    ID ID #REQUIRED>\n'
+            ']>\n'
+        )
+        declaracion = '<?xml version="1.0" encoding="ISO-8859-1"?>\n'
+        return declaracion + doctype + xml_sin_decl
 
     @staticmethod
     def cargar_desde_base64(cert_b64: str, password: str) -> "FirmaDigital":
