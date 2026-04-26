@@ -112,7 +112,14 @@ class FirmaDigital:
     def _generar_ted(self, folio: int, tipo_dte: int, xml_caf: str,
                       fecha_emision: str, rut_emisor: str, monto_total: int,
                       it1_nombre: str = "PRODUCTO") -> bytes:
-        caf_root = etree.fromstring(xml_caf.encode())
+        # CRITICAL FIX: parsear el CAF con remove_blank_text=True
+        # El archivo CAF del SII viene con saltos de línea y sangría.
+        # Si no los eliminamos, el caf_str en dd_xml tiene newlines,
+        # pero lxml los elimina al insertar el TED en el DTE.
+        # Resultado: SHA1(dd_xml firmado) ≠ SHA1(DD en archivo XML)
+        # → FRMT inválido → SII rechaza con 'No hay estadísticas'
+        _caf_parser = etree.XMLParser(remove_blank_text=True)
+        caf_root = etree.fromstring(xml_caf.encode(), _caf_parser)
         rsk_el   = caf_root.find(".//RSASK")
         caf_str  = etree.tostring(caf_root.find(".//CAF"), encoding="unicode")
 
