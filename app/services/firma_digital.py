@@ -178,11 +178,15 @@ class FirmaDigital:
         ns     = {"sii": SII_NS}
 
         doc_el  = root.find(f".//sii:Documento[@ID='{doc_id}']", ns)
-        doc_raw = etree.tostring(doc_el, encoding="unicode")
-        temp_root   = etree.fromstring(f'<root xmlns="{SII_NS}">{doc_raw}</root>')
-        doc_virtual = temp_root[0]
+        # CRITICAL FIX: serializar el Documento y re-parsear como standalone.
+        # El wrapper <root xmlns="SiiDte"> causaba que los elementos hijos
+        # del Documento tuvieran xmlns="" espurios en el C14N, produciendo un
+        # DigestValue diferente al que calculan el SII y Chilkat.
+        # El C14N correcto: parsear el Documento standalone, sin wrapper padre.
+        doc_raw        = etree.tostring(doc_el, encoding="unicode")
+        doc_standalone = etree.fromstring(doc_raw.encode())
 
-        doc_c14n   = etree.tostring(doc_virtual, method="c14n", exclusive=False)
+        doc_c14n   = etree.tostring(doc_standalone, method="c14n", exclusive=False)
         digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
         signed_info = self._build_signed_info(f"#{doc_id}", digest_doc)
@@ -240,11 +244,11 @@ class FirmaDigital:
         ns     = {"sii": SII_NS}
 
         set_el  = root.find(".//sii:SetDTE[@ID='SetDoc']", ns)
-        set_raw = etree.tostring(set_el, encoding="unicode")
-        temp_root   = etree.fromstring(f'<root xmlns="{SII_NS}">{set_raw}</root>')
-        set_virtual = temp_root[0]
+        # CRITICAL FIX: mismo que _firmar_xml — parsear standalone sin wrapper
+        set_raw        = etree.tostring(set_el, encoding="unicode")
+        set_standalone = etree.fromstring(set_raw.encode())
 
-        set_c14n   = etree.tostring(set_virtual, method="c14n", exclusive=False)
+        set_c14n   = etree.tostring(set_standalone, method="c14n", exclusive=False)
         digest_val = b64encode(hashlib.sha1(set_c14n).digest()).decode()
 
         signed_info = self._build_signed_info("#SetDoc", digest_val)
