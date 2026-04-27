@@ -186,6 +186,7 @@ class FirmaDigital:
         digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
         # Usar C14N manual para evitar el bug de lxml con xmlns="" espurios
+        # DTE individual: SignedInfo SIN xmlns:xsi (el SII lo verifica sin xsi en scope)
         si_c14n   = self._compute_signed_info_c14n(f"#{doc_id}", digest_doc, xmlns_xsi=False)
         firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
 
