@@ -178,15 +178,12 @@ class FirmaDigital:
         ns     = {"sii": SII_NS}
 
         doc_el  = root.find(f".//sii:Documento[@ID='{doc_id}']", ns)
-        # CRITICAL FIX: serializar el Documento y re-parsear como standalone.
-        # El wrapper <root xmlns="SiiDte"> causaba que los elementos hijos
-        # del Documento tuvieran xmlns="" espurios en el C14N, produciendo un
-        # DigestValue diferente al que calculan el SII y Chilkat.
-        # El C14N correcto: parsear el Documento standalone, sin wrapper padre.
-        doc_raw        = etree.tostring(doc_el, encoding="unicode")
-        doc_standalone = etree.fromstring(doc_raw.encode())
 
-        doc_c14n   = etree.tostring(doc_standalone, method="c14n", exclusive=False)
+        # DigestValue: C14N directo del Documento en el árbol del DTE.
+        # El DTE es standalone en este punto (raíz con xmlns="SiiDte" xmlns:xsi),
+        # así el Documento hereda esos namespaces. El SII verifica el DigestValue
+        # en el EnvioDTE donde el contexto de namespaces es idéntico.
+        doc_c14n   = etree.tostring(doc_el, method="c14n", exclusive=False)
         digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
         # Usar C14N manual para evitar el bug de lxml con xmlns="" espurios
