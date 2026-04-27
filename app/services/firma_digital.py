@@ -179,10 +179,9 @@ class FirmaDigital:
 
         doc_el  = root.find(f".//sii:Documento[@ID='{doc_id}']", ns)
 
-        # DigestValue: C14N directo del Documento en el árbol del DTE.
-        # El DTE es standalone en este punto (raíz con xmlns="SiiDte" xmlns:xsi),
-        # así el Documento hereda esos namespaces. El SII verifica el DigestValue
-        # en el EnvioDTE donde el contexto de namespaces es idéntico.
+        # DigestValue del Documento: C14N directo en el árbol del DTE.
+        # El DTE es standalone con xmlns="SiiDte" xmlns:xsi en root,
+        # mismo contexto que tendrá en el EnvioDTE final.
         doc_c14n   = etree.tostring(doc_el, method="c14n", exclusive=False)
         digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
