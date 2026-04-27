@@ -107,8 +107,13 @@ class FirmaDTE:
             self._firmar_rsa_caf(dd_xml.encode('ISO-8859-1'), rsk_el.text.strip())
         ).decode()
 
+        # CRÍTICO: incluir xmlns=SiiDte en el TED para que el namespace sea
+        # consistente entre la firma y el XML final.
+        # Sin esto, lxml serializa TED sin xmlns='' pero lo computa C14N con xmlns='',
+        # produciendo un DigestValue diferente al que el SII calcula.
+        ted_ns = 'xmlns="http://www.sii.cl/SiiDte"'
         return (
-            f'<TED version="1.0">{dd_xml}'
+            f'<TED {ted_ns} version="1.0">{dd_xml}'
             f'<FRMT algoritmo="SHA1withRSA">{frmt_b64}</FRMT>'
             f'</TED>'
         ).encode('ISO-8859-1')
