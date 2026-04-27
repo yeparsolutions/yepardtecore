@@ -1,10 +1,4 @@
 # app/services/firma_digital.py
-# ══════════════════════════════════════════════════════════════
-# Servicio de Firma Digital para DTE Chile
-# Fix: SHA1 via Prehashed para compatibilidad con OpenSSL nivel alto
-# Fix: Canonización Contextual — xmlns:xsi + xmlns="" en hijos de Reference
-# ══════════════════════════════════════════════════════════════
-
 from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, utils
@@ -23,22 +17,14 @@ C14N_ALGORITHM = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
 TIPOS_BOLETA   = {39, 41}
 
 def _wrap64(s: str) -> str:
-    """Envuelve base64 en lineas de 64 chars para cumplir CHR-00002 del SII."""
     clean = s.replace('\n', '').replace(' ', '')
     return '\n' + '\n'.join(textwrap.wrap(clean, 64)) + '\n'
 
 def _rsa_sign_sha1(private_key, data: bytes) -> bytes:
-    """
-    Firma con RSA+SHA1 eludiendo la restricción de OpenSSL nivel alto.
-    Calculamos el hash SHA1 con hashlib (Python puro) y luego firmamos
-    con sign_prehash, que no pasa por la política de OpenSSL.
-    """
     digest = hashlib.sha1(data).digest()
     try:
-        # cryptography >= 40 expone sign_prehash directamente
         return private_key.sign_prehash(digest, padding.PKCS1v15())
     except AttributeError:
-        # Fallback para versiones anteriores: usar Prehashed
         return private_key.sign(
             digest,
             padding.PKCS1v15(),
@@ -82,13 +68,6 @@ class FirmaDigital:
     def firmar_dte(self, xml_bytes: bytes, folio: int, tipo_dte: int,
                    xml_caf: str, fecha_emision: str, rut_emisor: str,
                    monto_total: int, it1_nombre: str = "PRODUCTO") -> bytes:
-        """
-        Genera el TED, lo inserta en el DTE y firma el Documento.
-
-        El TED se inserta con el método lxml estándar. Esto hace que el DD herede
-        el namespace SiiDte del DTE padre, que es exactamente lo que el verificador
-        del SII asume cuando recalcula el DigestValue del Documento.
-        """
         parser = etree.XMLParser(remove_blank_text=True)
         root   = etree.fromstring(xml_bytes, parser)
 
@@ -101,8 +80,6 @@ class FirmaDigital:
             parent = ted_placeholder.getparent()
             idx = list(parent).index(ted_placeholder)
             parent.remove(ted_placeholder)
-            # Insertar TED como elemento lxml — el DD hereda xmlns=SiiDte del DTE padre,
-            # lo cual es consistente con lo que el verificador SII calcula para DigestValue.
             ted_con_enc = b'<?xml version="1.0" encoding="ISO-8859-1"?>' + ted_bytes
             parent.insert(idx, etree.fromstring(ted_con_enc))
 
@@ -113,33 +90,21 @@ class FirmaDigital:
     def _generar_ted(self, folio: int, tipo_dte: int, xml_caf: str,
                       fecha_emision: str, rut_emisor: str, monto_total: int,
                       it1_nombre: str = "PRODUCTO") -> bytes:
-        # CRITICAL FIX: parsear el CAF con remove_blank_text=True
-        # El archivo CAF del SII viene con saltos de línea y sangría.
-        # Si no los eliminamos, el caf_str en dd_xml tiene newlines,
-        # pero lxml los elimina al insertar el TED en el DTE.
-        # Resultado: SHA1(dd_xml firmado) ≠ SHA1(DD en archivo XML)
-        # → FRMT inválido → SII rechaza con 'No hay estadísticas'
         _caf_parser = etree.XMLParser(remove_blank_text=True)
         caf_root = etree.fromstring(xml_caf.encode(), _caf_parser)
         rsk_el   = caf_root.find(".//RSASK")
         caf_str  = etree.tostring(caf_root.find(".//CAF"), encoding="unicode")
 
-        # IT1 va en el TED como raw string — el SII firma y verifica el DD directamente.
-        # & (ampersand) aunque sea &amp; en XML causa RFR en el verificador del SII.
-        # Solución: reemplazar & por ' y ' antes de escribir el IT1.
         it1_safe = (
             it1_nombre[:40]
-            .replace('&', ' y ')   # principal causante de RFR
-            .replace("'", '')       # comilla simple
-            .replace('"', '')       # comilla doble
-            .replace('#', '')       # gato
-            .replace('<', '&lt;')   # escape XML obligatorio
-            .replace('>', '&gt;')   # escape XML obligatorio
+            .replace('&', ' y ')
+            .replace("'", '')
+            .replace('"', '')
+            .replace('#', '')
+            .replace('<', '&lt;')
+            .replace('>', '&gt;')
         ).strip()
 
-        # Orden del ejemplo SII: DD(con TSTED al final) → FRMA
-        # FRMA es la firma del DD por el emisor (para todos los tipos)
-        # FRMT solo aplica para boletas (tipos 39/41)
         tsted = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
         dd_xml = (
             f"<DD>"
@@ -155,8 +120,6 @@ class FirmaDigital:
             self._firmar_rsa_sha1_raw(dd_xml.encode("ISO-8859-1"), rsk_el.text.strip())
         ).decode()
 
-        # FRMT es siempre la firma del emisor sobre el DD (para todos los tipos)
-        # FRMA solo aparece dentro del CAF (firma del SII sobre el CAF)
         return (
             f'<TED version="1.0">{dd_xml}'
             f'<FRMT algoritmo="SHA1withRSA">{firma_b64}</FRMT>'
@@ -164,7 +127,6 @@ class FirmaDigital:
         ).encode("ISO-8859-1")
 
     def _firmar_rsa_sha1_raw(self, data: bytes, pem_key_str: str) -> bytes:
-        """Firma con la clave privada del CAF (clave RSA del SII para el TED)."""
         from cryptography.hazmat.primitives.serialization import load_pem_private_key
         if "-----" not in pem_key_str:
             pem_key_str = "-----BEGIN RSA PRIVATE KEY-----\n" + pem_key_str + "\n-----END RSA PRIVATE KEY-----"
@@ -178,44 +140,34 @@ class FirmaDigital:
         root   = etree.fromstring(xml_str.encode(), parser)
         ns     = {"sii": SII_NS}
 
-        doc_el  = root.find(f".//sii:Documento[@ID='{doc_id}']", ns)
-
-        # DigestValue del Documento: C14N directo en el árbol del DTE.
-        # El DTE es standalone con xmlns="SiiDte" xmlns:xsi en root,
-        # mismo contexto que tendrá en el EnvioDTE final.
+        doc_el = root.find(f".//sii:Documento[@ID='{doc_id}']", ns)
         doc_c14n   = etree.tostring(doc_el, method="c14n", exclusive=False)
         digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
-        # Usar C14N contextual: firma el SignedInfo exactamente como el SII lo verá
-        si_c14n   = self._compute_signed_info_c14n(f"#{doc_id}", digest_doc)
-        firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
+        # Se firma con el C14N real (incluye xmlns:xsi + xmlns="" espurios)
+        # Se escribe en el archivo el string limpio (sin xmlns="")
+        # El SII al hacer C14N del archivo produce exactamente el string que se firmó.
+        si_para_firmar  = self._signed_info_para_firmar(f"#{doc_id}", digest_doc)
+        si_para_archivo = self._signed_info_para_archivo(f"#{doc_id}", digest_doc)
 
-        signed_info = si_c14n.decode('utf-8')
-        root.append(etree.fromstring(self._build_signature(signed_info, firma_b64).encode()))
+        firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_para_firmar)).decode()
+
+        root.append(etree.fromstring(
+            self._build_signature(si_para_archivo, firma_b64).encode()
+        ))
         return etree.tostring(root, encoding="unicode", xml_declaration=False)
 
-    def _compute_signed_info_c14n(self, reference_uri: str, digest_value: str) -> bytes:
+    def _signed_info_para_firmar(self, reference_uri: str, digest_value: str) -> bytes:
         """
-        Genera el C14N exacto del SignedInfo tal como el SII lo calcula al verificar.
+        C14N exacto que el SII calcula al verificar: con xmlns:xsi heredado del sobre
+        y xmlns="" en los hijos de Reference (Transforms, Transform, DigestMethod,
+        DigestValue) porque esos elementos no tienen namespace y deben "cancelar"
+        el default namespace xmlns=SiiDte que existe en el árbol padre del sobre.
 
-        El SII procesa el EnvioDTE completo con xmlns=SiiDte y xmlns:xsi=XSI en el root.
-        El C14N 1.0 (inclusivo) del SignedInfo, al vivir dentro de ese árbol, resulta en:
-
-          1. xmlns:xsi heredado en el elemento SignedInfo
-             (porque el árbol padre lo tiene en scope)
-
-          2. xmlns="" en Transforms, Transform, DigestMethod y DigestValue
-             (porque son elementos sin namespace que deben "cancelar"
-              el default namespace SiiDte que existe en el contexto padre)
-
-        Este comportamiento es idéntico para DTEs y para el sobre, ya que ambos
-        viven dentro de un EnvioDTE con esos dos namespaces en scope.
-
-        El parámetro xmlns_xsi fue eliminado: siempre se aplica el mismo formato.
+        Este string se usa SOLO para calcular la firma RSA. Nunca va al archivo.
         """
         sha1_algo = f"{XMLDSIG_NS}sha1"
         rsa_sha1  = f"{XMLDSIG_NS}rsa-sha1"
-
         return (
             f'<SignedInfo xmlns="{XMLDSIG_NS}" xmlns:xsi="{XSI_NS}">'
             f'<CanonicalizationMethod Algorithm="{C14N_ALGORITHM}"></CanonicalizationMethod>'
@@ -229,6 +181,33 @@ class FirmaDigital:
             f'</Reference>'
             f'</SignedInfo>'
         ).encode('utf-8')
+
+    def _signed_info_para_archivo(self, reference_uri: str, digest_value: str) -> str:
+        """
+        SignedInfo que se escribe en el XML final. Sin xmlns="" para que el
+        validador XSD del SII reconozca Transforms/DigestMethod/DigestValue
+        como parte del namespace xmldsig#.
+
+        Cuando el SII hace C14N de este elemento dentro del EnvioDTE (que tiene
+        xmlns=SiiDte en el root), el proceso de canonización agrega los xmlns=""
+        automáticamente — produciendo exactamente el mismo bytes que
+        _signed_info_para_firmar. Por eso la firma es válida.
+        """
+        sha1_algo = f"{XMLDSIG_NS}sha1"
+        rsa_sha1  = f"{XMLDSIG_NS}rsa-sha1"
+        return (
+            f'<SignedInfo xmlns="{XMLDSIG_NS}" xmlns:xsi="{XSI_NS}">'
+            f'<CanonicalizationMethod Algorithm="{C14N_ALGORITHM}"></CanonicalizationMethod>'
+            f'<SignatureMethod Algorithm="{rsa_sha1}"></SignatureMethod>'
+            f'<Reference URI="{reference_uri}">'
+            f'<Transforms>'
+            f'<Transform Algorithm="{C14N_ALGORITHM}"></Transform>'
+            f'</Transforms>'
+            f'<DigestMethod Algorithm="{sha1_algo}"></DigestMethod>'
+            f'<DigestValue>{digest_value}</DigestValue>'
+            f'</Reference>'
+            f'</SignedInfo>'
+        )
 
     def _build_signature(self, signed_info: str, signature_value: str) -> str:
         return (
@@ -254,26 +233,23 @@ class FirmaDigital:
         root   = etree.fromstring(sobre_xml.encode(), parser)
         ns     = {"sii": SII_NS}
 
-        set_el  = root.find(".//sii:SetDTE[@ID='SetDoc']", ns)
-        # CRITICAL FIX: mismo que _firmar_xml — parsear standalone sin wrapper
+        set_el         = root.find(".//sii:SetDTE[@ID='SetDoc']", ns)
         set_raw        = etree.tostring(set_el, encoding="unicode")
         set_standalone = etree.fromstring(set_raw.encode())
 
         set_c14n   = etree.tostring(set_standalone, method="c14n", exclusive=False)
         digest_val = b64encode(hashlib.sha1(set_c14n).digest()).decode()
 
-        # Usar C14N contextual: firma el SignedInfo exactamente como el SII lo verá
-        si_c14n   = self._compute_signed_info_c14n("#SetDoc", digest_val)
-        firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
+        si_para_firmar  = self._signed_info_para_firmar("#SetDoc", digest_val)
+        si_para_archivo = self._signed_info_para_archivo("#SetDoc", digest_val)
 
-        signed_info = si_c14n.decode('utf-8')
-        root.append(etree.fromstring(self._build_signature(signed_info, firma_b64).encode()))
+        firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_para_firmar)).decode()
+
+        root.append(etree.fromstring(
+            self._build_signature(si_para_archivo, firma_b64).encode()
+        ))
         xml_sin_decl = etree.tostring(root, encoding="unicode")
-        # El SII usa xmlsec1 con --id-attr:ID para resolver los IDs de los elementos.
-        # No se necesita DOCTYPE en el archivo final — el DOCTYPE causaría SCH-00001
-        # porque el parser del SII no lo espera y falla al buscar el schemaLocation.
-        declaracion = '<?xml version="1.0" encoding="ISO-8859-1"?>\n'
-        return declaracion + xml_sin_decl
+        return '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + xml_sin_decl
 
     @staticmethod
     def cargar_desde_base64(cert_b64: str, password: str) -> "FirmaDigital":
