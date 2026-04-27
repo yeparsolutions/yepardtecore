@@ -72,8 +72,16 @@ class FirmaSobre:
         6. Actualizar SignatureValue
         7. Serializar
         """
+        # sobre_xml es unicode con caracteres ISO-8859-1 (ñ, á, ó, etc.).
+        # Prepend XML declaration con encoding=ISO-8859-1 para que lxml
+        # parsee correctamente: .encode('iso-8859-1') produce 0xF3 para ó,
+        # y con la declaration lxml lo interpreta bien → DigestValue correcto.
         parser = etree.XMLParser(remove_blank_text=True)
-        root   = etree.fromstring(sobre_xml.encode(), parser)
+        if isinstance(sobre_xml, str):
+            decl = b'<?xml version="1.0" encoding="ISO-8859-1"?>'
+            root = etree.fromstring(decl + sobre_xml.encode('iso-8859-1'), parser)
+        else:
+            root = etree.fromstring(sobre_xml, parser)
         ns     = {'sii': SII_NS}
 
         # 1. DigestValue del SetDTE
