@@ -85,11 +85,12 @@ class FirmaSobre:
         ns     = {'sii': SII_NS}
 
         # 1. DigestValue del SetDTE
-        set_el = root.find(".//sii:SetDTE[@ID='SetDoc']", ns)
-        set_raw        = etree.tostring(set_el, encoding='unicode')
-        set_standalone = etree.fromstring(set_raw.encode())
-        set_c14n       = etree.tostring(set_standalone, method='c14n', exclusive=False)
-        digest_val     = b64encode(hashlib.sha1(set_c14n).digest()).decode()
+        # CRÍTICO: calcular C14N del SetDTE EN CONTEXTO del EnvioDTE (no standalone).
+        # El método standalone cambia el DigestValue porque xmlns:xsi del EnvioDTE
+        # aparece de forma diferente en el C14N. El SII también calcula en contexto.
+        set_el   = root.find(".//sii:SetDTE[@ID='SetDoc']", ns)
+        set_c14n = etree.tostring(set_el, method='c14n', exclusive=False)
+        digest_val = b64encode(hashlib.sha1(set_c14n).digest()).decode()
 
         # 2. Construir Signature con etree
         sig_el = self._build_signature_element('#SetDoc', digest_val)
