@@ -44,11 +44,11 @@ class SIISender:
         """
         Construye y firma el sobre EnvioBOLETA o EnvioDTE.
 
-        ⚠️  xsi:schemaLocation se incluye en el root.
-            Esto funciona porque los DTEs YA traen xmlns:xsi
-            desde xml_builder, entonces al hacer C14N el
-            namespace no es "nuevo" en los hijos y el digest
-            no cambia.
+        ⚠️  xsi:schemaLocation se incluye en el root EnvioDTE.
+            Los DTEs traen xmlns:xsi en su propio nsmap (desde xml_builder),
+            lo que es coherente con que firma_dte.py también incluya xmlns:xsi
+            en los bytes del SignedInfo (necesario para que el digest coincida
+            con el c14n que calcula el SII al verificar cada DTE).
         """
         NS    = SII_NS
         ahora = datetime.now(timezone.utc)
