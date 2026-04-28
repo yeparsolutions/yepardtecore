@@ -217,10 +217,29 @@ class FirmaDTE:
             )
 
         # DigestValue del Documento
-        doc_id  = f'DTE-{tipo_dte}-{folio}'
-        doc_el  = root.find(f'.//sii:Documento[@ID="{doc_id}"]', ns)
-        doc_c14n   = etree.tostring(doc_el, method='c14n', exclusive=False)
-        digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
+        # ROUND-TRIP (idéntico a firma_sobre.py): serializar y re-parsear como
+        # elemento raíz antes de calcular c14n.
+        #
+        # Por qué es necesario:
+        #   lxml.etree.tostring(elem, method='c14n') en un elemento NO-raíz
+        #   propaga xmlns="" espurios en elementos descendientes (bug conocido de
+        #   lxml para árboles de namespace mixto). El SII usa Apache XMLSEC
+        #   (Java) cuyo c14n es correcto y NO produce esos xmlns="".
+        #   Si calculamos el digest sobre el c14n buggy, el hash difiere del que
+        #   el SII computa → DTE-3-505.
+        #
+        #   Al serializar doc_el a string y re-parsearlo como raíz independiente,
+        #   obtenemos un árbol limpio donde lxml produce el c14n correcto (sin
+        #   xmlns="" espurios). Ese c14n coincide con el que calcula el SII.
+        #
+        #   firma_sobre.py usa exactamente este patrón (set_raw→set_standalone)
+        #   y el sobre ya pasa. Aquí aplicamos lo mismo al Documento.
+        doc_id        = f'DTE-{tipo_dte}-{folio}'
+        doc_el        = root.find(f'.//sii:Documento[@ID="{doc_id}"]', ns)
+        doc_raw       = etree.tostring(doc_el, encoding='unicode')
+        doc_standalone = etree.fromstring(doc_raw.encode('utf-8'))
+        doc_c14n      = etree.tostring(doc_standalone, method='c14n', exclusive=False)
+        digest_doc    = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
         # SignedInfo CON xmlns:xsi (crítico: DTE declara xmlns:xsi en su nsmap,
         # por lo que el SII lo incluye al hacer c14n del SignedInfo)
