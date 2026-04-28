@@ -1,10 +1,6 @@
 # app/services/firma_dte.py
 # ══════════════════════════════════════════════════════════════
 # Firma individual de DTEs para SII Chile (versión robusta)
-# - SignedInfo construido como DOM (no string)
-# - Canonicalización real con lxml (c14n 1.0)
-# - Sin hacks de xmlns:xsi
-# - Compatible con SII (evita DTE-3-505)
 # ══════════════════════════════════════════════════════════════
 
 from cryptography.hazmat.primitives.serialization import pkcs12, load_pem_private_key
@@ -62,6 +58,13 @@ class FirmaDTE:
         self._rsa_exp = b64encode(
             pub.e.to_bytes((pub.e.bit_length() + 7) // 8, 'big')
         ).decode()
+
+    # ✅ FIX: requerido por tu app
+    @property
+    def rut_certificado(self) -> str:
+        subject = self._cert.subject.rfc4514_string()
+        m = re.search(r'(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])', subject, re.I)
+        return m.group(1) if m else ''
 
     # ──────────────────────────────────────────────────────────
     # TED
@@ -150,7 +153,7 @@ class FirmaDTE:
         doc_c14n = etree.tostring(doc, method="c14n", exclusive=False)
         digest = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
-        # ── SignedInfo (DOM real)
+        # SignedInfo (DOM real)
         ds = f"{{{XMLDSIG_NS}}}"
 
         signed_info = etree.Element(ds + "SignedInfo", nsmap={None: XMLDSIG_NS})
@@ -189,15 +192,15 @@ class FirmaDTE:
 
         etree.SubElement(ref, ds + "DigestValue").text = digest
 
-        # Canonicalizar SignedInfo REAL
+        # Canonicalizar
         si_c14n = etree.tostring(signed_info, method="c14n", exclusive=False)
 
-        # Firma
+        # Firmar
         signature_value = b64encode(
             _rsa_sign_sha1(self._private_key, si_c14n)
         ).decode()
 
-        # ── Signature
+        # Signature
         signature = etree.Element(ds + "Signature", nsmap={None: XMLDSIG_NS})
         signature.append(signed_info)
 
@@ -213,7 +216,7 @@ class FirmaDTE:
         x509 = etree.SubElement(key_info, ds + "X509Data")
         etree.SubElement(x509, ds + "X509Certificate").text = _wrap64(self._cert_der_b64)
 
-        # Insertar firma en Documento
+        # Insertar firma
         doc.append(signature)
 
         return etree.tostring(
