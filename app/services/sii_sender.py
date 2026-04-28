@@ -99,7 +99,7 @@ class SIISender:
         # FchResol y NroResol deben coincidir con la resolucion real del emisor.
         # Por defecto: NroResol=0 para certificacion (valor exigido por el SII).
         # En produccion se debe configurar segun la resolucion de autorizacion del emisor.
-        # FechResol: para certificacion SII exige '2014-08-22' (resolucion estandar moderna).
+        # FechResol: para certificacion SII exige '2026-04-19' (resolucion estandar moderna).
         # BUG PREVIO: '2003-09-02' no es reconocida por SII moderno -> SCH-00001
         # Para produccion configurar con la fecha de resolucion real del emisor.
         fch_resol = getattr(self, 'fch_resol', '2026-04-19')
@@ -115,39 +115,23 @@ class SIISender:
             etree.SubElement(subtot, f"{{{NS}}}TpoDTE").text = str(tipo)
             etree.SubElement(subtot, f"{{{NS}}}NroDTE").text = str(cantidad)
 
-        # CRÍTICO: Los DTEs firmados se insertan como STRING PURO, no como elementos lxml.
-        # Si usamos etree.fromstring + append, lxml cambia el namespace context del DTE
-        # (agrega xmlns:xsi del EnvioDTE padre), alterando el C14N del SignedInfo y
-        # rompiendo las firmas individuales (DTE-3-505).
-        #
-        # En su lugar, serializamos la carátula/header del sobre como string,
-        # concatenamos los DTE strings verbatim, y luego parseamos el conjunto completo
-        # para que firma_service.firmar_sobre() pueda trabajar con él.
-        
-        # Serializar el EnvioDTE sin los DTEs (solo la carátula)
-        caratula_xml = etree.tostring(envio_el, encoding="unicode")
-        # Insertar DTEs antes del cierre de SetDTE
-        dtes_str = ""
-        for dte_xml in dtes_xml:
-            dte_limpio = dte_xml
-            if dte_limpio.startswith('<?xml'):
-                dte_limpio = dte_limpio[dte_limpio.index('?>') + 2:].lstrip()
-            # Decodificar si viene como bytes ISO-8859-1
-            if isinstance(dte_limpio, bytes):
-                dte_limpio = dte_limpio.decode('iso-8859-1')
-            dtes_str += dte_limpio + "\n"
-        
-        # Inyectar los DTEs dentro del SetDTE
-        cierre_set = '</SetDTE>'
-        if cierre_set in caratula_xml:
-            sobre_sin_firma = caratula_xml.replace(
-                cierre_set,
-                dtes_str + cierre_set,
-                1  # solo el primer cierre de SetDTE
-            )
-        else:
-            raise ValueError("No se encontró </SetDTE> en el XML del sobre")
-        
+        for i, dte_xml in enumerate(dtes_xml):
+            try:
+                parser = etree.XMLParser(remove_blank_text=True)
+                # Pasar string Unicode directamente (lxml lo acepta sin problemas de encoding)
+                dte_str2 = dte_xml
+                if dte_str2.startswith('<?xml'):
+                    dte_str2 = dte_str2[dte_str2.index('?>') + 2:].lstrip()
+                dte_el = etree.fromstring(dte_str2, parser)
+                # Agregar newline: tail del DTE anterior apunta al texto
+                # que va entre </DTE anterior> y <DTE siguiente>
+                if i < len(dtes_xml) - 1:
+                    dte_el.tail = "\n"
+                set_el.append(dte_el)
+            except Exception as e:
+                raise ValueError(f"DTE XML invalido: {e}")
+
+        sobre_sin_firma = etree.tostring(envio_el, encoding="unicode")
         return firma_service.firmar_sobre(sobre_sin_firma)
 
     async def enviar_sobre(self, sobre_xml: str, rut_emisor: str,
