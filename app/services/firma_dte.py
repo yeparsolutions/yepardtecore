@@ -2,15 +2,21 @@
 # ══════════════════════════════════════════════════════════════
 # Firma individual de DTEs para SII Chile
 #
-# REGLA CRÍTICA: El SignedInfo del DTE individual SÍ lleva xmlns:xsi.
-# xml_builder construye el elemento <DTE> con nsmap que incluye xmlns:xsi.
-# Cuando la <Signature> se agrega dentro del <DTE>, el <SignedInfo> hereda
-# xmlns:xsi en su scope de namespaces. El SII al canonicalizar (c14n 1.0)
-# el <SignedInfo> para verificar la firma, incluye xmlns:xsi porque está
-# en scope desde el <DTE> ancestro.
-# Por lo tanto, los bytes que firmamos DEBEN contener xmlns:xsi para que
-# SHA1(bytes_firmados) == SHA1(c14n_verificado_por_SII).
-# Esto es análogo a firma_sobre.py (EnvioDTE también declara xmlns:xsi).
+# REGLA CRÍTICA — CANONICALIZACIÓN EN CONTEXTO:
+# lxml.etree.tostring(elem, method='c14n') produce resultados DIFERENTES
+# dependiendo de si el elemento es raíz o un hijo dentro de un árbol.
+# Cuando elem es hijo de un árbol con nsmap={None: SII_NS, 'xsi': XSI_NS},
+# lxml produce xmlns="" en elementos profundos que pertenecen a otro namespace
+# (p.ej. los hijos de <Reference> dentro del bloque XMLDSIG).
+# Esto coincide exactamente con lo que produce Apache XMLSEC (Java) que usa el SII.
+#
+# POR LO TANTO:
+# 1. El DigestValue del Documento se calcula con c14n del elemento dentro del
+#    árbol DTE (no con round-trip standalone, que produce un c14n diferente).
+# 2. El SignedInfo se construye como árbol lxml dentro de Signature dentro
+#    del DTE, se obtiene su c14n desde ahí, y ESE BYTES es lo que se firma.
+#
+# Ambos métodos garantizan que SHA1(bytes_firmados) == SHA1(c14n_del_SII).
 # ══════════════════════════════════════════════════════════════
 
 from cryptography.hazmat.primitives.serialization import pkcs12, load_pem_private_key
@@ -47,55 +53,51 @@ def _rsa_sign_sha1(private_key, data: bytes) -> bytes:
         )
 
 
-def _signed_info_dte(reference_uri: str, digest_value: str) -> bytes:
+def _build_signed_info_element(parent_sig: etree._Element,
+                               reference_uri: str, digest_value: str) -> etree._Element:
     """
-    C14N manual del SignedInfo para firma de DTE individual.
+    Construye el elemento <SignedInfo> como árbol lxml dentro de <Signature>.
 
-    CON xmlns:xsi — xml_builder declara xmlns:xsi en el nsmap del elemento <DTE>.
-    Cuando el <Signature> se inserta dentro de <DTE>, el <SignedInfo> hereda
-    xmlns:xsi en su scope de namespaces. c14n 1.0 (no-exclusive) incluye TODOS
-    los namespaces en scope en el elemento canonicalizado. Por tanto:
-
-        SII calcula: c14n(<SignedInfo>) → bytes CON xmlns:xsi
-        Nosotros firmamos: bytes CON xmlns:xsi
-
-    → SHA1 coincide → firma válida.
-
-    Sin xmlns:xsi aquí, SHA1 difiere → DTE-3-505 para todos los folios.
-
-    Elementos con tags expandidos (abrir+cerrar) según C14N 1.0.
+    Al estar dentro del árbol DTE (nsmap={None: SII_NS, xsi: XSI_NS}),
+    lxml produce el c14n correcto con xmlns='' en los hijos de <Reference>
+    (Transforms, Transform, DigestMethod, DigestValue), que es exactamente
+    el mismo output que produce Apache XMLSEC del SII.
+    Eso garantiza SHA1(bytes_firmados) == SHA1(c14n_verificado_por_SII).
     """
-    c14n = C14N_ALGORITHM
-    return (
-        f'<SignedInfo xmlns="{XMLDSIG_NS}" xmlns:xsi="{XSI_NS}">'
-        f'<CanonicalizationMethod Algorithm="{c14n}"></CanonicalizationMethod>'
-        f'<SignatureMethod Algorithm="{XMLDSIG_NS}rsa-sha1"></SignatureMethod>'
-        f'<Reference URI="{reference_uri}">'
-        f'<Transforms><Transform Algorithm="{c14n}"></Transform></Transforms>'
-        f'<DigestMethod Algorithm="{XMLDSIG_NS}sha1"></DigestMethod>'
-        f'<DigestValue>{digest_value}</DigestValue>'
-        f'</Reference>'
-        f'</SignedInfo>'
-    ).encode('utf-8')
+    si = etree.SubElement(parent_sig, f"{{{XMLDSIG_NS}}}SignedInfo")
+
+    cm = etree.SubElement(si, f"{{{XMLDSIG_NS}}}CanonicalizationMethod")
+    cm.set("Algorithm", C14N_ALGORITHM)
+
+    sm = etree.SubElement(si, f"{{{XMLDSIG_NS}}}SignatureMethod")
+    sm.set("Algorithm", f"{XMLDSIG_NS}rsa-sha1")
+
+    ref = etree.SubElement(si, f"{{{XMLDSIG_NS}}}Reference")
+    ref.set("URI", reference_uri)
+
+    transforms = etree.SubElement(ref, f"{{{XMLDSIG_NS}}}Transforms")
+    t = etree.SubElement(transforms, f"{{{XMLDSIG_NS}}}Transform")
+    t.set("Algorithm", C14N_ALGORITHM)
+
+    dm = etree.SubElement(ref, f"{{{XMLDSIG_NS}}}DigestMethod")
+    dm.set("Algorithm", f"{XMLDSIG_NS}sha1")
+
+    dv = etree.SubElement(ref, f"{{{XMLDSIG_NS}}}DigestValue")
+    dv.text = digest_value
+
+    return si
 
 
-def _build_signature_block(signed_info_str: str, sig_value: str,
-                            rsa_mod: str, rsa_exp: str, cert_der_b64: str) -> str:
-    return (
-        f'<Signature xmlns="{XMLDSIG_NS}">'
-        f'{signed_info_str}'
-        f'<SignatureValue>{sig_value}</SignatureValue>'
-        f'<KeyInfo>'
-        f'<KeyValue><RSAKeyValue>'
-        f'<Modulus>{_wrap64(rsa_mod)}</Modulus>'
-        f'<Exponent>{rsa_exp}</Exponent>'
-        f'</RSAKeyValue></KeyValue>'
-        f'<X509Data>'
-        f'<X509Certificate>{_wrap64(cert_der_b64)}</X509Certificate>'
-        f'</X509Data>'
-        f'</KeyInfo>'
-        f'</Signature>'
-    )
+def _build_key_info(parent_sig: etree._Element,
+                    rsa_mod: str, rsa_exp: str, cert_der_b64: str) -> None:
+    """Construye el bloque <KeyInfo> como árbol lxml dentro de <Signature>."""
+    ki = etree.SubElement(parent_sig, f"{{{XMLDSIG_NS}}}KeyInfo")
+    kv = etree.SubElement(ki, f"{{{XMLDSIG_NS}}}KeyValue")
+    rk = etree.SubElement(kv, f"{{{XMLDSIG_NS}}}RSAKeyValue")
+    etree.SubElement(rk, f"{{{XMLDSIG_NS}}}Modulus").text  = _wrap64(rsa_mod)
+    etree.SubElement(rk, f"{{{XMLDSIG_NS}}}Exponent").text = rsa_exp
+    x5 = etree.SubElement(ki, f"{{{XMLDSIG_NS}}}X509Data")
+    etree.SubElement(x5, f"{{{XMLDSIG_NS}}}X509Certificate").text = _wrap64(cert_der_b64)
 
 
 class FirmaDTE:
@@ -194,6 +196,15 @@ class FirmaDTE:
         """
         Inserta el TED y firma el Documento del DTE.
         Devuelve el DTE completo firmado en ISO-8859-1.
+
+        FLUJO:
+        1. Parsear DTE, insertar TED.
+        2. Calcular DigestValue del Documento haciendo c14n DIRECTAMENTE desde
+           el árbol (el DTE ya tiene nsmap={None: SII_NS, xsi: XSI_NS}), lo que
+           produce xmlns='' en elementos profundos — igual que Apache XMLSEC (SII).
+        3. Construir <Signature><SignedInfo>... como árbol lxml dentro del DTE,
+           obtener el c14n del <SignedInfo> desde ese árbol, y firmar ESOS bytes.
+        4. Completar el bloque <Signature> con <SignatureValue> y <KeyInfo>.
         """
         parser = etree.XMLParser(remove_blank_text=True)
         root   = etree.fromstring(xml_bytes, parser)
@@ -216,41 +227,34 @@ class FirmaDTE:
                 )
             )
 
-        # DigestValue del Documento
-        # ROUND-TRIP (idéntico a firma_sobre.py): serializar y re-parsear como
-        # elemento raíz antes de calcular c14n.
-        #
-        # Por qué es necesario:
-        #   lxml.etree.tostring(elem, method='c14n') en un elemento NO-raíz
-        #   propaga xmlns="" espurios en elementos descendientes (bug conocido de
-        #   lxml para árboles de namespace mixto). El SII usa Apache XMLSEC
-        #   (Java) cuyo c14n es correcto y NO produce esos xmlns="".
-        #   Si calculamos el digest sobre el c14n buggy, el hash difiere del que
-        #   el SII computa → DTE-3-505.
-        #
-        #   Al serializar doc_el a string y re-parsearlo como raíz independiente,
-        #   obtenemos un árbol limpio donde lxml produce el c14n correcto (sin
-        #   xmlns="" espurios). Ese c14n coincide con el que calcula el SII.
-        #
-        #   firma_sobre.py usa exactamente este patrón (set_raw→set_standalone)
-        #   y el sobre ya pasa. Aquí aplicamos lo mismo al Documento.
-        doc_id        = f'DTE-{tipo_dte}-{folio}'
-        doc_el        = root.find(f'.//sii:Documento[@ID="{doc_id}"]', ns)
-        doc_raw       = etree.tostring(doc_el, encoding='unicode')
-        doc_standalone = etree.fromstring(doc_raw.encode('utf-8'))
-        doc_c14n      = etree.tostring(doc_standalone, method='c14n', exclusive=False)
-        digest_doc    = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
+        # ── DigestValue del Documento ────────────────────────────────────────
+        # Calculamos c14n del elemento Documento DIRECTAMENTE desde el árbol DTE.
+        # El DTE fue construido con nsmap={None: SII_NS, 'xsi': XSI_NS}, por lo
+        # que lxml produce xmlns='' en los elementos hijos que no pertenecen al
+        # namespace de la DTE (p.ej. los del bloque XMLDSIG en la Signature).
+        # Este comportamiento coincide exactamente con Apache XMLSEC (Java) del SII.
+        # NO usar round-trip standalone: produce un c14n DIFERENTE (sin xmlns='')
+        # que daría un DigestValue distinto al que calcula el SII → DTE-3-505.
+        doc_id   = f'DTE-{tipo_dte}-{folio}'
+        doc_el   = root.find(f'.//sii:Documento[@ID="{doc_id}"]', ns)
+        doc_c14n = etree.tostring(doc_el, method='c14n', exclusive=False)
+        digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
-        # SignedInfo CON xmlns:xsi (crítico: DTE declara xmlns:xsi en su nsmap,
-        # por lo que el SII lo incluye al hacer c14n del SignedInfo)
-        si_c14n   = _signed_info_dte(f'#{doc_id}', digest_doc)
-        firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
+        # ── Construir <Signature> como árbol lxml dentro del DTE ─────────────
+        # Creamos el elemento <Signature> con nsmap XMLDSIG y lo adjuntamos al
+        # root (DTE). Así el <SignedInfo> vive dentro de un árbol con el contexto
+        # de namespaces correcto: SII_NS en los ancestros, XMLDSIG en Signature.
+        # El c14n de <SignedInfo> desde este árbol incluye xmlns='' en los hijos
+        # de <Reference>, que es exactamente lo que calcula el SII → SHA1 coincide.
+        sig_el = etree.SubElement(root, f"{{{XMLDSIG_NS}}}Signature",
+                                  nsmap={None: XMLDSIG_NS})
 
-        sig_xml = _build_signature_block(
-            si_c14n.decode('utf-8'), firma_b64,
-            self._rsa_mod, self._rsa_exp, self._cert_der_b64
-        )
-        root.append(etree.fromstring(sig_xml.encode()))
+        si_el      = _build_signed_info_element(sig_el, f'#{doc_id}', digest_doc)
+        si_c14n    = etree.tostring(si_el, method='c14n', exclusive=False)
+        firma_b64  = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
+
+        etree.SubElement(sig_el, f"{{{XMLDSIG_NS}}}SignatureValue").text = firma_b64
+        _build_key_info(sig_el, self._rsa_mod, self._rsa_exp, self._cert_der_b64)
 
         xml_str = etree.tostring(root, encoding='unicode', xml_declaration=False)
         return xml_str.encode('ISO-8859-1')
