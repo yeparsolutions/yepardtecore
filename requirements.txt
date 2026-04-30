@@ -18,7 +18,11 @@ python-multipart==0.0.9
 lxml==5.2.2
 cryptography==42.0.8
 pyOpenSSL==24.1.0
-signxml==3.2.2
+# python-xmlsec: bindings de C para libxmlsec1 (firma XMLDSig correcta)
+# Reemplaza signxml — usa el mismo motor que el SII (libxmlsec1/libxml2)
+# REQUIERE dependencias del sistema en el Dockerfile: libxmlsec1-dev,
+# libxml2-dev, libxslt1-dev, pkg-config, gcc
+python-xmlsec==1.3.17
 
 # ── Generación de PDF ─────────────────────────────────────────────
 reportlab==4.2.0
