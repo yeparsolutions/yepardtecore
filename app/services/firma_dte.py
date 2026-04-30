@@ -47,31 +47,20 @@ def _rsa_sign_sha1(private_key, data: bytes) -> bytes:
         )
 
 
-def _signed_info_dte(reference_uri: str, digest_value: str) -> bytes:
+def _signed_info_dte_bytes_para_firmar(reference_uri: str, digest_value: str) -> bytes:
     """
-    C14N del SignedInfo para firma de DTE individual.
+    Bytes del SignedInfo que se usan para calcular la firma RSA-SHA1.
 
-    El SII verifica la firma calculando c14n del <SignedInfo> dentro del
-    EnvioDTE. En ese contexto, el <SignedInfo> hereda xmlns=XMLDSIG de su
-    padre <Signature>, y xmlns:xsi del <EnvioDTE> root. Sus hijos directos
-    (CanonicalizationMethod, SignatureMethod, Reference) también están en
-    XMLDSIG y no requieren declaración propia.
+    El SII verifica la firma haciendo c14n del <SignedInfo> dentro del
+    EnvioDTE. lxml (igual que Apache XMLSEC del SII) produce xmlns="" en
+    los hijos de <Reference> (Transforms, Transform, DigestMethod,
+    DigestValue) al canonicalizar un elemento no-raíz con namespace mixto.
 
-    Sin embargo, los hijos de <Reference> (Transforms, Transform,
-    DigestMethod, DigestValue) están más profundos. lxml (y Apache XMLSEC
-    del SII) produce xmlns="" en ellos al hacer c14n inclusivo de un
-    elemento no-raíz, porque el Inclusive C14N rastrea el cambio de
-    namespace por posición en el árbol y agrega xmlns="" para "cancelar"
-    el namespace heredado de los ancestros por encima de la raíz del
-    subtree canonicalizado.
+    Confirmado leyendo el c14n real del XML enviado al SII.
 
-    Esto está confirmado leyendo el c14n real del SignedInfo dentro del
-    EnvioDTE: Transforms, Transform, DigestMethod y DigestValue llevan
-    xmlns="" mientras que CanonicalizationMethod, SignatureMethod y
-    Reference no lo llevan.
-
-    Los bytes que firmamos DEBEN coincidir exactamente con este output
-    para que SHA1(firmado) == SHA1(c14n_verificado_por_SII).
+    IMPORTANTE: estos bytes se usan SOLO para SHA1+RSA. NO se embeben
+    directamente en el XML (el xmlns="" rompería la validación XSD).
+    Ver _signed_info_dte_para_xml() para el string que va en el XML.
     """
     c14n = C14N_ALGORITHM
     return (
@@ -87,11 +76,35 @@ def _signed_info_dte(reference_uri: str, digest_value: str) -> bytes:
     ).encode('utf-8')
 
 
-def _build_signature_block(signed_info_str: str, sig_value: str,
+def _signed_info_dte_para_xml(reference_uri: str, digest_value: str) -> str:
+    """
+    SignedInfo limpio (sin xmlns="") que se embebe en el XML final.
+
+    Cuando el SII parsea el EnvioDTE y hace c14n del SignedInfo, obtiene
+    exactamente los mismos bytes que _signed_info_dte_bytes_para_firmar()
+    porque lxml agrega xmlns="" en los hijos de Reference al canonicalizar.
+    El XML enviado pasa la validación XSD porque Transforms/DigestMethod
+    están en namespace XMLDSIG (heredado de Signature).
+    """
+    c14n = C14N_ALGORITHM
+    return (
+        f'<SignedInfo xmlns="{XMLDSIG_NS}" xmlns:xsi="{XSI_NS}">'
+        f'<CanonicalizationMethod Algorithm="{c14n}"></CanonicalizationMethod>'
+        f'<SignatureMethod Algorithm="{XMLDSIG_NS}rsa-sha1"></SignatureMethod>'
+        f'<Reference URI="{reference_uri}">'
+        f'<Transforms><Transform Algorithm="{c14n}"></Transform></Transforms>'
+        f'<DigestMethod Algorithm="{XMLDSIG_NS}sha1"></DigestMethod>'
+        f'<DigestValue>{digest_value}</DigestValue>'
+        f'</Reference>'
+        f'</SignedInfo>'
+    )
+
+
+def _build_signature_block(signed_info_xml: str, sig_value: str,
                             rsa_mod: str, rsa_exp: str, cert_der_b64: str) -> str:
     return (
         f'<Signature xmlns="{XMLDSIG_NS}">'
-        f'{signed_info_str}'
+        f'{signed_info_xml}'
         f'<SignatureValue>{sig_value}</SignatureValue>'
         f'<KeyInfo>'
         f'<KeyValue><RSAKeyValue>'
@@ -249,14 +262,14 @@ class FirmaDTE:
         doc_c14n      = etree.tostring(doc_standalone, method='c14n', exclusive=False)
         digest_doc    = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
-        # SignedInfo CON xmlns:xsi (crítico: DTE declara xmlns:xsi en su nsmap,
-        # por lo que el SII lo incluye al hacer c14n del SignedInfo)
-        si_c14n   = _signed_info_dte(f'#{doc_id}', digest_doc)
-        firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
+        # Firma: usar bytes CON xmlns="" (lo que el SII calcula al hacer c14n)
+        # pero embeber en el XML el SignedInfo limpio (sin xmlns="") para pasar XSD.
+        si_bytes  = _signed_info_dte_bytes_para_firmar(f'#{doc_id}', digest_doc)
+        firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_bytes)).decode()
 
         sig_xml = _build_signature_block(
-            si_c14n.decode('utf-8'), firma_b64,
-            self._rsa_mod, self._rsa_exp, self._cert_der_b64
+            _signed_info_dte_para_xml(f'#{doc_id}', digest_doc),
+            firma_b64, self._rsa_mod, self._rsa_exp, self._cert_der_b64
         )
         root.append(etree.fromstring(sig_xml.encode()))
 
