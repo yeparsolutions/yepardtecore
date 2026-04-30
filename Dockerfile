@@ -13,14 +13,13 @@
 FROM python:3.11-slim
 
 # Cache bust — incrementar para forzar rebuild limpio
-ARG CACHEBUST=3
+ARG CACHEBUST=4
 
 # Directorio de trabajo dentro del contenedor
 WORKDIR /app
 
 # ── Dependencias del sistema ──────────────────────────────────
-# Necesarias para compilar python-xmlsec (bindings de C para libxmlsec1)
-# Analogía: antes de hornear el pastel, necesitamos el horno y los moldes.
+# lxml y xmlsec DEBEN usar la MISMA libxml2 del sistema.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Motor XML de libxmlsec1 (firma XMLDSig — el núcleo del asunto)
     libxmlsec1-dev \
@@ -40,9 +39,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Si el código cambia pero requirements no, Docker no reinstala todo
 COPY requirements.txt .
 
-# Instalar dependencias Python
+# ── Instalar dependencias Python ─────────────────────────────
+# PASO 1: lxml compilado desde source usando la libxml2 del sistema.
+# Analogía: lxml y xmlsec son dos piezas de Lego que deben encajar.
+# Si lxml viene del sobre (wheel precompilado manylinux), trae su
+# propia pieza de libxml2 adentro. xmlsec usa la pieza del sistema.
+# Dos piezas distintas → "libxml2 version mismatch" al arrancar.
+# --no-binary lxml fuerza compilar lxml con la pieza del sistema.
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir --no-binary lxml lxml==5.2.2
+
+# PASO 2: resto de dependencias (lxml ya está instalada, se saltea)
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar el resto del código
 COPY . .
