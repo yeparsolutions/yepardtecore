@@ -13,7 +13,7 @@
 FROM python:3.11-slim
 
 # Cache bust — incrementar para forzar rebuild limpio
-ARG CACHEBUST=4
+ARG CACHEBUST=5
 
 # Directorio de trabajo dentro del contenedor
 WORKDIR /app
@@ -30,8 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxslt1-dev \
     # pkg-config: le dice a pip dónde están las libs del sistema
     pkg-config \
-    # Compilador C (para build de xmlsec en pip install)
-    gcc \
+    # Compilador C completo (gcc + g++ + make) para compilar lxml desde source
+    build-essential \
     # Limpieza: el cache de apt no se necesita en producción
     && rm -rf /var/lib/apt/lists/*
 
