@@ -49,21 +49,29 @@ def _rsa_sign_sha1(private_key, data: bytes) -> bytes:
 
 def _signed_info_dte(reference_uri: str, digest_value: str) -> bytes:
     """
-    C14N manual del SignedInfo para firma de DTE individual.
+    C14N del SignedInfo para firma de DTE individual.
 
-    CON xmlns:xsi — xml_builder declara xmlns:xsi en el nsmap del elemento <DTE>.
-    Cuando el <Signature> se inserta dentro de <DTE>, el <SignedInfo> hereda
-    xmlns:xsi en su scope de namespaces. c14n 1.0 (no-exclusive) incluye TODOS
-    los namespaces en scope en el elemento canonicalizado. Por tanto:
+    El SII verifica la firma calculando c14n del <SignedInfo> dentro del
+    EnvioDTE. En ese contexto, el <SignedInfo> hereda xmlns=XMLDSIG de su
+    padre <Signature>, y xmlns:xsi del <EnvioDTE> root. Sus hijos directos
+    (CanonicalizationMethod, SignatureMethod, Reference) también están en
+    XMLDSIG y no requieren declaración propia.
 
-        SII calcula: c14n(<SignedInfo>) → bytes CON xmlns:xsi
-        Nosotros firmamos: bytes CON xmlns:xsi
+    Sin embargo, los hijos de <Reference> (Transforms, Transform,
+    DigestMethod, DigestValue) están más profundos. lxml (y Apache XMLSEC
+    del SII) produce xmlns="" en ellos al hacer c14n inclusivo de un
+    elemento no-raíz, porque el Inclusive C14N rastrea el cambio de
+    namespace por posición en el árbol y agrega xmlns="" para "cancelar"
+    el namespace heredado de los ancestros por encima de la raíz del
+    subtree canonicalizado.
 
-    → SHA1 coincide → firma válida.
+    Esto está confirmado leyendo el c14n real del SignedInfo dentro del
+    EnvioDTE: Transforms, Transform, DigestMethod y DigestValue llevan
+    xmlns="" mientras que CanonicalizationMethod, SignatureMethod y
+    Reference no lo llevan.
 
-    Sin xmlns:xsi aquí, SHA1 difiere → DTE-3-505 para todos los folios.
-
-    Elementos con tags expandidos (abrir+cerrar) según C14N 1.0.
+    Los bytes que firmamos DEBEN coincidir exactamente con este output
+    para que SHA1(firmado) == SHA1(c14n_verificado_por_SII).
     """
     c14n = C14N_ALGORITHM
     return (
@@ -71,9 +79,9 @@ def _signed_info_dte(reference_uri: str, digest_value: str) -> bytes:
         f'<CanonicalizationMethod Algorithm="{c14n}"></CanonicalizationMethod>'
         f'<SignatureMethod Algorithm="{XMLDSIG_NS}rsa-sha1"></SignatureMethod>'
         f'<Reference URI="{reference_uri}">'
-        f'<Transforms><Transform Algorithm="{c14n}"></Transform></Transforms>'
-        f'<DigestMethod Algorithm="{XMLDSIG_NS}sha1"></DigestMethod>'
-        f'<DigestValue>{digest_value}</DigestValue>'
+        f'<Transforms xmlns=""><Transform xmlns="" Algorithm="{c14n}"></Transform></Transforms>'
+        f'<DigestMethod xmlns="" Algorithm="{XMLDSIG_NS}sha1"></DigestMethod>'
+        f'<DigestValue xmlns="">{digest_value}</DigestValue>'
         f'</Reference>'
         f'</SignedInfo>'
     ).encode('utf-8')
