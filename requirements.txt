@@ -15,13 +15,14 @@ passlib[bcrypt]==1.7.4
 python-multipart==0.0.9
 
 # ── Firma digital DTE ─────────────────────────────────────────────
-lxml==5.2.2
+# lxml 4.9.4 instalado ANTES via --no-binary (Dockerfile) para compilar
+# contra libxml2 2.9.14 del sistema (Bookworm). NO subir a 5.x aquí:
+# lxml 5.x requiere libxml2 >= 2.10, Bookworm solo tiene 2.9.14.
+lxml==4.9.4
 cryptography==42.0.8
 pyOpenSSL==24.1.0
-# python-xmlsec: bindings de C para libxmlsec1 (firma XMLDSig correcta)
-# Reemplaza signxml — usa el mismo motor que el SII (libxmlsec1/libxml2)
-# REQUIERE dependencias del sistema en el Dockerfile: libxmlsec1-dev,
-# libxml2-dev, libxslt1-dev, pkg-config, gcc
+# xmlsec: firma XMLDSig. Compila contra libxml2 del sistema (2.9.14).
+# Mismo libxml2 que lxml compilado desde source → sin mismatch.
 xmlsec==1.3.17
 
 # ── Generación de PDF ─────────────────────────────────────────────
