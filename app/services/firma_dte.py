@@ -12,6 +12,7 @@
 # sobre los bytes ISO-8859-1 del nodo <DD>).
 # ══════════════════════════════════════════════════════════════
 
+import re
 from cryptography.hazmat.primitives.serialization import pkcs12, load_pem_private_key
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, utils
