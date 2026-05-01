@@ -52,7 +52,6 @@ class FirmadorDTE:
 
     def __init__(self, p12_bytes: bytes, p12_password):
         # Convertir password a bytes si llega como str
-        # (firma_digital.py lo declara como str y lo pasa así)
         pwd = p12_password.encode('utf-8') if isinstance(p12_password, str) else p12_password
         self._private_key, self._cert, _ = pkcs12.load_key_and_certificates(
             p12_bytes, pwd, backend=default_backend()
@@ -65,6 +64,28 @@ class FirmadorDTE:
         )
         # PEM del certificado (para xmlsec)
         self._pem_cert = self._cert.public_bytes(CryptoEncoding.PEM)
+        # Atributos de compatibilidad usados por firma_digital.py y firma_sobre.py
+        self._cert_der_b64 = b64encode(
+            self._cert.public_bytes(CryptoEncoding.DER)
+        ).decode()
+        pub = self._cert.public_key().public_numbers()
+        self._rsa_mod = b64encode(
+            pub.n.to_bytes((pub.n.bit_length() + 7) // 8, 'big')
+        ).decode()
+        self._rsa_exp = b64encode(
+            pub.e.to_bytes((pub.e.bit_length() + 7) // 8, 'big')
+        ).decode()
+
+    @property
+    def rut_certificado(self) -> str:
+        """RUT extraído del subject del certificado X.509."""
+        subject = self._cert.subject.rfc4514_string()
+        m = re.search(r'(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])', subject, re.I)
+        return m.group(1) if m else ''
+
+    @property
+    def cert_der_b64(self) -> str:
+        return self._cert_der_b64
 
     # ── TED ──────────────────────────────────────────────────
 
