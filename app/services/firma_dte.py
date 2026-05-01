@@ -46,12 +46,14 @@ def _signed_info_dte(reference_uri: str, digest_value: str) -> bytes:
     """
     C14N manual del SignedInfo para firma de DTE individual.
 
-    SIN xmlns:xsi — el SII verifica el DTE individual sin ese namespace en scope.
-    Con xmlns:xsi el SHA1 cambia y el SII rechaza con DTE-3-505.
+    CON xmlns:xsi — verificado contra el XML 2026-04-28 que el SII aceptó.
+    El DTE tiene xmlns:xsi en su nsmap raíz, por lo que ese namespace
+    SÍ está en scope cuando el SII verifica el SignedInfo del DTE.
+    Sin xmlns:xsi el SHA1 difiere y el SII rechaza con DTE-3-505.
     """
     c14n = C14N_ALGORITHM
     return (
-        f'<SignedInfo xmlns="{XMLDSIG_NS}">'
+        f'<SignedInfo xmlns="{XMLDSIG_NS}" xmlns:xsi="{XSI_NS}">'
         f'<CanonicalizationMethod Algorithm="{c14n}"></CanonicalizationMethod>'
         f'<SignatureMethod Algorithm="{XMLDSIG_NS}rsa-sha1"></SignatureMethod>'
         f'<Reference URI="{reference_uri}">'
