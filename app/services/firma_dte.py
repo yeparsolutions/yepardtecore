@@ -50,10 +50,12 @@ class FirmadorDTE:
     Esta clase solo firma el documento adentro del sobre.
     """
 
-    def __init__(self, p12_bytes: bytes, p12_password: bytes):
-        # Cargar el certificado .p12
+    def __init__(self, p12_bytes: bytes, p12_password):
+        # Convertir password a bytes si llega como str
+        # (firma_digital.py lo declara como str y lo pasa así)
+        pwd = p12_password.encode('utf-8') if isinstance(p12_password, str) else p12_password
         self._private_key, self._cert, _ = pkcs12.load_key_and_certificates(
-            p12_bytes, p12_password, backend=default_backend()
+            p12_bytes, pwd, backend=default_backend()
         )
         # PEM de la clave privada (para xmlsec)
         self._pem_private = self._private_key.private_bytes(
