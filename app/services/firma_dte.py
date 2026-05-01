@@ -239,3 +239,6 @@ class FirmadorDTE:
 
         xml_str = etree.tostring(root, encoding='unicode', xml_declaration=False)
         return xml_str.encode('ISO-8859-1')
+
+# Alias de compatibilidad — firma_digital.py importa FirmaDTE
+FirmaDTE = FirmadorDTE
