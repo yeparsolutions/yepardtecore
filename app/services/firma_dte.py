@@ -181,13 +181,20 @@ class FirmadorDTE:
         folio = dte_el.findtext(f'.//{{{SII_NS}}}Folio')
         doc_id = f'DTE-{tipo}-{folio}'
 
-        # Registrar el ID del Documento para que xmlsec resuelva la referencia
+        # El <Documento> es el elemento que se firma (tiene el ID).
+        # La <Signature> DEBE insertarse dentro de <Documento>, no en <DTE>.
+        # Si se appenda a <DTE>, el schema falla y el SII rechaza con DTE-3-505.
+        doc_el = dte_el.find(f'{{{SII_NS}}}Documento')
+        if doc_el is None:
+            raise ValueError(f'No se encontró <Documento> en el DTE {tipo}-{folio}')
+
+        # Registrar el ID del Documento para que xmlsec resuelva la referencia URI
         xmlsec.tree.add_ids(dte_el, ['ID'])
 
         # Construir la plantilla de Signature (vacía — xmlsec la llenará)
         NS = XMLDSIG_NS
         sig_node = xmlsec.template.create(
-            dte_el,
+            doc_el,
             c14n_method=xmlsec.constants.TransformInclC14N,
             sign_method=xmlsec.constants.TransformRsaSha1
         )
@@ -215,8 +222,8 @@ class FirmadorDTE:
             '\n' + '\n'.join(textwrap.wrap(cert_der_b64, 64)) + '\n'
         )
 
-        # Insertar la Signature en el DTE (al final del elemento DTE)
-        dte_el.append(sig_node)
+        # Insertar la Signature DENTRO de <Documento> (no en <DTE>)
+        doc_el.append(sig_node)
 
         # Firmar: libxmlsec1 computa DigestValue y SignatureValue automáticamente
         key = xmlsec.Key.from_memory(self._pem_private, xmlsec.KeyFormat.PEM)
