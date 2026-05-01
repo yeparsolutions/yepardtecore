@@ -137,11 +137,12 @@ class FirmadorDTE:
             self._firmar_rsa_caf(dd_xml.encode('ISO-8859-1'), rsk_el.text.strip())
         ).decode()
 
-        # xmlns="" en <TED> es obligatorio para cancelar el xmlns="SiiDte"
-        # heredado del <DTE> padre y evitar que lxml cambie el namespace
-        # de TED/DD en sucesivos round-trips.
+        # TED sin xmlns="": el schema del SII requiere {SiiDte}TED.
+        # Con python-xmlsec firmando en el árbol del EnvioDTE, el
+        # DigestValue se computa correctamente con o sin xmlns="" en TED.
+        # El FRMT lo verifica el SII strip-eando namespaces del DD → OK.
         return (
-            f'<TED xmlns="" version="1.0">{dd_xml}'
+            f'<TED version="1.0">{dd_xml}'
             f'<FRMT algoritmo="SHA1withRSA">{frmt_b64}</FRMT>'
             f'</TED>'
         ).encode('ISO-8859-1')
@@ -199,8 +200,14 @@ class FirmadorDTE:
         # Transformación C14N 1.0 (requerida por el SII)
         xmlsec.template.add_transform(ref, xmlsec.constants.TransformInclC14N)
 
-        # KeyInfo con el certificado X.509
+        # KeyInfo: el schema SII exige KeyValue (RSAKeyValue) ANTES de X509Data
         key_info = xmlsec.template.ensure_key_info(sig_node)
+        # 1. RSAKeyValue con Modulus y Exponent
+        kv = etree.SubElement(key_info, f'{{{NS}}}KeyValue')
+        rsa_kv = etree.SubElement(kv, f'{{{NS}}}RSAKeyValue')
+        etree.SubElement(rsa_kv, f'{{{NS}}}Modulus').text  = self._rsa_mod
+        etree.SubElement(rsa_kv, f'{{{NS}}}Exponent').text = self._rsa_exp
+        # 2. X509Data con el certificado
         x509_data = etree.SubElement(key_info, f'{{{NS}}}X509Data')
         x509_cert = etree.SubElement(x509_data, f'{{{NS}}}X509Certificate')
         cert_der_b64 = b64encode(self._cert.public_bytes(CryptoEncoding.DER)).decode()
