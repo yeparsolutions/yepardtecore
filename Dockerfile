@@ -14,15 +14,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 
-ARG BUST=8
+# Compilar AMBOS desde source contra la misma libxml2 del sistema (2.9.14)
+# lxml wheel bundlea su propia libxml2; xmlsec wheel también.
+# Si alguno viene precompilado → versiones distintas → mismatch en runtime.
+# --no-binary lxml,xmlsec fuerza compilación desde source para los dos.
+ARG BUST=9
 RUN echo "bust=$BUST" && \
     pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --no-binary lxml lxml==4.9.4 && \
+    pip install --no-cache-dir --no-binary lxml,xmlsec lxml==4.9.4 xmlsec==1.3.17 && \
     pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
 EXPOSE 8000
 
-# Railway inyecta $PORT dinámicamente — no hardcodear 8000
 CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
