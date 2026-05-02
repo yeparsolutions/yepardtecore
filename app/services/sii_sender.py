@@ -13,7 +13,7 @@
 import logging
 import httpx
 from lxml import etree
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from app.core.config import settings
 
 logger = logging.getLogger("yepardtecore.dte")
@@ -44,11 +44,11 @@ class SIISender:
         """
         Construye y firma el sobre EnvioBOLETA o EnvioDTE.
 
-        ⚠️  xsi:schemaLocation se incluye en el root EnvioDTE.
-            Los DTEs traen xmlns:xsi en su propio nsmap (desde xml_builder),
-            lo que es coherente con que firma_dte.py también incluya xmlns:xsi
-            en los bytes del SignedInfo (necesario para que el digest coincida
-            con el c14n que calcula el SII al verificar cada DTE).
+        ⚠️  xsi:schemaLocation se incluye en el root.
+            Esto funciona porque los DTEs YA traen xmlns:xsi
+            desde xml_builder, entonces al hacer C14N el
+            namespace no es "nuevo" en los hijos y el digest
+            no cambia.
         """
         NS    = SII_NS
         ahora = datetime.now(timezone.utc)
@@ -106,8 +106,11 @@ class SIISender:
         nro_resol = getattr(self, 'nro_resol', '0')
         etree.SubElement(caratula, f"{{{NS}}}FchResol").text     = fch_resol
         etree.SubElement(caratula, f"{{{NS}}}NroResol").text     = nro_resol
+        # TmstFirmaEnv debe ser POSTERIOR al TmstFirma de cada DTE.
+        # Ambos se calculan en el mismo segundo → el SII rechaza con DTE-3-505.
+        # Sumamos 1 segundo para garantizar TmstFirma < TmstFirmaEnv.
         etree.SubElement(caratula, f"{{{NS}}}TmstFirmaEnv").text = (
-            ahora.strftime("%Y-%m-%dT%H:%M:%S")
+            (ahora + timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%S")
         )
 
         for tipo, cantidad in tipos_en_sobre.items():
