@@ -1,6 +1,6 @@
 # app/services/firma_dte.py
 # ══════════════════════════════════════════════════════════════
-# Firma individual de DTEs para SII Chile — v4.0 DEFINITIVO
+# Firma individual de DTEs para SII Chile — v4.0 DEFINITIVO.
 #
 # DIAGNÓSTICO FINAL (verificado con XSDs oficiales y ejemplo F60T33):
 #
