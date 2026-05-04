@@ -1,13 +1,10 @@
 # app/services/sii_sender.py
 # ══════════════════════════════════════════════════════════════
-# Servicio de envio al SII
+# Servicio de envio al SII — v2.0
 #
-# ── FIXES v1.3 ─────────────────────────────────────────────
-# - EnvioBOLETA incluye xmlns:xsi y xsi:schemaLocation
-#   El DTE ya trae xsi desde xml_builder, por lo que al
-#   insertar en el sobre el namespace NO hereda nuevamente
-#   y los digests se mantienen intactos.
-# - STATUS (no ESTADO) para parsear respuesta del SII
+# FIX CRÍTICO: re-firma cada DTE DESPUÉS de insertarlo en el
+# árbol del EnvioDTE. El DigestValue debe calcularse en el
+# contexto del sobre para que el SII pueda verificarlo.
 # ══════════════════════════════════════════════════════════════
 
 import logging
@@ -22,6 +19,7 @@ SII_UPLOAD_CERT = "https://maullin.sii.cl/cgi_dte/UPL/DTEUpload"
 SII_UPLOAD_PROD = "https://palena.sii.cl/cgi_dte/UPL/DTEUpload"
 SII_NS          = "http://www.sii.cl/SiiDte"
 XSI_NS          = "http://www.w3.org/2001/XMLSchema-instance"
+XMLDSIG_NS      = "http://www.w3.org/2000/09/xmldsig#"
 TIPOS_BOLETA    = {39, 41}
 
 
@@ -42,13 +40,17 @@ class SIISender:
     def construir_sobre(self, dtes_xml: list[str], rut_emisor: str,
                         rut_enviador: str, firma_service) -> str:
         """
-        Construye y firma el sobre EnvioBOLETA o EnvioDTE.
+        Construye y firma el sobre EnvioDTE.
 
-        ⚠️  xsi:schemaLocation se incluye en el root.
-            Esto funciona porque los DTEs YA traen xmlns:xsi
-            desde xml_builder, entonces al hacer C14N el
-            namespace no es "nuevo" en los hijos y el digest
-            no cambia.
+        FLUJO CORRECTO:
+          1. Construir el árbol del EnvioDTE con caratula
+          2. Para cada DTE:
+             a. Parsear el DTE firmado (viene de BD)
+             b. Remover la Signature provisional
+             c. Insertar el DTE en el árbol del EnvioDTE
+             d. Re-firmar el DTE ahora que está en el sobre
+                → DigestValue calculado in-tree = lo que verifica el SII
+          3. Firmar el SetDTE
         """
         NS    = SII_NS
         ahora = datetime.now(timezone.utc)
@@ -56,11 +58,10 @@ class SIISender:
         rut_emisor   = self.limpiar_rut(rut_emisor)
         rut_enviador = self.limpiar_rut(rut_enviador)
 
-        # Detectar tipos
+        # Detectar tipos de DTE en el sobre
         tipos_en_sobre: dict[int, int] = {}
         for dte_xml in dtes_xml:
             try:
-                # Pasar el string Unicode directamente a lxml (evita conflictos de encoding)
                 dte_str = dte_xml
                 if dte_str.startswith('<?xml'):
                     dte_str = dte_str[dte_str.index('?>') + 2:].lstrip()
@@ -81,7 +82,6 @@ class SIISender:
             schema   = f"{NS} EnvioDTE_v10.xsd"
 
         nsmap    = {None: NS, "xsi": XSI_NS}
-        # xsi:schemaLocation DEBE ir ANTES de version — el validador SII lo lee primero
         envio_el = etree.Element(root_tag, attrib={
             f"{{{XSI_NS}}}schemaLocation": schema,
             "version": "1.0",
@@ -96,19 +96,10 @@ class SIISender:
         etree.SubElement(caratula, f"{{{NS}}}RutEnvia").text    = rut_enviador
         etree.SubElement(caratula, f"{{{NS}}}RutReceptor").text = "60803000-K"
 
-        # FchResol y NroResol deben coincidir con la resolucion real del emisor.
-        # Por defecto: NroResol=0 para certificacion (valor exigido por el SII).
-        # En produccion se debe configurar segun la resolucion de autorizacion del emisor.
-        # FechResol: para certificacion SII exige '2026-04-19' (resolucion estandar moderna).
-        # BUG PREVIO: '2003-09-02' no es reconocida por SII moderno -> SCH-00001
-        # Para produccion configurar con la fecha de resolucion real del emisor.
         fch_resol = getattr(self, 'fch_resol', '2026-04-19')
         nro_resol = getattr(self, 'nro_resol', '0')
         etree.SubElement(caratula, f"{{{NS}}}FchResol").text     = fch_resol
         etree.SubElement(caratula, f"{{{NS}}}NroResol").text     = nro_resol
-        # TmstFirmaEnv debe ser POSTERIOR al TmstFirma de cada DTE.
-        # Ambos se calculan en el mismo segundo → el SII rechaza con DTE-3-505.
-        # Sumamos 1 segundo para garantizar TmstFirma < TmstFirmaEnv.
         etree.SubElement(caratula, f"{{{NS}}}TmstFirmaEnv").text = (
             (ahora + timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%S")
         )
@@ -118,19 +109,34 @@ class SIISender:
             etree.SubElement(subtot, f"{{{NS}}}TpoDTE").text = str(tipo)
             etree.SubElement(subtot, f"{{{NS}}}NroDTE").text = str(cantidad)
 
+        # ── Insertar DTEs y re-firmar in-tree ─────────────────
+        firma_dte = firma_service._dte  # FirmaDTE instance
+
         for i, dte_xml in enumerate(dtes_xml):
             try:
                 parser = etree.XMLParser(remove_blank_text=True)
-                # Pasar string Unicode directamente (lxml lo acepta sin problemas de encoding)
                 dte_str2 = dte_xml
                 if dte_str2.startswith('<?xml'):
                     dte_str2 = dte_str2[dte_str2.index('?>') + 2:].lstrip()
                 dte_el = etree.fromstring(dte_str2, parser)
-                # Agregar newline: tail del DTE anterior apunta al texto
-                # que va entre </DTE anterior> y <DTE siguiente>
+
+                # Remover Signature provisional (calculada standalone)
+                sig_vieja = dte_el.find(f"{{{XMLDSIG_NS}}}Signature")
+                if sig_vieja is not None:
+                    dte_el.remove(sig_vieja)
+
                 if i < len(dtes_xml) - 1:
                     dte_el.tail = "\n"
+
+                # Insertar en el árbol del EnvioDTE
                 set_el.append(dte_el)
+
+                # Re-firmar AHORA que el DTE está dentro del EnvioDTE
+                # DigestValue calculado in-tree = lo que verifica el SII
+                doc    = dte_el.find(f"{{{NS}}}Documento")
+                doc_id = doc.get("ID")
+                firma_dte.firmar_en_arbol(dte_el, doc_id)
+
             except Exception as e:
                 raise ValueError(f"DTE XML invalido: {e}")
 
