@@ -1,6 +1,6 @@
 # app/services/firma_dte.py
 # ══════════════════════════════════════════════════════════════
-# Firma individual de DTEs para SII Chile — v5.0 DEFINITIVO
+# Firma individual de DTEs para SII Chile — v5.0 DEFINITIVO.
 #
 # CAUSA RAÍZ IDENTIFICADA (semanas de análisis):
 # El flujo es: xml_builder genera DTE → firma_dte lo firma solo
