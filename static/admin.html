@@ -27,7 +27,6 @@
             display: flex; flex-direction: column;
         }
 
-        /* Rejilla de fondo */
         body::before {
             content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
             background-image: linear-gradient(rgba(16,185,129,.02) 1px, transparent 1px), 
@@ -52,7 +51,6 @@
             padding: 32px 24px; width: 100%;
         }
 
-        /* Tarjetas */
         .card {
             background: var(--bg-card); border: 1px solid var(--border);
             border-radius: 16px; margin-bottom: 20px; overflow: hidden;
@@ -76,13 +74,12 @@
         .card-body { padding: 24px; display: none; }
         .card.active .card-body { display: block; }
 
-        /* Formulario */
         .grid-form { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         .full-width { grid-column: 1 / -1; }
         .field { display: flex; flex-direction: column; gap: 8px; }
         .field label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
         
-        input, select, textarea {
+        input, select {
             background: var(--bg-input); border: 1px solid var(--border);
             border-radius: 10px; padding: 12px 16px; color: var(--text-main);
             font-family: 'Outfit', sans-serif; font-size: 14px;
@@ -91,7 +88,6 @@
         input:focus { border-color: var(--accent); outline: none; background: #121820; }
         .mono { font-family: 'JetBrains Mono', monospace; }
 
-        /* Actividades Económicas */
         .act-row { 
             display: grid; grid-template-columns: 120px 1fr 100px 40px; 
             gap: 12px; align-items: flex-end; margin-bottom: 12px;
@@ -106,7 +102,6 @@
         }
         .btn-del:hover { background: var(--error); color: white; }
 
-        /* Botones */
         .btn {
             padding: 12px 24px; border-radius: 10px; border: none;
             font-weight: 600; cursor: pointer; transition: all 0.2s;
@@ -117,7 +112,6 @@
         .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-main); }
         .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
 
-        /* Consola */
         .console {
             position: sticky; top: 96px; height: calc(100vh - 128px);
             background: var(--bg-card); border: 1px solid var(--border);
@@ -148,8 +142,8 @@
 
 <nav>
     <div class="logo">YeparDTEcore <span style="font-weight: 300; font-size: 12px; color: var(--text-dim); margin-left: 8px;">v1.0.4</span></div>
-    <div class="btn-ghost" style="padding: 6px 12px; font-size: 12px; font-family: 'JetBrains Mono'; border-radius: 6px;">
-        API: https://api.yepardtecore.cl
+    <div class="btn-ghost" style="padding: 6px 12px; font-size: 11px; font-family: 'JetBrains Mono'; border-radius: 6px; letter-spacing: 0.5px;">
+        STATUS: ONLINE
     </div>
 </nav>
 
@@ -162,38 +156,38 @@
                 <div class="step-num">01</div>
                 <div style="flex: 1">
                     <h3 style="font-size: 16px; font-weight: 500;">Configuración del Emisor</h3>
-                    <p style="font-size: 12px; color: var(--text-dim);">Datos tributarios del contribuyente[cite: 1, 2]</p>
+                    <p style="font-size: 12px; color: var(--text-dim);">Identificación tributaria del contribuyente[cite: 2]</p>
                 </div>
-                <div id="status1" style="font-size: 10px; color: var(--accent);">EDITANDO</div>
+                <div id="status1" style="font-size: 10px; color: var(--accent); font-weight: 600;">EN PROCESO</div>
             </div>
             <div class="card-body">
                 <div class="grid-form">
                     <div class="field">
                         <label>RUT Contribuyente</label>
-                        <input type="text" id="e_rut" class="mono" placeholder="78377021-0">
+                        <input type="text" id="e_rut" class="mono" placeholder="12.345.678-9">
                     </div>
                     <div class="field">
                         <label>Razón Social</label>
-                        <input type="text" id="e_rs" placeholder="YEPAR SOLUTIONS SPA">
+                        <input type="text" id="e_rs" placeholder="EMPRESA DE PRUEBA SPA">
                     </div>
                     <div class="field full-width">
                         <label>Dirección Casa Matriz</label>
-                        <input type="text" id="e_dir" placeholder="APOQUINDO 6410 OF 1004 PS, LAS CONDES">
+                        <input type="text" id="e_dir" placeholder="AV. SIEMPRE VIVA 742, SANTIAGO">
                     </div>
                     <div class="field">
                         <label>Dirección Regional / Unidad</label>
-                        <input type="text" id="e_regional" placeholder="SANTIAGO ORIENTE">
+                        <input type="text" id="e_regional" placeholder="SANTIAGO CENTRO">
                     </div>
                     <div class="field">
                         <label>Glosa Descriptiva</label>
-                        <input type="text" id="e_glosa" placeholder="Desarrollo de software, servicios informáticos...">
+                        <input type="text" id="e_glosa" placeholder="Servicios de asesoría y tecnología">
                     </div>
                 </div>
 
                 <!-- Actividades Económicas -->
                 <div style="margin-top:32px; padding-top:24px; border-top:1px solid var(--border)">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-                        <label style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; font-weight: 600;">Actividades Económicas (Máximo 5)</label>
+                        <label style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; font-weight: 600;">Actividades Económicas (Máximo 5)[cite: 2]</label>
                         <button class="btn-ghost" id="btn_add" onclick="addActivity()" style="padding: 4px 10px; font-size: 11px;">+ AGREGAR</button>
                     </div>
                     <div id="activities_container">
@@ -202,7 +196,7 @@
                 </div>
 
                 <div style="margin-top: 24px; display: flex; justify-content: flex-end;">
-                    <button class="btn btn-primary" onclick="saveStep1()">Guardar y Continuar</button>
+                    <button class="btn btn-primary" onclick="saveStep1()">Guardar Configuración</button>
                 </div>
             </div>
         </div>
@@ -227,7 +221,7 @@
                     </div>
                 </div>
                 <div style="margin-top: 24px; display: flex; gap: 12px; justify-content: flex-end;">
-                    <button class="btn btn-ghost" onclick="generateSet(33)">Generar Set Factura (33)</button>
+                    <button class="btn btn-ghost" onclick="log('Generando set de prueba...', 'info')">Test Set (33)</button>
                     <button class="btn btn-primary">Subir y Validar</button>
                 </div>
             </div>
@@ -242,7 +236,7 @@
             <span style="cursor:pointer; opacity: 0.5;" onclick="clearLogs()">LIMPIAR</span>
         </div>
         <div class="console-body" id="console">
-            <div class="log-entry">Sistema YeparDTEcore listo para configuración...</div>
+            <div class="log-entry">Esperando configuración del emisor...</div>
         </div>
     </aside>
 </div>
@@ -250,10 +244,9 @@
 <script>
     let activitiesCount = 0;
 
-    // Función para añadir filas de actividad económica[cite: 2]
     function addActivity(codigo = '', descripcion = '', afecto = 'SI') {
         if (activitiesCount >= 5) {
-            log('Límite máximo de 5 actividades alcanzado.', 'warn');
+            log('Atención: Se ha alcanzado el máximo de 5 actividades[cite: 2].', 'warn');
             return;
         }
 
@@ -266,11 +259,11 @@
         div.innerHTML = `
             <div class="field">
                 <label>Código</label>
-                <input type="text" class="mono act-cod" value="${codigo}" placeholder="620200">
+                <input type="text" class="mono act-cod" value="${codigo}" placeholder="702000">
             </div>
             <div class="field">
                 <label>Descripción</label>
-                <input type="text" class="act-desc" value="${descripcion}" placeholder="Consultoría en informática">
+                <input type="text" class="act-desc" value="${descripcion}" placeholder="ASESORIAS DE GESTION">
             </div>
             <div class="field">
                 <label>Afecto IVA</label>
@@ -315,25 +308,24 @@
     function saveStep1() {
         const rut = document.getElementById('e_rut').value;
         if (!rut) {
-            log('Error: RUT del contribuyente es obligatorio.', 'error');
+            log('Error: Debe ingresar un RUT válido para continuar[cite: 2].', 'error');
             return;
         }
         
-        log(`Emisor configurado: ${rut} - Guardando actividades...`, 'success');
-        document.getElementById('status1').textContent = 'COMPLETADO';
+        log(`Paso 01 completado: Emisor ${rut} configurado localmente.`, 'success');
+        document.getElementById('status1').textContent = 'LISTO';
         document.getElementById('card2').classList.remove('locked');
         document.getElementById('card1').classList.remove('active');
         document.getElementById('card2').classList.add('active');
     }
 
     function clearLogs() {
-        document.getElementById('console').innerHTML = '<div class="log-entry">Terminal reiniciada...</div>';
+        document.getElementById('console').innerHTML = '<div class="log-entry">Terminal despejada...</div>';
     }
 
-    // Inicializar con datos de ejemplo (basado en tus capturas)
+    // Datos de ejemplo genéricos al cargar[cite: 2]
     window.onload = () => {
-        addActivity('620200', 'ACTIVIDADES DE CONSULTORIA DE INFORMATICA');
-        addActivity('620900', 'OTRAS ACTIVIDADES DE TECNOLOGIA DE LA INFORMACION');
+        addActivity('702000', 'ASESORIAS EN GESTION');
     }
 </script>
 
