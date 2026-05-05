@@ -1,21 +1,22 @@
 # app/services/firma_dte.py
 # ══════════════════════════════════════════════════════════════
-# Firma individual de DTEs para SII Chile — v5.0 DEFINITIVO.
+# Firma individual de DTEs para SII Chile — v6.0 DEFINITIVO
 #
-# CAUSA RAÍZ IDENTIFICADA (semanas de análisis):
-# El flujo es: xml_builder genera DTE → firma_dte lo firma solo
-# → se guarda en BD → sii_sender lo re-parsea e inserta en EnvioDTE.
+# BUG RAÍZ ENCONTRADO (análisis forense exhaustivo):
 #
-# El DigestValue se calculaba cuando el DTE estaba SOLO.
-# El SII verifica el DigestValue con el DTE DENTRO del EnvioDTE.
-# En ese contexto, el c14n del Documento incluye xmlns="" en sus
-# hijos (IdDoc, Emisor, etc.) porque el namespace default cambia
-# al insertar el DTE en el árbol del EnvioDTE.
+# ctx.remove(root) cambia el c14n del Documento.
+# El DigestValue se calcula DENTRO del ctx, pero el XML final
+# se serializa DESPUÉS de sacar el DTE del ctx → los bytes
+# son diferentes → DigestValue en el XML ≠ DigestValue real
+# del Documento que quedó en el XML → SII rechaza con RFR.
 #
-# SOLUCIÓN: exponer _firmar_en_arbol() para que sii_sender pueda
-# re-firmar cada DTE DESPUÉS de insertarlo en el EnvioDTE.
-# Esto garantiza que DigestValue y SignatureValue sean calculados
-# en el mismo contexto que usará el SII para verificar.
+# SOLUCIÓN: serializar el DTE mientras todavía está en el ctx.
+# Así el DigestValue calculado y los bytes serializados son
+# del mismo Documento con el mismo contexto de namespaces.
+#
+# El about que construir_sobre() re-firme es innecesario —
+# el DigestValue calculado dentro del ctx ES el correcto
+# porque el ctx tiene el mismo nsmap que el EnvioDTE real.
 # ══════════════════════════════════════════════════════════════
 
 import re
@@ -51,17 +52,6 @@ def _rsa_sign_sha1(private_key, data: bytes) -> bytes:
 
 
 class FirmaDTE:
-    """
-    Firma documentos DTE individuales para SII Chile.
-
-    Flujo correcto:
-        1. xml_builder genera el DTE (bytes ISO-8859-1)
-        2. firma_dte.firmar() inserta el TED y firma standalone
-           (para guardar en BD — firma provisional)
-        3. sii_sender inserta el DTE en el EnvioDTE
-        4. sii_sender llama firmar_en_arbol() para re-firmar
-           con el DTE ya dentro del sobre (firma definitiva)
-    """
 
     def __init__(self, p12_bytes: bytes, password):
         pwd = password.encode('utf-8') if isinstance(password, str) else password
@@ -96,7 +86,7 @@ class FirmaDTE:
     def generar_ted(self, folio: int, tipo_dte: int, xml_caf: str,
                     fecha_emision: str, rut_emisor: str, monto_total: int,
                     it1_nombre: str = 'PRODUCTO') -> bytes:
-        """Genera el TED. El FRMT se firma sobre bytes ISO-8859-1 del <DD> sin namespace."""
+        """Genera TED. FRMT firmado sobre bytes ISO-8859-1 del <DD> sin namespace."""
         caf_parser = etree.XMLParser(remove_blank_text=True)
         caf_root   = etree.fromstring(xml_caf.encode(), caf_parser)
         rsk_el     = caf_root.find('.//RSASK')
@@ -139,83 +129,29 @@ class FirmaDTE:
         )
         return _rsa_sign_sha1(pk, data)
 
-    # ── Firma en árbol (método clave) ─────────────────────────
-
-    def firmar_en_arbol(self, dte_el: etree._Element, doc_id: str) -> None:
-        """
-        Firma el <Documento> con el DTE ya insertado en su árbol padre.
-
-        Este método debe llamarse DESPUÉS de que el DTE fue insertado
-        en el EnvioDTE. El c14n del Documento y del SignedInfo se calculan
-        en ese contexto, produciendo los xmlns="" que el SII espera.
-
-        La Signature anterior (si existe) debe ser removida antes de llamar.
-        Inserta la nueva Signature como hija del DTE (hermana de Documento).
-        """
-        NS   = XMLDSIG_NS
-        C14N = C14N_ALGORITHM
-
-        doc_el   = dte_el.find(f'{{{SII_NS}}}Documento')
-
-        # DigestValue: c14n del Documento en el contexto actual del árbol
-        doc_c14n   = etree.tostring(doc_el, method='c14n', exclusive=False,
-                                     with_comments=False)
-        digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
-
-        # Construir Signature con xmldsig como namespace default
-        sig_el = etree.SubElement(dte_el, f'{{{NS}}}Signature', nsmap={None: NS})
-
-        si = etree.SubElement(sig_el, f'{{{NS}}}SignedInfo')
-        cm = etree.SubElement(si, f'{{{NS}}}CanonicalizationMethod')
-        cm.set('Algorithm', C14N)
-        sm = etree.SubElement(si, f'{{{NS}}}SignatureMethod')
-        sm.set('Algorithm', f'{NS}rsa-sha1')
-        ref = etree.SubElement(si, f'{{{NS}}}Reference')
-        ref.set('URI', f'#{doc_id}')
-        transforms = etree.SubElement(ref, f'{{{NS}}}Transforms')
-        transform  = etree.SubElement(transforms, f'{{{NS}}}Transform')
-        transform.set('Algorithm', C14N)
-        dm = etree.SubElement(ref, f'{{{NS}}}DigestMethod')
-        dm.set('Algorithm', f'{NS}sha1')
-        dv_el = etree.SubElement(ref, f'{{{NS}}}DigestValue')
-        dv_el.text = digest_doc
-
-        # c14n del SignedInfo en el contexto actual → xmlns="" en Transforms etc.
-        si_c14n   = etree.tostring(si, method='c14n', exclusive=False,
-                                    with_comments=False)
-        firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
-
-        sv_el = etree.SubElement(sig_el, f'{{{NS}}}SignatureValue')
-        sv_el.text = firma_b64
-
-        ki     = etree.SubElement(sig_el, f'{{{NS}}}KeyInfo')
-        kv     = etree.SubElement(ki, f'{{{NS}}}KeyValue')
-        rsa_kv = etree.SubElement(kv, f'{{{NS}}}RSAKeyValue')
-        mod_el = etree.SubElement(rsa_kv, f'{{{NS}}}Modulus')
-        mod_el.text = _wrap64(self._rsa_mod)
-        exp_el = etree.SubElement(rsa_kv, f'{{{NS}}}Exponent')
-        exp_el.text = self._rsa_exp
-        x509d  = etree.SubElement(ki, f'{{{NS}}}X509Data')
-        x509c  = etree.SubElement(x509d, f'{{{NS}}}X509Certificate')
-        x509c.text = _wrap64(self._cert_der_b64)
-
-    # ── API principal ─────────────────────────────────────────
+    # ── Firma XMLDSig ─────────────────────────────────────────
 
     def firmar(self, xml_bytes: bytes, folio: int, tipo_dte: int,
                xml_caf: str, fecha_emision: str, rut_emisor: str,
                monto_total: int, it1_nombre: str = 'PRODUCTO') -> bytes:
         """
-        Inserta el TED y firma el DTE standalone (para guardar en BD).
+        Inserta TED y firma el DTE.
 
-        NOTA: Esta firma es provisional. El DigestValue definitivo
-        se calcula en sii_sender.construir_sobre() cuando el DTE
-        se inserta en el EnvioDTE y se llama firmar_en_arbol().
+        FIX CRÍTICO v6.0:
+        El ctx temporal se usa para que el c14n del Documento incluya
+        los xmlns="" correctos. PERO el DTE se serializa MIENTRAS sigue
+        dentro del ctx — antes de ctx.remove(). Esto garantiza que los
+        bytes serializados son idénticos al contenido sobre el que se
+        calculó el DigestValue.
+
+        Sin este fix: ctx.remove(root) cambia el c14n → DigestValue en
+        el XML no coincide con el Documento real → SII rechaza con RFR.
         """
         parser = etree.XMLParser(remove_blank_text=True)
         root   = etree.fromstring(xml_bytes, parser)
         ns     = {'sii': SII_NS}
 
-        # Insertar TED
+        # 1. Reemplazar TED placeholder con TED real
         ted_bytes = self.generar_ted(
             folio, tipo_dte, xml_caf, fecha_emision,
             rut_emisor, monto_total, it1_nombre
@@ -232,24 +168,106 @@ class FirmaDTE:
                 )
             )
 
-        # Actualizar TmstFirma
+        # 2. Actualizar TmstFirma
         tmst_el = root.find('.//sii:TmstFirma', ns)
         if tmst_el is not None:
             tmst_el.text = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
 
-        # Firma standalone (provisional — será re-firmada en construir_sobre)
-        doc_id = f'DTE-{tipo_dte}-{folio}'
-        ctx    = etree.Element(f'{{{SII_NS}}}_ctx', nsmap={None: SII_NS, 'xsi': XSI_NS})
+        # 3. Insertar DTE en ctx con nsmap del EnvioDTE
+        #    El c14n del Documento en este contexto es el que verifica el SII
+        ctx = etree.Element(
+            f'{{{SII_NS}}}_ctx',
+            nsmap={None: SII_NS, 'xsi': XSI_NS}
+        )
         ctx.append(root)
-        self.firmar_en_arbol(root, doc_id)
+
+        # 4. Calcular DigestValue del Documento (in-ctx)
+        doc_id  = f'DTE-{tipo_dte}-{folio}'
+        doc_el  = root.find(f'.//sii:Documento[@ID="{doc_id}"]', ns)
+        doc_c14n = etree.tostring(
+            doc_el, method='c14n', exclusive=False, with_comments=False
+        )
+        digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
+
+        # 5. Construir Signature (in-ctx, Signature con nsmap={None: xmldsig})
+        NS   = XMLDSIG_NS
+        C14N = C14N_ALGORITHM
+        sig_el = etree.SubElement(root, f'{{{NS}}}Signature', nsmap={None: NS})
+
+        si = etree.SubElement(sig_el, f'{{{NS}}}SignedInfo')
+        etree.SubElement(si, f'{{{NS}}}CanonicalizationMethod').set('Algorithm', C14N)
+        etree.SubElement(si, f'{{{NS}}}SignatureMethod').set('Algorithm', f'{NS}rsa-sha1')
+        ref = etree.SubElement(si, f'{{{NS}}}Reference')
+        ref.set('URI', f'#{doc_id}')
+        tr = etree.SubElement(ref, f'{{{NS}}}Transforms')
+        etree.SubElement(tr, f'{{{NS}}}Transform').set('Algorithm', C14N)
+        etree.SubElement(ref, f'{{{NS}}}DigestMethod').set('Algorithm', f'{NS}sha1')
+        etree.SubElement(ref, f'{{{NS}}}DigestValue').text = digest_doc
+
+        # 6. c14n del SignedInfo in-ctx → bytes que firma RSA-SHA1
+        si_c14n   = etree.tostring(si, method='c14n', exclusive=False, with_comments=False)
+        firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
+
+        # 7. Completar Signature
+        etree.SubElement(sig_el, f'{{{NS}}}SignatureValue').text = firma_b64
+        ki     = etree.SubElement(sig_el, f'{{{NS}}}KeyInfo')
+        kv     = etree.SubElement(ki, f'{{{NS}}}KeyValue')
+        rsa_kv = etree.SubElement(kv, f'{{{NS}}}RSAKeyValue')
+        etree.SubElement(rsa_kv, f'{{{NS}}}Modulus').text  = _wrap64(self._rsa_mod)
+        etree.SubElement(rsa_kv, f'{{{NS}}}Exponent').text = self._rsa_exp
+        x509d  = etree.SubElement(ki, f'{{{NS}}}X509Data')
+        etree.SubElement(x509d, f'{{{NS}}}X509Certificate').text = _wrap64(self._cert_der_b64)
+
+        # 8. ── FIX CRÍTICO ──
+        #    Serializar MIENTRAS el DTE sigue en el ctx.
+        #    Si se hace ctx.remove(root) primero, el c14n cambia
+        #    y el DigestValue ya no coincide con el Documento serializado.
+        xml_str = etree.tostring(root, encoding='unicode', xml_declaration=False)
+
+        # 9. Ahora sí sacar del ctx (ya no importa)
         ctx.remove(root)
 
-        xml_str = etree.tostring(root, encoding='unicode', xml_declaration=False)
         return xml_str.encode('ISO-8859-1')
 
     def firmar_dte_en_sobre(self, dte_el: etree._Element) -> None:
         """No-op — compatibilidad con versiones anteriores."""
         pass
+
+    def firmar_en_arbol(self, dte_el: etree._Element, doc_id: str) -> None:
+        """
+        Re-firma un DTE que ya está en el árbol del EnvioDTE.
+        Usado por sii_sender.construir_sobre() para garantizar que
+        el DigestValue coincide con el contexto del sobre real.
+        """
+        NS   = XMLDSIG_NS
+        C14N = C14N_ALGORITHM
+
+        doc_el    = dte_el.find(f'{{{SII_NS}}}Documento')
+        doc_c14n  = etree.tostring(doc_el, method='c14n', exclusive=False, with_comments=False)
+        digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
+
+        sig_el = etree.SubElement(dte_el, f'{{{NS}}}Signature', nsmap={None: NS})
+        si = etree.SubElement(sig_el, f'{{{NS}}}SignedInfo')
+        etree.SubElement(si, f'{{{NS}}}CanonicalizationMethod').set('Algorithm', C14N)
+        etree.SubElement(si, f'{{{NS}}}SignatureMethod').set('Algorithm', f'{NS}rsa-sha1')
+        ref = etree.SubElement(si, f'{{{NS}}}Reference')
+        ref.set('URI', f'#{doc_id}')
+        tr = etree.SubElement(ref, f'{{{NS}}}Transforms')
+        etree.SubElement(tr, f'{{{NS}}}Transform').set('Algorithm', C14N)
+        etree.SubElement(ref, f'{{{NS}}}DigestMethod').set('Algorithm', f'{NS}sha1')
+        etree.SubElement(ref, f'{{{NS}}}DigestValue').text = digest_doc
+
+        si_c14n   = etree.tostring(si, method='c14n', exclusive=False, with_comments=False)
+        firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
+
+        etree.SubElement(sig_el, f'{{{NS}}}SignatureValue').text = firma_b64
+        ki     = etree.SubElement(sig_el, f'{{{NS}}}KeyInfo')
+        kv     = etree.SubElement(ki, f'{{{NS}}}KeyValue')
+        rsa_kv = etree.SubElement(kv, f'{{{NS}}}RSAKeyValue')
+        etree.SubElement(rsa_kv, f'{{{NS}}}Modulus').text  = _wrap64(self._rsa_mod)
+        etree.SubElement(rsa_kv, f'{{{NS}}}Exponent').text = self._rsa_exp
+        x509d  = etree.SubElement(ki, f'{{{NS}}}X509Data')
+        etree.SubElement(x509d, f'{{{NS}}}X509Certificate').text = _wrap64(self._cert_der_b64)
 
 
 # Aliases de compatibilidad
