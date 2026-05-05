@@ -1,7 +1,7 @@
 # app/services/xml_builder.py
 # Validado contra DTE_v10.xsd oficial SII
 # FIXES: orden de elementos segun XSD, DscRcgGlobal en posicion correcta,
-#        cod_ref acepta "SET", TpoTranVenta ANTES de FmaPago (orden XSD correcto)
+#        cod_ref acepta "SET", ELIMINADO TpoTranVenta (no existe en DTE_v10.xsd)
 
 from lxml import etree
 from datetime import date, datetime, timezone
@@ -202,8 +202,8 @@ class XMLBuilder:
         iddoc = etree.SubElement(enc, f"{{{NS}}}IdDoc")
 
         # Orden XSD: TipoDTE, Folio, FchEmis, [IndNoRebaja], [TipoDespacho],
-        # [IndTraslado], [TpoImpresion], [IndServicio], [MntBruto],
-        # [TpoTranCompra], [TpoTranVenta], [FmaPago], ...
+        # [IndTraslado], [TpoImpresion], [IndServicio], [MntBruto], [FmaPago], ...
+        # NOTA: TpoTranVenta y TpoTranCompra NO existen en DTE_v10.xsd
         etree.SubElement(iddoc, f"{{{NS}}}TipoDTE").text = str(tipo)
         etree.SubElement(iddoc, f"{{{NS}}}Folio").text   = str(d.folio)
         etree.SubElement(iddoc, f"{{{NS}}}FchEmis").text = d.fecha_emision.strftime("%Y-%m-%d")
@@ -212,13 +212,13 @@ class XMLBuilder:
             etree.SubElement(iddoc, f"{{{NS}}}IndTraslado").text = str(d.indicador_traslado or 1)
 
         if es_boleta:
+            # Boletas (39, 41): IndServicio=3 OBLIGATORIO; sin FmaPago
             etree.SubElement(iddoc, f"{{{NS}}}IndServicio").text = "3"
-        else:
-            # ORDEN CORRECTO segun XSD DTE_v10.xsd (confirmado en lineas 182-194):
-            # secuencia obligatoria: ... TpoTranCompra → TpoTranVenta → FmaPago ...
-            # BUG PREVIO: FmaPago aparecia ANTES de TpoTranVenta → falla cvc-complex-type.2.4.a
-            etree.SubElement(iddoc, f"{{{NS}}}TpoTranVenta").text = "1"
-            etree.SubElement(iddoc, f"{{{NS}}}FmaPago").text      = str(d.forma_pago)
+        elif tipo in (33, 34):
+            # Facturas afecta/exenta: FmaPago opcional pero recomendado.
+            # ELIMINADO TpoTranVenta — NO existe en DTE_v10.xsd (causaba RFR y 8 errores XSD)
+            etree.SubElement(iddoc, f"{{{NS}}}FmaPago").text = str(d.forma_pago)
+        # Notas 56/61: sin FmaPago (son correcciones de documentos, no ventas nuevas)
 
         # Emisor: RUTEmisor, RznSoc, GiroEmis, [Telefono], [CorreoEmisor],
         # [Acteco], ..., DirOrigen, CmnaOrigen, CiudadOrigen
