@@ -1,295 +1,340 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>YeparDTEcore — Panel de Control</title>
-<!-- Fuentes: Outfit para lectura y JetBrains Mono para datos técnicos -->
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg-deep: #07090f;
-    --bg-card: #131922;
-    --bg-input: #0e1219;
-    --accent: #10b981;
-    --accent-dim: rgba(16, 185, 129, 0.1);
-    --border: rgba(255, 255, 255, 0.07);
-    --text-main: #e2e8f0;
-    --text-dim: #64748b;
-  }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YeparDTEcore — Panel de Administración</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-deep: #07090f;
+            --bg-card: #131922;
+            --bg-input: #0e1219;
+            --accent: #10b981;
+            --accent-dim: rgba(16, 185, 129, 0.1);
+            --border: rgba(255, 255, 255, 0.07);
+            --text-main: #e2e8f0;
+            --text-dim: #64748b;
+            --error: #ef4444;
+        }
 
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  
-  body {
-    background-color: var(--bg-deep);
-    color: var(--text-main);
-    font-family: 'Outfit', sans-serif;
-    line-height: 1.6;
-    min-height: 100vh;
-  }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: var(--bg-deep);
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            display: flex; flex-direction: column;
+        }
 
-  /* Efecto de rejilla sutil al fondo */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    background-image: linear-gradient(rgba(16,185,129,.02) 1px, transparent 1px), 
-                      linear-gradient(90deg, rgba(16,185,129,.02) 1px, transparent 1px);
-    background-size: 40px 40px;
-  }
+        /* Rejilla de fondo */
+        body::before {
+            content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+            background-image: linear-gradient(rgba(16,185,129,.02) 1px, transparent 1px), 
+                              linear-gradient(90deg, rgba(16,185,129,.02) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
 
-  /* Header / Navbar */
-  nav {
-    position: sticky; top: 0; z-index: 100;
-    background: rgba(7, 9, 15, 0.95);
-    backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--border);
-    padding: 0 24px; height: 60px;
-    display: flex; align-items: center; gap: 16px;
-  }
+        nav {
+            position: sticky; top: 0; z-index: 100;
+            background: rgba(7, 9, 15, 0.9); backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 0 24px; height: 64px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
 
-  .urlbar {
-    flex: 1; display: flex; align-items: center; gap: 8px;
-    background: var(--bg-input);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px; padding: 0 12px; height: 38px;
-  }
+        .logo { font-weight: 600; color: var(--accent); font-size: 20px; letter-spacing: -0.5px; }
+        
+        .main-layout {
+            position: relative; z-index: 1;
+            max-width: 1300px; margin: 0 auto;
+            display: grid; grid-template-columns: 1fr 380px; gap: 24px;
+            padding: 32px 24px; width: 100%;
+        }
 
-  .urlbar span { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); }
-  .urlbar input { 
-    background: none; border: none; outline: none; color: var(--text-main); 
-    font-family: 'JetBrains Mono', monospace; font-size: 13px; width: 100%;
-  }
+        /* Tarjetas */
+        .card {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 16px; margin-bottom: 20px; overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        .card.active { border-color: rgba(16, 185, 129, 0.3); box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5); }
+        .card.locked { opacity: 0.5; filter: grayscale(1); pointer-events: none; }
 
-  /* Layout Principal */
-  .main {
-    position: relative; z-index: 1;
-    max-width: 1200px; margin: 0 auto;
-    padding: 32px 24px;
-    display: grid; grid-template-columns: 1fr 360px; gap: 24px;
-  }
+        .card-header {
+            padding: 20px 24px; display: flex; align-items: center; gap: 16px;
+            cursor: pointer; background: rgba(255,255,255,0.02);
+        }
+        .step-num {
+            width: 30px; height: 30px; border-radius: 8px;
+            background: var(--bg-input); border: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--text-dim);
+        }
+        .card.active .step-num { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
 
-  /* Tarjetas de Pasos */
-  .card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 14px; margin-bottom: 16px;
-    overflow: hidden; transition: border-color 0.3s;
-  }
+        .card-body { padding: 24px; display: none; }
+        .card.active .card-body { display: block; }
 
-  .card.active { border-color: rgba(16, 185, 129, 0.4); }
-  .card.locked { opacity: 0.5; pointer-events: none; }
+        /* Formulario */
+        .grid-form { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .full-width { grid-column: 1 / -1; }
+        .field { display: flex; flex-direction: column; gap: 8px; }
+        .field label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+        
+        input, select, textarea {
+            background: var(--bg-input); border: 1px solid var(--border);
+            border-radius: 10px; padding: 12px 16px; color: var(--text-main);
+            font-family: 'Outfit', sans-serif; font-size: 14px;
+            transition: all 0.2s;
+        }
+        input:focus { border-color: var(--accent); outline: none; background: #121820; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
 
-  .card-header {
-    padding: 20px; display: flex; align-items: center; gap: 15px;
-    cursor: pointer; border-bottom: 1px solid var(--border);
-  }
+        /* Actividades Económicas */
+        .act-row { 
+            display: grid; grid-template-columns: 120px 1fr 100px 40px; 
+            gap: 12px; align-items: flex-end; margin-bottom: 12px;
+            animation: fadeIn 0.3s ease;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 
-  .step-num {
-    width: 28px; height: 28px; border-radius: 50%;
-    background: var(--bg-input); border: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: center;
-    font-family: 'JetBrains Mono', monospace; font-size: 12px;
-  }
+        .btn-del {
+            background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2);
+            color: var(--error); border-radius: 8px; height: 42px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; font-size: 18px;
+        }
+        .btn-del:hover { background: var(--error); color: white; }
 
-  .card.active .step-num { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
+        /* Botones */
+        .btn {
+            padding: 12px 24px; border-radius: 10px; border: none;
+            font-weight: 600; cursor: pointer; transition: all 0.2s;
+            display: inline-flex; align-items: center; gap: 10px; font-size: 14px;
+        }
+        .btn-primary { background: var(--accent); color: #07090f; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 5px 15px var(--accent-dim); }
+        .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-main); }
+        .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
 
-  .card-body { padding: 24px; display: none; }
-  .card.active .card-body { display: block; }
+        /* Consola */
+        .console {
+            position: sticky; top: 96px; height: calc(100vh - 128px);
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 16px; display: flex; flex-direction: column;
+        }
+        .console-header {
+            padding: 14px 20px; border-bottom: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center;
+            font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim);
+        }
+        .console-body {
+            flex: 1; padding: 16px; overflow-y: auto;
+            font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.5;
+        }
+        .log-entry { margin-bottom: 8px; padding-left: 12px; border-left: 2px solid #334155; }
+        .log-success { border-color: var(--accent); color: #6ee7b7; }
+        .log-warn { border-color: #f59e0b; color: #fcd34d; }
+        .log-error { border-color: var(--error); color: #fca5a5; }
+        .log-time { color: var(--text-dim); margin-right: 8px; font-size: 10px; }
 
-  /* Inputs y Formularios */
-  .field-group { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-  .field label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
-  
-  input, select {
-    background: var(--bg-input); border: 1px solid var(--border);
-    border-radius: 8px; padding: 10px 14px; color: var(--text-main);
-    font-family: 'Outfit', sans-serif; transition: border-color 0.2s;
-  }
-
-  input:focus { border-color: var(--accent); outline: none; }
-
-  /* Botones */
-  .btn {
-    padding: 10px 20px; border-radius: 8px; border: none;
-    font-weight: 500; cursor: pointer; transition: all 0.2s;
-    display: inline-flex; align-items: center; gap: 8px;
-  }
-
-  .btn-primary { background: var(--accent); color: #000; }
-  .btn-primary:hover { transform: translateY(-1px); opacity: 0.9; }
-
-  .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-main); }
-  .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
-
-  /* Consola Lateral */
-  .console {
-    position: sticky; top: 84px;
-    background: var(--bg-card); border: 1px solid var(--border);
-    border-radius: 14px; height: calc(100vh - 120px); display: flex; flex-direction: column;
-  }
-
-  .console-header {
-    padding: 12px 16px; border-bottom: 1px solid var(--border);
-    display: flex; justify-content: space-between; align-items: center;
-    font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim);
-  }
-
-  .console-body {
-    flex: 1; padding: 12px; overflow-y: auto;
-    font-family: 'JetBrains Mono', monospace; font-size: 11px;
-  }
-
-  .log-entry { margin-bottom: 6px; border-left: 2px solid transparent; padding-left: 8px; }
-  .log-time { color: var(--text-dim); margin-right: 8px; }
-  .log-info { border-color: #3b82f6; color: #93c5fd; }
-  .log-success { border-color: var(--accent); color: #6ee7b7; }
-  .log-error { border-color: #ef4444; color: #fca5a5; }
-
-  @media (max-width: 900px) {
-    .main { grid-template-columns: 1fr; }
-    .console { position: static; height: 300px; }
-  }
-</style>
+        @media (max-width: 1000px) {
+            .main-layout { grid-template-columns: 1fr; }
+            .console { height: 350px; position: static; }
+        }
+    </style>
 </head>
 <body>
 
 <nav>
-  <div style="font-weight: 600; color: var(--accent); font-size: 18px;">YeparDTEcore</div>
-  <div class="urlbar">
-    <span>ENDPOINT</span>
-    <input type="text" id="apiUrl" value="https://yepardtecore.cl">
-  </div>
-  <button class="btn btn-outline" onclick="checkConnection()">Test API</button>
+    <div class="logo">YeparDTEcore <span style="font-weight: 300; font-size: 12px; color: var(--text-dim); margin-left: 8px;">v1.0.4</span></div>
+    <div class="btn-ghost" style="padding: 6px 12px; font-size: 12px; font-family: 'JetBrains Mono'; border-radius: 6px;">
+        API: https://api.yepardtecore.cl
+    </div>
 </nav>
 
-<div class="main">
-  <div class="steps-container">
-    
-    <!-- Paso 1: Emisor -->
-    <div class="card active" id="step1">
-      <div class="card-header" onclick="toggleStep(1)">
-        <div class="step-num">1</div>
-        <div style="flex: 1">Configuración del Emisor</div>
-        <span id="badge1" style="font-size: 10px; color: var(--text-dim);">PENDIENTE</span>
-      </div>
-      <div class="card-body">
-        <div class="field-group">
-          <div class="field">
-            <label>RUT Empresa</label>
-            <input type="text" id="rut" placeholder="78377021-0">
-          </div>
-          <div class="field">
-            <label>Razón Social</label>
-            <input type="text" id="rsocial" placeholder="Servicios Tecnológicos SpA">
-          </div>
+<div class="main-layout">
+    <div class="steps">
+        
+        <!-- PASO 1: EMISOR -->
+        <div class="card active" id="card1">
+            <div class="card-header" onclick="toggleCard(1)">
+                <div class="step-num">01</div>
+                <div style="flex: 1">
+                    <h3 style="font-size: 16px; font-weight: 500;">Configuración del Emisor</h3>
+                    <p style="font-size: 12px; color: var(--text-dim);">Datos tributarios del contribuyente[cite: 1, 2]</p>
+                </div>
+                <div id="status1" style="font-size: 10px; color: var(--accent);">EDITANDO</div>
+            </div>
+            <div class="card-body">
+                <div class="grid-form">
+                    <div class="field">
+                        <label>RUT Contribuyente</label>
+                        <input type="text" id="e_rut" class="mono" placeholder="78377021-0">
+                    </div>
+                    <div class="field">
+                        <label>Razón Social</label>
+                        <input type="text" id="e_rs" placeholder="YEPAR SOLUTIONS SPA">
+                    </div>
+                    <div class="field full-width">
+                        <label>Dirección Casa Matriz</label>
+                        <input type="text" id="e_dir" placeholder="APOQUINDO 6410 OF 1004 PS, LAS CONDES">
+                    </div>
+                    <div class="field">
+                        <label>Dirección Regional / Unidad</label>
+                        <input type="text" id="e_regional" placeholder="SANTIAGO ORIENTE">
+                    </div>
+                    <div class="field">
+                        <label>Glosa Descriptiva</label>
+                        <input type="text" id="e_glosa" placeholder="Desarrollo de software, servicios informáticos...">
+                    </div>
+                </div>
+
+                <!-- Actividades Económicas -->
+                <div style="margin-top:32px; padding-top:24px; border-top:1px solid var(--border)">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                        <label style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; font-weight: 600;">Actividades Económicas (Máximo 5)</label>
+                        <button class="btn-ghost" id="btn_add" onclick="addActivity()" style="padding: 4px 10px; font-size: 11px;">+ AGREGAR</button>
+                    </div>
+                    <div id="activities_container">
+                        <!-- Filas dinámicas aquí -->
+                    </div>
+                </div>
+
+                <div style="margin-top: 24px; display: flex; justify-content: flex-end;">
+                    <button class="btn btn-primary" onclick="saveStep1()">Guardar y Continuar</button>
+                </div>
+            </div>
         </div>
-        <div class="field">
-          <label>Giro Comercial</label>
-          <input type="text" id="giro" placeholder="Consultoría en informática">
+
+        <!-- PASO 2: CERTIFICADO -->
+        <div class="card locked" id="card2">
+            <div class="card-header" onclick="toggleCard(2)">
+                <div class="step-num">02</div>
+                <div style="flex: 1">
+                    <h3 style="font-size: 16px; font-weight: 500;">Firma Digital & Certificación</h3>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="grid-form">
+                    <div class="field full-width">
+                        <label>Archivo Certificado (.p12 / .pfx)</label>
+                        <input type="file" id="cert_file">
+                    </div>
+                    <div class="field">
+                        <label>Contraseña Certificado</label>
+                        <input type="password" id="cert_pass" placeholder="••••••••">
+                    </div>
+                </div>
+                <div style="margin-top: 24px; display: flex; gap: 12px; justify-content: flex-end;">
+                    <button class="btn btn-ghost" onclick="generateSet(33)">Generar Set Factura (33)</button>
+                    <button class="btn btn-primary">Subir y Validar</button>
+                </div>
+            </div>
         </div>
-        <button class="btn btn-primary" onclick="saveEmisor()">Guardar y Continuar</button>
-      </div>
+
     </div>
 
-    <!-- Paso 2: Certificado -->
-    <div class="card locked" id="step2">
-      <div class="card-header" onclick="toggleStep(2)">
-        <div class="step-num">2</div>
-        <div style="flex: 1">Firma Electrónica (.p12)</div>
-      </div>
-      <div class="card-body">
-        <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 15px;">Sube tu archivo de certificado digital para firmar los documentos.</p>
-        <div class="field">
-          <input type="file" id="p12file" accept=".p12,.pfx">
+    <!-- CONSOLA LATERAL -->
+    <aside class="console">
+        <div class="console-header">
+            <span>TERMINAL LOG</span>
+            <span style="cursor:pointer; opacity: 0.5;" onclick="clearLogs()">LIMPIAR</span>
         </div>
-        <div class="field">
-          <label>Contraseña del Certificado</label>
-          <input type="password" id="p12pass" placeholder="••••••••">
+        <div class="console-body" id="console">
+            <div class="log-entry">Sistema YeparDTEcore listo para configuración...</div>
         </div>
-        <button class="btn btn-primary" onclick="uploadCert()">Subir Certificado</button>
-      </div>
-    </div>
-
-    <!-- Paso 3: Certificación -->
-    <div class="card locked" id="step3">
-      <div class="card-header" onclick="toggleStep(3)">
-        <div class="step-num">3</div>
-        <div style="flex: 1">Certificación ante el SII</div>
-      </div>
-      <div class="card-body">
-        <div style="display: grid; gap: 12px;">
-          <button class="btn btn-outline" onclick="generateSet(39)">
-            📄 Generar Set Boletas (Tipo 39/41)
-          </button>
-          <button class="btn btn-outline" onclick="generateSet(33)">
-            💼 Generar Set Básico Facturas (N° 4784337)
-          </button>
-        </div>
-      </div>
-    </div>
-
-  </div>
-
-  <!-- Consola -->
-  <aside class="console">
-    <div class="console-header">
-      <span>CONSOLA API</span>
-      <span style="cursor:pointer" onclick="clearConsole()">Limpiar</span>
-    </div>
-    <div class="console-body" id="consoleBody">
-      <div class="log-entry log-info">
-        <span class="log-time">16:45:01</span> Sistema listo para operar.
-      </div>
-    </div>
-  </aside>
+    </aside>
 </div>
 
 <script>
-  function log(msg, type = 'info') {
-    const body = document.getElementById('consoleBody');
-    const time = new Date().toLocaleTimeString('es-CL', { hour12: false });
-    const div = document.createElement('div');
-    div.className = `log-entry log-${type}`;
-    div.innerHTML = `<span class="log-time">${time}</span> ${msg}`;
-    body.appendChild(div);
-    body.scrollTop = body.scrollHeight;
-  }
+    let activitiesCount = 0;
 
-  function toggleStep(n) {
-    const card = document.getElementById(`step${n}`);
-    if (card.classList.contains('locked')) return;
-    card.classList.toggle('active');
-  }
+    // Función para añadir filas de actividad económica[cite: 2]
+    function addActivity(codigo = '', descripcion = '', afecto = 'SI') {
+        if (activitiesCount >= 5) {
+            log('Límite máximo de 5 actividades alcanzado.', 'warn');
+            return;
+        }
 
-  function unlockStep(n) {
-    const card = document.getElementById(`step${n}`);
-    card.classList.remove('locked');
-    card.classList.add('active');
-    log(`Paso ${n} desbloqueado`, 'success');
-  }
+        activitiesCount++;
+        const container = document.getElementById('activities_container');
+        const div = document.createElement('div');
+        div.className = 'act-row';
+        div.id = `act_${activitiesCount}`;
 
-  async function checkConnection() {
-    log('Probando conexión con endpoint...');
-    // Simulación de fetch
-    setTimeout(() => log('Conexión establecida con éxito.', 'success'), 500);
-  }
+        div.innerHTML = `
+            <div class="field">
+                <label>Código</label>
+                <input type="text" class="mono act-cod" value="${codigo}" placeholder="620200">
+            </div>
+            <div class="field">
+                <label>Descripción</label>
+                <input type="text" class="act-desc" value="${descripcion}" placeholder="Consultoría en informática">
+            </div>
+            <div class="field">
+                <label>Afecto IVA</label>
+                <select class="act-iva">
+                    <option value="SI" ${afecto === 'SI' ? 'selected' : ''}>SI</option>
+                    <option value="NO" ${afecto === 'NO' ? 'selected' : ''}>NO</option>
+                </select>
+            </div>
+            <button class="btn-del" onclick="removeActivity('${div.id}')">×</button>
+        `;
 
-  function saveEmisor() {
-    const rut = document.getElementById('rut').value;
-    if(!rut) return log('RUT es obligatorio', 'error');
-    log(`Emisor ${rut} guardado en base de datos.`, 'success');
-    document.getElementById('badge1').textContent = 'COMPLETADO';
-    document.getElementById('badge1').style.color = '#10b981';
-    unlockStep(2);
-  }
+        container.appendChild(div);
+        checkButtonStatus();
+    }
 
-  function clearConsole() {
-    document.getElementById('consoleBody').innerHTML = '';
-  }
+    function removeActivity(id) {
+        document.getElementById(id).remove();
+        activitiesCount--;
+        checkButtonStatus();
+    }
+
+    function checkButtonStatus() {
+        document.getElementById('btn_add').style.display = activitiesCount >= 5 ? 'none' : 'block';
+    }
+
+    function log(msg, type = 'info') {
+        const consoleEl = document.getElementById('console');
+        const time = new Date().toLocaleTimeString('es-CL', { hour12: false });
+        const div = document.createElement('div');
+        div.className = `log-entry log-${type}`;
+        div.innerHTML = `<span class="log-time">[${time}]</span> ${msg}`;
+        consoleEl.appendChild(div);
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+
+    function toggleCard(n) {
+        const card = document.getElementById(`card${n}`);
+        if (card.classList.contains('locked')) return;
+        card.classList.toggle('active');
+    }
+
+    function saveStep1() {
+        const rut = document.getElementById('e_rut').value;
+        if (!rut) {
+            log('Error: RUT del contribuyente es obligatorio.', 'error');
+            return;
+        }
+        
+        log(`Emisor configurado: ${rut} - Guardando actividades...`, 'success');
+        document.getElementById('status1').textContent = 'COMPLETADO';
+        document.getElementById('card2').classList.remove('locked');
+        document.getElementById('card1').classList.remove('active');
+        document.getElementById('card2').classList.add('active');
+    }
+
+    function clearLogs() {
+        document.getElementById('console').innerHTML = '<div class="log-entry">Terminal reiniciada...</div>';
+    }
+
+    // Inicializar con datos de ejemplo (basado en tus capturas)
+    window.onload = () => {
+        addActivity('620200', 'ACTIVIDADES DE CONSULTORIA DE INFORMATICA');
+        addActivity('620900', 'OTRAS ACTIVIDADES DE TECNOLOGIA DE LA INFORMACION');
+    }
 </script>
 
 </body>
