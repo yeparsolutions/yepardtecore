@@ -1,19 +1,9 @@
-# app/services/firma_sobre.py
-# ══════════════════════════════════════════════════════════════
-# Firma del sobre EnvioDTE para SII Chile — v3.0
+# app/services/firma_sobre.py  v3.1
+# Firma del sobre EnvioDTE para SII Chile
 #
-# FIX CRÍTICO (diagnóstico definitivo 2026-05-05):
-#
-# El c14n in-tree de lxml genera xmlns="" en los elementos hijos
-# del SetDTE cuando hay múltiples contextos de namespace en el
-# árbol (SII + xmldsig). El SII usa c14n standalone y obtiene
-# bytes completamente diferentes → DigestValue incorrecto → RFR.
-#
-# Fix: usar _c14n_standalone() para TODAS las computaciones de
-# DigestValue y SignedInfo. Método: serializar el elemento
-# (captura todos los namespace en-scope), re-parsear como
-# documento independiente, calcular c14n sin artifacts.
-# ══════════════════════════════════════════════════════════════
+# FIX v3.1: c14n in-tree para DigestValue del SetDTE y SignedInfo.
+# El SII verifica el SetDTE en contexto del EnvioDTE (in-tree).
+# Usar el mismo metodo garantiza que los valores coincidan.
 
 import hashlib
 import textwrap
@@ -32,24 +22,9 @@ C14N_ALGORITHM = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
 
 
 def _wrap64(s: str) -> str:
-    """Formatea base64 en líneas de 64 caracteres."""
+    """Formatea base64 en lineas de 64 caracteres."""
     clean = s.replace('\n', '').replace(' ', '')
     return '\n' + '\n'.join(textwrap.wrap(clean, 64)) + '\n'
-
-
-def _c14n_standalone(el: etree._Element) -> bytes:
-    """
-    C14N standalone: serializar → re-parsear → c14n.
-
-    Evita los xmlns="" artifacts que lxml genera cuando se hace
-    c14n de un sub-elemento dentro de un árbol con múltiples
-    contextos de namespace. El SII usa este mismo método.
-    """
-    raw_bytes  = etree.tostring(el)
-    standalone = etree.fromstring(raw_bytes)
-    return etree.tostring(
-        standalone, method='c14n', exclusive=False, with_comments=False
-    )
 
 
 def _rsa_sign_sha1(private_key, data: bytes) -> bytes:
@@ -64,10 +39,7 @@ def _rsa_sign_sha1(private_key, data: bytes) -> bytes:
 
 
 class FirmaSobre:
-    """
-    Firma el sobre EnvioDTE (referencia al SetDTE#SetDoc).
-    Recibe el EnvioDTE con los DTEs ya firmados e inserta la Signature final.
-    """
+    """Firma el sobre EnvioDTE (referencia al SetDTE#SetDoc)."""
 
     def __init__(self, p12_bytes: bytes, password):
         pwd = password.encode('utf-8') if isinstance(password, str) else password
@@ -90,10 +62,9 @@ class FirmaSobre:
         """
         Firma el SetDTE y retorna el EnvioDTE completo con la Signature.
 
-        v3.0 FIX: usa c14n standalone para DigestValue del SetDTE y
-        para el c14n del SignedInfo que firma RSA. Esto elimina los
-        xmlns="" artifacts del c14n in-tree y produce los mismos bytes
-        que espera el SII para verificar la firma del sobre.
+        Usa c14n in-tree para DigestValue del SetDTE y para el c14n del
+        SignedInfo. El SII verifica usando el mismo metodo, por lo que
+        los valores coinciden exactamente.
         """
         NS   = XMLDSIG_NS
         C14N = C14N_ALGORITHM
@@ -104,16 +75,15 @@ class FirmaSobre:
 
         set_el = root.find(".//sii:SetDTE[@ID='SetDoc']", ns)
 
-        # DigestValue del SetDTE — c14n IN-TREE
-        # El SII verifica el SetDTE en el contexto del EnvioDTE (in-tree).
-        # Nosotros usamos el mismo método → DigestValues coinciden. ✓
+        # DigestValue del SetDTE con c14n in-tree
         set_c14n   = etree.tostring(
             set_el, method='c14n', exclusive=False, with_comments=False
         )
         digest_val = b64encode(hashlib.sha1(set_c14n).digest()).decode()
 
         # Construir Signature
-        sig_el = etree.SubElement(root, f'{{{NS}}}Signature', nsmap={None: NS})
+        sig_el = etree.SubElement(root, f'{{{NS}}}Signature',
+                                   nsmap={None: NS})
 
         si = etree.SubElement(sig_el, f'{{{NS}}}SignedInfo')
         cm = etree.SubElement(si, f'{{{NS}}}CanonicalizationMethod')
@@ -130,8 +100,7 @@ class FirmaSobre:
         dv_el = etree.SubElement(ref, f'{{{NS}}}DigestValue')
         dv_el.text = digest_val
 
-        # c14n IN-TREE del SignedInfo para RSA
-        # El Signature está directamente en EnvioDTE → c14n in-tree es correcto
+        # c14n in-tree del SignedInfo para RSA
         si_c14n   = etree.tostring(
             si, method='c14n', exclusive=False, with_comments=False
         )
