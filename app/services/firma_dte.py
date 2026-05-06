@@ -30,6 +30,27 @@ def _wrap64(s: str) -> str:
     return '\n' + '\n'.join(textwrap.wrap(clean, 64)) + '\n'
 
 
+def _c14n_standalone(el) -> bytes:
+    """
+    C14N standalone: serializa el elemento con sus namespaces en-scope,
+    re-parsea como documento independiente, y calcula c14n.
+
+    El SII verifica DigestValues usando este metodo (equivalente a extraer
+    el elemento del documento y re-serializarlo aislado). Usar in-tree c14n
+    produce xmlns="" spurios (causados por interaccion con namespaces de
+    elementos Signature en el arbol) que cambian el DigestValue.
+
+    Esto se confirmo empiricamente: el 01/05 con el codigo original
+    (que usaba _c14n_standalone) el sobre daba EPR. Los DigestValues
+    calculados por el SII coinciden con el resultado de este metodo.
+    """
+    raw_bytes  = etree.tostring(el)
+    standalone = etree.fromstring(raw_bytes)
+    return etree.tostring(
+        standalone, method='c14n', exclusive=False, with_comments=False
+    )
+
+
 def _rsa_sign_sha1(private_key, data: bytes) -> bytes:
     """Firma SHA1withRSA (PKCS#1 v1.5)."""
     digest = hashlib.sha1(data).digest()
@@ -286,12 +307,10 @@ class FirmaDTE:
         #    lxml acepta str Unicode sin problemas de codificacion.
         root_final = etree.fromstring(xml_con_ted, parser)
 
-        # 5. DigestValue con c14n in-tree
+        # 5. DigestValue con _c14n_standalone (el SII verifica con este metodo)
         doc_id = f'DTE-{tipo_dte}-{folio}'
         doc_el = root_final.find(f'.//sii:Documento[@ID="{doc_id}"]', ns)
-        doc_c14n   = etree.tostring(
-            doc_el, method='c14n', exclusive=False, with_comments=False
-        )
+        doc_c14n   = _c14n_standalone(doc_el)
         digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
         # 6. Signature
@@ -311,10 +330,11 @@ class FirmaDTE:
         """
         doc_el = dte_el.find(f'{{{SII_NS}}}Documento')
 
-        # DigestValue in-tree (igual que el SII al verificar)
-        doc_c14n   = etree.tostring(
-            doc_el, method='c14n', exclusive=False, with_comments=False
-        )
+        # DigestValue con _c14n_standalone.
+        # El SII verifica el Documento con _c14n_standalone (no in-tree).
+        # In-tree c14n produce xmlns="" spurios en IdDoc/TipoDTE/etc.
+        # que cambian el hash. _c14n_standalone da el valor correcto.
+        doc_c14n   = _c14n_standalone(doc_el)
         digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
         sig_el, si_el = self._build_signature(dte_el, doc_id, digest_doc)
