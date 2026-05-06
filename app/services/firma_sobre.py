@@ -100,9 +100,17 @@ class FirmaSobre:
         dv_el = etree.SubElement(ref, f'{{{NS}}}DigestValue')
         dv_el.text = digest_val
 
-        # c14n in-tree del SignedInfo para RSA
+        # c14n STANDALONE del SignedInfo para RSA.
+        # CRITICO: el c14n in-tree agrega xmlns="" en Transforms/Transform/etc.
+        # porque el sig_el tiene nsmap={None: XMLDSIG_NS} dentro de un root
+        # con nsmap={None: SII_NS}. El SII verifica con standalone (sin esos
+        # artifacts) -> el in-tree no coincide -> RFR.
+        # standalone = etree.tostring(si) captura xmlns en-scope correctamente,
+        # re-parsear elimina la contaminacion del arbol padre.
+        _si_raw   = etree.tostring(si)
+        _si_alone = etree.fromstring(_si_raw)
         si_c14n   = etree.tostring(
-            si, method='c14n', exclusive=False, with_comments=False
+            _si_alone, method='c14n', exclusive=False, with_comments=False
         )
         firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
 
