@@ -20,7 +20,8 @@ from datetime import datetime, timezone
 XMLDSIG_NS     = "http://www.w3.org/2000/09/xmldsig#"
 SII_NS         = "http://www.sii.cl/SiiDte"
 XSI_NS         = "http://www.w3.org/2001/XMLSchema-instance"
-C14N_ALGORITHM = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
+C14N_ALGORITHM     = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
+ENVELOPED_SIG_ALG  = "http://www.w3.org/2000/09/xmldsig#enveloped-signature"
 
 
 def _wrap64(s: str) -> str:
@@ -187,8 +188,12 @@ class FirmaDTE:
             'Algorithm', f'{NS}rsa-sha1')
         ref = etree.SubElement(si, f'{{{NS}}}Reference')
         ref.set('URI', f'#{doc_id}')
+        # Transform: enveloped-signature (igual que la referencia que pasa certificacion).
+        # El SII requiere este Transform especifico. c14n directo causa RFR.
+        # Nota: el DigestValue es identico porque Signature es hermano de Documento
+        # (no ancestro), por lo que enveloped-signature es un no-op sobre el contenido.
         tr = etree.SubElement(ref, f'{{{NS}}}Transforms')
-        etree.SubElement(tr, f'{{{NS}}}Transform').set('Algorithm', C14N)
+        etree.SubElement(tr, f'{{{NS}}}Transform').set('Algorithm', ENVELOPED_SIG_ALG)
         etree.SubElement(ref, f'{{{NS}}}DigestMethod').set(
             'Algorithm', f'{NS}sha1')
         etree.SubElement(ref, f'{{{NS}}}DigestValue').text = digest_doc
