@@ -269,11 +269,12 @@ class FirmaDTE:
                 '<TmstFirma>', ted_str_limpio + '<TmstFirma>', 1
             )
 
-        # 4. Re-parsear con TED ya en source (lxml pone TED en SII namespace
-        #    por herencia -> c14n in-tree coincide con el SII)
-        root_final = etree.fromstring(
-            xml_con_ted.encode('ISO-8859-1'), parser
-        )
+        # 4. Re-parsear con TED ya en source.
+        #    FIX: pasar el string Unicode directamente (NO .encode('ISO-8859-1'))
+        #    Si se pasan bytes ISO-8859-1 sin XML declaration, lxml asume UTF-8
+        #    y falla con caracteres espanoles (n~, a', e') -> XMLSyntaxError.
+        #    lxml acepta str Unicode sin problemas de codificacion.
+        root_final = etree.fromstring(xml_con_ted, parser)
 
         # 5. DigestValue con c14n in-tree
         doc_id = f'DTE-{tipo_dte}-{folio}'
