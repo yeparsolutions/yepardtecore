@@ -18,7 +18,8 @@ from datetime import datetime, timezone
 XMLDSIG_NS     = "http://www.w3.org/2000/09/xmldsig#"
 SII_NS         = "http://www.sii.cl/SiiDte"
 XSI_NS         = "http://www.w3.org/2001/XMLSchema-instance"
-C14N_ALGORITHM = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
+C14N_ALGORITHM     = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
+ENVELOPED_SIG_ALG  = "http://www.w3.org/2000/09/xmldsig#enveloped-signature"
 
 
 def _wrap64(s: str) -> str:
@@ -92,9 +93,10 @@ class FirmaSobre:
         sm.set('Algorithm', f'{NS}rsa-sha1')
         ref = etree.SubElement(si, f'{{{NS}}}Reference')
         ref.set('URI', '#SetDoc')
+        # enveloped-signature es el Transform correcto para EnvioDTE
         transforms = etree.SubElement(ref, f'{{{NS}}}Transforms')
         transform  = etree.SubElement(transforms, f'{{{NS}}}Transform')
-        transform.set('Algorithm', C14N)
+        transform.set('Algorithm', ENVELOPED_SIG_ALG)
         dm = etree.SubElement(ref, f'{{{NS}}}DigestMethod')
         dm.set('Algorithm', f'{NS}sha1')
         dv_el = etree.SubElement(ref, f'{{{NS}}}DigestValue')
