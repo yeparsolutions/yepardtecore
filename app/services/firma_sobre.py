@@ -28,6 +28,23 @@ def _wrap64(s: str) -> str:
     return '\n' + '\n'.join(textwrap.wrap(clean, 64)) + '\n'
 
 
+def _c14n_standalone(el) -> bytes:
+    """
+    C14N standalone: serializa el elemento con sus namespaces en-scope,
+    re-parsea como documento independiente, calcula c14n.
+    Este es el metodo que el SII usa para verificar el DigestValue del SetDTE.
+    El codigo original que producia EPR usaba este metodo.
+    In-tree c14n produce xmlns="" spurios en los elementos dentro del SetDTE
+    (causados por los DTE-level Signatures con nsmap XMLDSIG), lo que da
+    un DigestValue diferente al que espera el SII.
+    """
+    raw_bytes  = etree.tostring(el)
+    standalone = etree.fromstring(raw_bytes)
+    return etree.tostring(
+        standalone, method='c14n', exclusive=False, with_comments=False
+    )
+
+
 def _rsa_sign_sha1(private_key, data: bytes) -> bytes:
     """Firma SHA1withRSA (PKCS#1 v1.5)."""
     digest = hashlib.sha1(data).digest()
@@ -76,10 +93,12 @@ class FirmaSobre:
 
         set_el = root.find(".//sii:SetDTE[@ID='SetDoc']", ns)
 
-        # DigestValue del SetDTE con c14n in-tree
-        set_c14n   = etree.tostring(
-            set_el, method='c14n', exclusive=False, with_comments=False
-        )
+        # DigestValue del SetDTE con _c14n_standalone.
+        # CRITICO: in-tree c14n del SetDTE produce xmlns="" spurios en los
+        # elementos que siguen a los DTE-level Signatures (que tienen nsmap
+        # XMLDSIG_NS), dando un DigestValue distinto al que espera el SII.
+        # El codigo ORIGINAL que daba EPR (01/05) usaba _c14n_standalone.
+        set_c14n   = _c14n_standalone(set_el)
         digest_val = b64encode(hashlib.sha1(set_c14n).digest()).decode()
 
         # Construir Signature
