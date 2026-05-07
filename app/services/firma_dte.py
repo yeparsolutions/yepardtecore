@@ -85,9 +85,48 @@ class FirmaDTE:
 
     @property
     def rut_certificado(self) -> str:
+        """
+        Extrae el RUT del certificado.
+
+        Estrategia:
+        1. Buscar en el Subject (formato Firmadox: OU=25648612-1)
+        2. Buscar en SAN OtherName OID 1.3.6.1.4.1.8321.1 (formato Firma.cl/ESign/SII)
+        3. Buscar cualquier patron RUT en los bytes DER del certificado
+        """
+        # 1. Subject (Firmadox y otros PSC que ponen RUT en OU/CN)
         subject = self._cert.subject.rfc4514_string()
         m = re.search(r'(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])', subject, re.I)
-        return m.group(1) if m else ''
+        if m:
+            return m.group(1)
+
+        # 2. SAN OtherName (Firma.cl / ESign / formato SII estandar)
+        try:
+            from cryptography.x509 import ExtensionOID
+            san = self._cert.extensions.get_extension_for_oid(
+                ExtensionOID.SUBJECT_ALTERNATIVE_NAME
+            )
+            for name in san.value:
+                if hasattr(name, 'value') and isinstance(name.value, bytes):
+                    raw = name.value.decode('utf-8', errors='replace')
+                    m2 = re.search(r'(\d{7,8}-[\dkK])', raw)
+                    if m2:
+                        return m2.group(1)
+        except Exception:
+            pass
+
+        # 3. Fallback: buscar patron RUT en el DER completo
+        try:
+            der_text = self._cert.public_bytes(
+                __import__('cryptography.hazmat.primitives.serialization',
+                           fromlist=['Encoding']).Encoding.DER
+            ).decode('latin-1', errors='replace')
+            m3 = re.search(r'(\d{7,8}-[\dkK])', der_text)
+            if m3:
+                return m3.group(1)
+        except Exception:
+            pass
+
+        return ''
 
     @property
     def cert_der_b64(self) -> str:
