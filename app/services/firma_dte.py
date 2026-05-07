@@ -348,10 +348,14 @@ class FirmaDTE:
         #    lxml acepta str Unicode sin problemas de codificacion.
         root_final = etree.fromstring(xml_con_ted, parser)
 
-        # 5. DigestValue con _c14n_standalone (el SII verifica con este metodo)
+        # 5. DigestValue con c14n IN-TREE.
+        # El SII verifica con in-tree c14n (mismo comportamiento que Java).
+        # Usamos in-tree para que coincida con lo que el SII computa.
         doc_id = f'DTE-{tipo_dte}-{folio}'
         doc_el = root_final.find(f'.//sii:Documento[@ID="{doc_id}"]', ns)
-        doc_c14n   = _c14n_standalone(doc_el)
+        doc_c14n   = etree.tostring(
+            doc_el, method='c14n', exclusive=False, with_comments=False
+        )
         digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
         # 6. Signature
@@ -371,11 +375,12 @@ class FirmaDTE:
         """
         doc_el = dte_el.find(f'{{{SII_NS}}}Documento')
 
-        # DigestValue con _c14n_standalone.
-        # El SII verifica el Documento con _c14n_standalone (no in-tree).
-        # In-tree c14n produce xmlns="" spurios en IdDoc/TipoDTE/etc.
-        # que cambian el hash. _c14n_standalone da el valor correcto.
-        doc_c14n   = _c14n_standalone(doc_el)
+        # DigestValue con c14n IN-TREE.
+        # Consistente con RSA in-tree: ambos usan el mismo metodo
+        # que el SII Java usa para verificar.
+        doc_c14n   = etree.tostring(
+            doc_el, method='c14n', exclusive=False, with_comments=False
+        )
         digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
         sig_el, si_el = self._build_signature(dte_el, doc_id, digest_doc)
