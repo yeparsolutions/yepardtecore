@@ -225,14 +225,16 @@ class FirmaDTE:
         """Firma el SignedInfo con c14n in-tree y agrega KeyInfo."""
         NS = XMLDSIG_NS
 
-        # c14n STANDALONE del SignedInfo para RSA.
-        # El DTE root tiene nsmap={None: SII_NS} y sig_el tiene nsmap={None: XMLDSIG_NS}.
-        # El c14n in-tree contamina Transforms/Transform con xmlns="" porque lxml
-        # mezcla los contextos de namespace. El SII verifica con standalone c14n.
-        _si_raw   = etree.tostring(si_el)
-        _si_alone = etree.fromstring(_si_raw)
+        # c14n IN-TREE del SignedInfo para RSA.
+        # El SII Java calcula c14n del SignedInfo dentro del arbol completo del
+        # EnvioDTE. En ese contexto, lxml produce xmlns="" en Transforms/Transform
+        # (quirk de libxml2 con namespaces mixtos SII/XMLDSIG). El SII usa el
+        # mismo algoritmo y produce los mismos bytes con xmlns="".
+        # Si firmamos con standalone (limpio, sin xmlns=""), los bytes difieren
+        # de lo que el SII verifica -> RSA INVALIDA -> DTE-3-505.
+        # Usando in-tree, firmamos sobre los MISMOS bytes que el SII verifica.
         si_c14n   = etree.tostring(
-            _si_alone, method='c14n', exclusive=False, with_comments=False
+            si_el, method='c14n', exclusive=False, with_comments=False
         )
         firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
 
