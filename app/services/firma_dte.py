@@ -264,16 +264,26 @@ class FirmaDTE:
         """Firma el SignedInfo con c14n in-tree y agrega KeyInfo."""
         NS = XMLDSIG_NS
 
-        # c14n IN-TREE del SignedInfo para RSA.
-        # El SII Java calcula c14n del SignedInfo dentro del arbol completo del
-        # EnvioDTE. En ese contexto, lxml produce xmlns="" en Transforms/Transform
-        # (quirk de libxml2 con namespaces mixtos SII/XMLDSIG). El SII usa el
-        # mismo algoritmo y produce los mismos bytes con xmlns="".
-        # Si firmamos con standalone (limpio, sin xmlns=""), los bytes difieren
-        # de lo que el SII verifica -> RSA INVALIDA -> DTE-3-505.
-        # Usando in-tree, firmamos sobre los MISMOS bytes que el SII verifica.
+        # c14n STANDALONE (re-parse) del SignedInfo para RSA.
+        #
+        # DIAGNOSTICO DEFINITIVO (xmlsec1):
+        #   - DigestValue: 1/1 OK con in-tree (lxml in-tree = correcto para digest)
+        #   - RSA: INVALIDA con in-tree
+        #
+        # El bug: lxml in-tree c14n del SignedInfo dentro del arbol EnvioDTE produce
+        # xmlns="" en Transforms y Transform (que estan en XMLDSIG namespace). Esto
+        # es un quirk de libxml2 cuando el elemento esta en un arbol con namespaces
+        # mixtos SII/XMLDSIG.
+        #
+        # xmlsec1 (y el SII Java) parsean el XML desde el archivo (arbol fresco)
+        # y producen c14n LIMPIO -- identico al standalone (re-parse).
+        # Confirmado: re-parse == standalone (mismos bytes exactos).
+        #
+        # FIX: standalone (re-parse) = lo que xmlsec1/Java produce = firma correcta.
+        _si_raw   = etree.tostring(si_el)
+        _si_alone = etree.fromstring(_si_raw)
         si_c14n   = etree.tostring(
-            si_el, method='c14n', exclusive=False, with_comments=False
+            _si_alone, method='c14n', exclusive=False, with_comments=False
         )
         firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
 
@@ -348,13 +358,16 @@ class FirmaDTE:
         #    lxml acepta str Unicode sin problemas de codificacion.
         root_final = etree.fromstring(xml_con_ted, parser)
 
-        # 5. DigestValue con c14n IN-TREE.
-        # El SII verifica con in-tree c14n (mismo comportamiento que Java).
-        # Usamos in-tree para que coincida con lo que el SII computa.
+        # 5. DigestValue con c14n STANDALONE (re-parse).
+        # xmlsec1 confirmo que DigestValue standalone es CORRECTO (1/1 OK).
+        # El SII Java parsea el XML fresco = equivalente a standalone.
+        # In-tree produce xmlns="" en IdDoc/TipoDTE que no aparece en parse fresco.
         doc_id = f'DTE-{tipo_dte}-{folio}'
         doc_el = root_final.find(f'.//sii:Documento[@ID="{doc_id}"]', ns)
+        _doc_raw   = etree.tostring(doc_el)
+        _doc_alone = etree.fromstring(_doc_raw)
         doc_c14n   = etree.tostring(
-            doc_el, method='c14n', exclusive=False, with_comments=False
+            _doc_alone, method='c14n', exclusive=False, with_comments=False
         )
         digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
@@ -375,11 +388,12 @@ class FirmaDTE:
         """
         doc_el = dte_el.find(f'{{{SII_NS}}}Documento')
 
-        # DigestValue con c14n IN-TREE.
-        # Consistente con RSA in-tree: ambos usan el mismo metodo
-        # que el SII Java usa para verificar.
+        # DigestValue con c14n STANDALONE (re-parse).
+        # xmlsec1 confirmo correcto con standalone. Java fresh parse = standalone.
+        _doc_raw   = etree.tostring(doc_el)
+        _doc_alone = etree.fromstring(_doc_raw)
         doc_c14n   = etree.tostring(
-            doc_el, method='c14n', exclusive=False, with_comments=False
+            _doc_alone, method='c14n', exclusive=False, with_comments=False
         )
         digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
