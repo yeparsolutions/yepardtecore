@@ -22,7 +22,7 @@ from app.services.sii_sender import SIISender
 logger = logging.getLogger("yepardtecore.cert_facturas")
 router = APIRouter(prefix="/certificacion-facturas", tags=["Certificacion Facturas"])
 
-NATENCION = "4794671"
+NATENCION = "4816655"
 
 RECEPTOR = {
     "rut":          "77777777-7",
@@ -39,7 +39,7 @@ def _ref_set(n: int, fecha: str) -> dict:
         "tipo_doc_ref": 801,
         "folio_ref":    n,
         "fecha_ref":    fecha,
-        "razon_ref":    f"CASO-{NATENCION}-{n}",
+        "razon_ref":    f"CASO {NATENCION}-{n}",
     }
 
 
@@ -53,7 +53,7 @@ def _ref_doc(tipo: int, folio: int, fecha: str, cod: int, razon: str) -> dict:
     }
 
 
-@router.post("/generar-xml", summary="Genera EnvioDTE SET BASICO Facturas (N° Atención 4794671)")
+@router.post("/generar-xml", summary="Genera EnvioDTE SET BASICO Facturas (N° Atención 4816655)")
 async def generar_xml_facturas(
     emisor_id: int,
     fecha_override: Optional[str] = None,
@@ -98,18 +98,18 @@ async def generar_xml_facturas(
     await emitir(1, {
         "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "Cajón AFECTO",   "cantidad": 181, "precio_unitario": 4239, "exento": False},
-            {"nombre": "Relleno AFECTO", "cantidad": 76,  "precio_unitario": 7079, "exento": False},
+            {"nombre": "Cajón AFECTO",   "cantidad": 133, "precio_unitario": 1489, "exento": False},
+            {"nombre": "Relleno AFECTO", "cantidad":  57, "precio_unitario": 2430, "exento": False},
         ],
         "referencias": [_ref_set(1, fecha)],
     })
 
-    # CASO 2 — Factura con descuentos por línea (11% y 28%)
+    # CASO 2 — Factura con descuentos por línea (5% y 9%)
     await emitir(2, {
         "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "Pañuelo AFECTO", "cantidad": 912, "precio_unitario": 7026, "exento": False, "descuento_pct": 11},
-            {"nombre": "ITEM 2 AFECTO",  "cantidad": 861, "precio_unitario": 6073, "exento": False, "descuento_pct": 28},
+            {"nombre": "Pañuelo AFECTO", "cantidad": 350, "precio_unitario": 2796, "exento": False, "descuento_pct": 5},
+            {"nombre": "ITEM 2 AFECTO",  "cantidad": 281, "precio_unitario": 1857, "exento": False, "descuento_pct": 9},
         ],
         "referencias": [_ref_set(2, fecha)],
     })
@@ -118,22 +118,22 @@ async def generar_xml_facturas(
     await emitir(3, {
         "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "Pintura B&W AFECTO",    "cantidad": 85,  "precio_unitario": 8120,  "exento": False},
-            {"nombre": "ITEM 2 AFECTO",          "cantidad": 262, "precio_unitario": 4425,  "exento": False},
-            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad": 1,   "precio_unitario": 35463, "exento": True},
+            {"nombre": "Pintura B&W AFECTO",    "cantidad":  28, "precio_unitario":  3118, "exento": False},
+            {"nombre": "ITEM 2 AFECTO",          "cantidad": 168, "precio_unitario":  3137, "exento": False},
+            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   1, "precio_unitario": 34834, "exento": True},
         ],
         "referencias": [_ref_set(3, fecha)],
     })
 
-    # CASO 4 — Factura con descuento global 27% (solo ítems afectos)
+    # CASO 4 — Factura con descuento global 10% (solo ítems afectos)
     await emitir(4, {
         "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "ITEM 1 AFECTO",          "cantidad": 511, "precio_unitario": 7157, "exento": False},
-            {"nombre": "ITEM 2 AFECTO",          "cantidad": 216, "precio_unitario": 8895, "exento": False},
-            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad": 2,   "precio_unitario": 6852, "exento": True},
+            {"nombre": "ITEM 1 AFECTO",          "cantidad": 154, "precio_unitario": 2608, "exento": False},
+            {"nombre": "ITEM 2 AFECTO",          "cantidad":  66, "precio_unitario": 2683, "exento": False},
+            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   2, "precio_unitario": 6782, "exento": True},
         ],
-        "descuento_global_pct": 27,
+        "descuento_global_pct": 10,
         "referencias": [_ref_set(4, fecha)],
     })
 
@@ -142,22 +142,22 @@ async def generar_xml_facturas(
         await emitir(5, {
             "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
             "items": [
-                {"nombre": "Cajón AFECTO",   "cantidad": 181, "precio_unitario": 4239, "exento": False},
-                {"nombre": "Relleno AFECTO", "cantidad": 76,  "precio_unitario": 7079, "exento": False},
+                {"nombre": "Cajón AFECTO",   "cantidad": 133, "precio_unitario": 1489, "exento": False},
+                {"nombre": "Relleno AFECTO", "cantidad":  57, "precio_unitario": 2430, "exento": False},
             ],
             "referencias": [
-                _ref_doc(33, folios[1], fecha, 1, "CORRIGE GIRO DEL RECEPTOR"),
+                _ref_doc(33, folios[1], fecha, 2, "CORRIGE GIRO DEL RECEPTOR"),
                 _ref_set(5, fecha),
             ],
         })
 
-    # CASO 6 — NC devolución parcial (cantidades parciales, precios y descuentos del CASO 2)
+    # CASO 6 — NC devolución parcial (cantidades del set: 129 y 190)
     if 2 in folios:
         await emitir(6, {
             "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
             "items": [
-                {"nombre": "Pañuelo AFECTO", "cantidad": 335, "precio_unitario": 7026, "exento": False, "descuento_pct": 11},
-                {"nombre": "ITEM 2 AFECTO",  "cantidad": 584, "precio_unitario": 6073, "exento": False, "descuento_pct": 28},
+                {"nombre": "Pañuelo AFECTO", "cantidad": 129, "precio_unitario": 2796, "exento": False, "descuento_pct": 5},
+                {"nombre": "ITEM 2 AFECTO",  "cantidad": 190, "precio_unitario": 1857, "exento": False, "descuento_pct": 9},
             ],
             "referencias": [
                 _ref_doc(33, folios[2], fecha, 3, "DEVOLUCION DE MERCADERIAS"),
@@ -170,9 +170,9 @@ async def generar_xml_facturas(
         await emitir(7, {
             "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
             "items": [
-                {"nombre": "Pintura B&W AFECTO",    "cantidad": 85,  "precio_unitario": 8120,  "exento": False},
-                {"nombre": "ITEM 2 AFECTO",          "cantidad": 262, "precio_unitario": 4425,  "exento": False},
-                {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad": 1,   "precio_unitario": 35463, "exento": True},
+                {"nombre": "Pintura B&W AFECTO",    "cantidad":  28, "precio_unitario":  3118, "exento": False},
+                {"nombre": "ITEM 2 AFECTO",          "cantidad": 168, "precio_unitario":  3137, "exento": False},
+                {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   1, "precio_unitario": 34834, "exento": True},
             ],
             "referencias": [
                 _ref_doc(33, folios[3], fecha, 1, "ANULA FACTURA"),
@@ -185,8 +185,8 @@ async def generar_xml_facturas(
         await emitir(8, {
             "tipo_dte": 56, "fecha_emision": fecha, "receptor": RECEPTOR,
             "items": [
-                {"nombre": "Cajón AFECTO",   "cantidad": 181, "precio_unitario": 4239, "exento": False},
-                {"nombre": "Relleno AFECTO", "cantidad": 76,  "precio_unitario": 7079, "exento": False},
+                {"nombre": "Cajón AFECTO",   "cantidad": 133, "precio_unitario": 1489, "exento": False},
+                {"nombre": "Relleno AFECTO", "cantidad":  57, "precio_unitario": 2430, "exento": False},
             ],
             "referencias": [
                 _ref_doc(61, folios[5], fecha, 2, "ANULA NOTA DE CREDITO ELECTRONICA"),
