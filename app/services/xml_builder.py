@@ -56,8 +56,8 @@ class ItemDTE:
 
 @dataclass
 class ReferenciaDTE:
-    tipo_doc_ref: int
-    folio_ref: int
+    tipo_doc_ref: "str | int"
+    folio_ref: "int | str"
     fecha_ref: date
     razon_ref: str = ""
     cod_ref: "str | int" = 0   # "SET" o 1/2/3
@@ -315,17 +315,29 @@ class XMLBuilder:
     def _build_referencia(self, parent, ref, numero: int):
         # Orden XSD: NroLinRef, TpoDocRef, [IndGlobal], FolioRef,
         # [RUTOtr], [FchRef], [CodRef], [RazonRef]
+        #
+        # IMPORTANTE (instrucciones SII para certificación):
+        #   TpoDocRef="SET" → referencia al set de prueba (sin FolioRef ni CodRef)
+        #   TpoDocRef=33/61/etc → referencia a documento real (con FolioRef, FchRef, CodRef)
         NS = self.NAMESPACE
-        r  = etree.SubElement(parent, f"{{{NS}}}Referencia")
+        es_set = str(ref.tipo_doc_ref).upper() == "SET"
+
+        r = etree.SubElement(parent, f"{{{NS}}}Referencia")
         etree.SubElement(r, f"{{{NS}}}NroLinRef").text = str(numero)
         etree.SubElement(r, f"{{{NS}}}TpoDocRef").text = str(ref.tipo_doc_ref)
-        etree.SubElement(r, f"{{{NS}}}FolioRef").text  = str(ref.folio_ref)
-        # FchRef es obligatorio segun XSD antes de CodRef
-        fecha_ref = ref.fecha_ref.strftime("%Y-%m-%d") if hasattr(ref.fecha_ref, "strftime") else str(ref.fecha_ref)
-        etree.SubElement(r, f"{{{NS}}}FchRef").text = fecha_ref
-        # CodRef solo acepta valores 1, 2, 3 (XSD xs:positiveInteger enumeration)
-        # Las referencias a TpoDocRef=801 (set de prueba) NO llevan CodRef
-        if ref.cod_ref not in (0, None, "", "SET") and str(ref.cod_ref) in ("1","2","3"):
-            etree.SubElement(r, f"{{{NS}}}CodRef").text = str(ref.cod_ref)
-        if ref.razon_ref:
-            etree.SubElement(r, f"{{{NS}}}RazonRef").text = ref.razon_ref[:90]
+
+        if es_set:
+            # Referencia SET: solo lleva RazonRef con "CASO NNNNN-N"
+            # No lleva FolioRef, FchRef ni CodRef (no son un documento real)
+            if ref.razon_ref:
+                etree.SubElement(r, f"{{{NS}}}RazonRef").text = ref.razon_ref[:90]
+        else:
+            # Referencia a documento real: FolioRef, FchRef, CodRef
+            etree.SubElement(r, f"{{{NS}}}FolioRef").text = str(ref.folio_ref)
+            fecha_ref = ref.fecha_ref.strftime("%Y-%m-%d") if hasattr(ref.fecha_ref, "strftime") else str(ref.fecha_ref)
+            etree.SubElement(r, f"{{{NS}}}FchRef").text = fecha_ref
+            # CodRef: 1=anula, 2=corrige texto, 3=corrige montos
+            if ref.cod_ref not in (0, None, "") and str(ref.cod_ref) in ("1","2","3"):
+                etree.SubElement(r, f"{{{NS}}}CodRef").text = str(ref.cod_ref)
+            if ref.razon_ref:
+                etree.SubElement(r, f"{{{NS}}}RazonRef").text = ref.razon_ref[:90]
