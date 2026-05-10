@@ -248,12 +248,10 @@ class FirmaDTE:
             'Algorithm', f'{NS}rsa-sha1')
         ref = etree.SubElement(si, f'{{{NS}}}Reference')
         ref.set('URI', f'#{doc_id}')
-        # Transform: enveloped-signature (igual que la referencia que pasa certificacion).
-        # El SII requiere este Transform especifico. c14n directo causa RFR.
-        # Nota: el DigestValue es identico porque Signature es hermano de Documento
-        # (no ancestro), por lo que enveloped-signature es un no-op sobre el contenido.
+        # Transform: c14n (igual que el ejemplo oficial F60T33 del SII).
+        # PRUEBA: cambiado de enveloped-signature a c14n para diagnostico.
         tr = etree.SubElement(ref, f'{{{NS}}}Transforms')
-        etree.SubElement(tr, f'{{{NS}}}Transform').set('Algorithm', ENVELOPED_SIG_ALG)
+        etree.SubElement(tr, f'{{{NS}}}Transform').set('Algorithm', C14N_ALGORITHM)
         etree.SubElement(ref, f'{{{NS}}}DigestMethod').set(
             'Algorithm', f'{NS}sha1')
         etree.SubElement(ref, f'{{{NS}}}DigestValue').text = digest_doc
