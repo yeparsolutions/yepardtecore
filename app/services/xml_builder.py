@@ -327,8 +327,9 @@ class XMLBuilder:
         etree.SubElement(r, f"{{{NS}}}TpoDocRef").text = str(ref.tipo_doc_ref)
 
         if es_set:
-            # Referencia SET: solo lleva RazonRef con "CASO NNNNN-N"
-            # No lleva FolioRef, FchRef ni CodRef (no son un documento real)
+            # Referencia SET: XSD exige FolioRef antes de RazonRef
+            # Se usa el número de caso como FolioRef
+            etree.SubElement(r, f"{{{NS}}}FolioRef").text = str(ref.folio_ref)
             if ref.razon_ref:
                 etree.SubElement(r, f"{{{NS}}}RazonRef").text = ref.razon_ref[:90]
         else:
