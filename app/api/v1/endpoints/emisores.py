@@ -25,6 +25,7 @@ class EmisorCrear(BaseModel):
     ciudad: str
     telefono: str | None = None
     ambiente: str = "certificacion"
+    acteco: str | None = None
 
 
 class EmisorRespuesta(BaseModel):
@@ -76,6 +77,7 @@ async def crear_emisor(datos: EmisorCrear, db: AsyncSession = Depends(get_db)):
         ciudad=datos.ciudad,
         telefono=datos.telefono,
         ambiente=datos.ambiente,
+        acteco=datos.acteco,
         api_key=api_key,
     )
 
