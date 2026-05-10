@@ -126,10 +126,11 @@ class DTEService:
         ]
 
         # Referencias — convertir dicts a ReferenciaDTE
+        # tipo_doc_ref puede ser int (33, 61...) o string ("SET")
         refs_data = datos.get("referencias", [])
         referencias = [
             ReferenciaDTE(
-                tipo_doc_ref = int(r["tipo_doc_ref"]),
+                tipo_doc_ref = r["tipo_doc_ref"] if str(r["tipo_doc_ref"]).upper() == "SET" else int(r["tipo_doc_ref"]),
                 folio_ref    = int(r["folio_ref"]),
                 fecha_ref    = date.fromisoformat(r["fecha_ref"]) if isinstance(r.get("fecha_ref"), str) else date.today(),
                 razon_ref    = r.get("razon_ref", ""),
