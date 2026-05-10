@@ -112,10 +112,11 @@ class FirmaSobre:
         sm.set('Algorithm', f'{NS}rsa-sha1')
         ref = etree.SubElement(si, f'{{{NS}}}Reference')
         ref.set('URI', '#SetDoc')
-        # enveloped-signature es el Transform correcto para EnvioDTE
+        # Transform: c14n (igual que el ejemplo oficial F60T33 del SII).
+        # PRUEBA: cambiado de enveloped-signature a c14n para diagnostico.
         transforms = etree.SubElement(ref, f'{{{NS}}}Transforms')
         transform  = etree.SubElement(transforms, f'{{{NS}}}Transform')
-        transform.set('Algorithm', ENVELOPED_SIG_ALG)
+        transform.set('Algorithm', C14N_ALGORITHM)
         dm = etree.SubElement(ref, f'{{{NS}}}DigestMethod')
         dm.set('Algorithm', f'{NS}sha1')
         dv_el = etree.SubElement(ref, f'{{{NS}}}DigestValue')
