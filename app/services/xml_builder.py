@@ -327,9 +327,10 @@ class XMLBuilder:
         etree.SubElement(r, f"{{{NS}}}TpoDocRef").text = str(ref.tipo_doc_ref)
 
         if es_set:
-            # Referencia SET: XSD exige FolioRef antes de RazonRef
-            # Se usa el número de caso como FolioRef
+            # SET: XSD exige NroLinRef → TpoDocRef → FolioRef → FchRef → RazonRef
             etree.SubElement(r, f"{{{NS}}}FolioRef").text = str(ref.folio_ref)
+            fecha_ref = ref.fecha_ref.strftime("%Y-%m-%d") if hasattr(ref.fecha_ref, "strftime") else str(ref.fecha_ref)
+            etree.SubElement(r, f"{{{NS}}}FchRef").text = fecha_ref
             if ref.razon_ref:
                 etree.SubElement(r, f"{{{NS}}}RazonRef").text = ref.razon_ref[:90]
         else:
