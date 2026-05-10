@@ -4,16 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>YeparDTEcore — Panel Admin</title>
-<link rel="icon"            type="image/svg+xml"  href="/static/isotipo.svg">
-<link rel="icon"            type="image/png" sizes="64x64" href="/static/favicon-64.png">
-<link rel="icon"            type="image/png" sizes="32x32" href="/static/favicon-32.png">
-<link rel="icon"            type="image/png" sizes="16x16" href="/static/favicon-16.png">
-<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="/static/isotipo.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{background-color:#07090f;color:#e2e8f0;font-family:'Outfit',sans-serif;font-size:15px;line-height:1.6;min-height:100vh}
+html,body{background:#07090f;color:#e2e8f0;font-family:'Outfit',sans-serif;font-size:15px;line-height:1.6;min-height:100vh}
 body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;background-image:linear-gradient(rgba(16,185,129,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(16,185,129,.025) 1px,transparent 1px);background-size:40px 40px}
 nav{position:sticky;top:0;z-index:100;background:rgba(7,9,15,.95);backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.07);padding:0 24px;height:58px;display:flex;align-items:center;gap:14px}
 .nav-logo{display:flex;align-items:center;gap:9px;text-decoration:none}
@@ -23,7 +19,6 @@ nav{position:sticky;top:0;z-index:100;background:rgba(7,9,15,.95);backdrop-filte
 .urlbar{flex:1;display:flex;align-items:center;gap:8px;background:#0e1219;border:1px solid rgba(255,255,255,.13);border-radius:8px;padding:0 12px;height:36px}
 .urlbar span{font-family:'JetBrains Mono',monospace;font-size:11px;color:#64748b;white-space:nowrap}
 .urlbar input{flex:1;background:none;border:none;outline:none;color:#e2e8f0;font-family:'JetBrains Mono',monospace;font-size:13px}
-.urlbar input::placeholder{color:#64748b}
 #dot{width:7px;height:7px;border-radius:50%;background:#64748b;flex-shrink:0;transition:background .3s}
 #dot.on{background:#10b981;box-shadow:0 0 6px #10b981}
 #dot.err{background:#ef4444}
@@ -64,6 +59,22 @@ nav{position:sticky;top:0;z-index:100;background:rgba(7,9,15,.95);backdrop-filte
 .hint{font-family:'JetBrains Mono',monospace;font-size:11px;color:#64748b}
 .hint.ok{color:#10b981}
 .hint.bad{color:#ef4444}
+/* Acteco rows */
+.acteco-row{display:grid;grid-template-columns:130px 1fr 32px;gap:8px;align-items:center;margin-bottom:8px}
+.acteco-row input{background:#0e1219;border:1px solid rgba(255,255,255,.13);border-radius:8px;padding:8px 10px;color:#e2e8f0;font-family:'JetBrains Mono',monospace;font-size:13px;outline:none;width:100%}
+.acteco-row input:focus{border-color:#10b981}
+.acteco-del{width:32px;height:32px;background:transparent;border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#64748b;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+.acteco-del:hover{border-color:#ef4444;color:#ef4444}
+.sec-lbl{font-size:12px;font-weight:500;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin:16px 0 10px}
+/* Set parser */
+.set-box{background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.25);border-radius:10px;padding:16px;margin-top:14px;display:none}
+.set-box.show{display:block}
+.set-nat{font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:#10b981;margin-bottom:4px}
+.set-sub{font-size:12px;color:#64748b;margin-bottom:14px}
+.set-casos{display:flex;flex-direction:column;gap:6px}
+.set-caso{background:#0e1219;border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:10px 14px;font-size:13px}
+.set-caso-n{font-family:'JetBrains Mono',monospace;font-size:11px;color:#10b981;margin-bottom:4px}
+.set-caso-t{font-size:12px;color:#94a3b8}
 .uzone{border:1.5px dashed rgba(255,255,255,.13);border-radius:10px;padding:26px 20px;text-align:center;cursor:pointer;transition:all .2s;position:relative}
 .uzone:hover,.uzone.over{border-color:#10b981;background:rgba(16,185,129,.04)}
 .uzone input[type="file"]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
@@ -99,11 +110,6 @@ nav{position:sticky;top:0;z-index:100;background:rgba(7,9,15,.95);backdrop-filte
 .rlbl.ok{color:#10b981}
 .rlbl.fail{color:#ef4444}
 .rbody{color:#94a3b8;white-space:pre-wrap;word-break:break-all}
-.chklist{background:#0e1219;border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:14px 16px;margin-bottom:18px}
-.chkt{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
-.chki{font-size:13px;padding:3px 0}
-
-/* Pasos de cómo subir al SII */
 .sii-steps{display:none;margin-top:18px;background:#0e1219;border:1px solid rgba(16,185,129,.2);border-radius:12px;padding:18px 20px}
 .sii-steps.show{display:block}
 .sii-steps-title{font-size:12px;font-weight:500;color:#10b981;text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px}
@@ -113,14 +119,11 @@ nav{position:sticky;top:0;z-index:100;background:rgba(7,9,15,.95);backdrop-filte
 .sii-txt{color:#94a3b8;line-height:1.5}
 .sii-txt a{color:#10b981;text-decoration:none}
 .sii-txt a:hover{text-decoration:underline}
-
-/* Botón descarga */
 .download-box{display:none;margin-top:16px;background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.25);border-radius:12px;padding:18px 20px;text-align:center}
 .download-box.show{display:block}
 .dl-icon{font-size:32px;margin-bottom:10px}
 .dl-name{font-family:'JetBrains Mono',monospace;font-size:12px;color:#10b981;margin-bottom:14px}
 .dl-sub{font-size:12px;color:#64748b;margin-top:10px}
-
 .conpanel{position:sticky;top:78px;background:#131922;border:1px solid rgba(255,255,255,.07);border-radius:14px;overflow:hidden}
 .conh{display:flex;align-items:center;gap:10px;padding:13px 18px;border-bottom:1px solid rgba(255,255,255,.07)}
 .cont{font-family:'JetBrains Mono',monospace;font-size:12px;color:#64748b;flex:1}
@@ -140,13 +143,8 @@ nav{position:sticky;top:0;z-index:100;background:rgba(7,9,15,.95);backdrop-filte
 </style>
 </head>
 <body>
-
 <nav>
-  <a class="nav-logo" href="/">
-    <img src="/static/isotipo.svg" alt="YeparDTEcore"
-      onerror="this.style.display='none';this.nextSibling.style.display='block'">
-    <span style="display:none;font-family:'JetBrains Mono',monospace;font-size:13px;color:#10b981">yepardtecore</span>
-  </a>
+  <a class="nav-logo" href="/"><img src="/static/isotipo.svg" alt="YeparDTEcore" onerror="this.style.display='none';this.nextSibling.style.display='block'"><span style="display:none;font-family:'JetBrains Mono',monospace;font-size:13px;color:#10b981">yepardtecore</span></a>
   <div class="ndiv"></div>
   <span class="ntag">panel admin</span>
   <div class="urlbar">
@@ -154,61 +152,80 @@ nav{position:sticky;top:0;z-index:100;background:rgba(7,9,15,.95);backdrop-filte
     <input id="apiUrl" type="text" placeholder="https://yepardtecore.cl">
     <div id="dot"></div>
   </div>
-  <button class="btn bg" onclick="testConn()" style="white-space:nowrap;padding:7px 14px;font-size:13px">
-    Probar conexión
-  </button>
+  <button class="btn bg" onclick="testConn()" style="white-space:nowrap;padding:7px 14px;font-size:13px">Probar conexion</button>
 </nav>
 
 <div class="main">
 <div class="steps">
 
-  <!-- Banner emisor -->
   <div class="ebanner" id="ebanner">
-    <div class="eb-icon">🏢</div>
+    <div class="eb-icon">&#127970;</div>
     <div class="eb-info">
       <div class="eb-name" id="eb_name"></div>
-      <div class="eb-rut"  id="eb_rut"></div>
-      <div class="eb-amb"  id="eb_amb"></div>
+      <div class="eb-rut" id="eb_rut"></div>
+      <div class="eb-amb" id="eb_amb"></div>
     </div>
     <button class="eb-btn" onclick="cambiarEmisor()">Cambiar emisor</button>
   </div>
 
-  <!-- Paso 1 -->
+  <!-- PASO 1: EMISOR -->
   <div class="card active" id="c1">
     <div class="ch" onclick="tgl(1)">
-      <div class="sn">1</div>
-      <div class="ct">Emisor</div>
+      <div class="sn">1</div><div class="ct">Empresa Emisora</div>
       <span class="badge p" id="b1">pendiente</span>
     </div>
     <div class="cb">
+
+      <!-- Buscar existente -->
       <div style="margin-bottom:20px;padding-bottom:18px;border-bottom:1px solid rgba(255,255,255,.07)">
-        <p style="font-size:13px;color:#64748b;margin-bottom:12px">¿Ya tienes un emisor? Ingresa su RUT para cargarlo desde la BD.</p>
+        <p style="font-size:13px;color:#64748b;margin-bottom:12px">Ya tienes un emisor registrado? Ingresa su RUT para cargarlo.</p>
         <div style="display:flex;gap:10px">
-          <div class="f" style="flex:1">
-            <input id="buscar_rut" class="mono" type="text" placeholder="78377021-0"
-              oninput="onRut(this,'hr_b')" onkeydown="if(event.key==='Enter')buscarEmisor()">
-            <div class="hint" id="hr_b">RUT sin puntos con guión</div>
-          </div>
+          <div class="f" style="flex:1"><input id="buscar_rut" class="mono" type="text" placeholder="78377021-0" oninput="onRut(this,'hr_b')" onkeydown="if(event.key==='Enter')buscarEmisor()"><div class="hint" id="hr_b">RUT sin puntos con guion</div></div>
           <button class="btn bg" onclick="buscarEmisor()" style="align-self:flex-start;white-space:nowrap">Cargar desde BD</button>
         </div>
       </div>
+
       <p style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px;font-weight:500">O crear nuevo emisor</p>
+
+      <!-- Datos basicos -->
       <div class="fg">
         <div class="f"><label>RUT Empresa</label><input id="e_rut" class="mono" type="text" placeholder="78.377.021-0" oninput="onRut(this,'hr')"><div class="hint" id="hr">Con o sin puntos</div></div>
-        <div class="f"><label>Razón Social</label><input id="e_rs" type="text" placeholder="Yepar Solutions SpA"></div>
-        <div class="f" style="grid-column:1/-1"><label>Giro Comercial</label><input id="e_giro" type="text" placeholder="Servicios de tecnología"></div>
-        <div class="f" style="grid-column:1/-1"><label>Dirección</label><input id="e_dir" type="text" placeholder="Av. Providencia 1234, Of. 501"></div>
-        <div class="f"><label>Comuna</label><input id="e_comuna" type="text" placeholder="Santiago"></div>
+        <div class="f"><label>Razon Social</label><input id="e_rs" type="text" placeholder="Yepar Solutions SpA"></div>
+        <div class="f" style="grid-column:1/-1"><label>Giro Comercial</label><input id="e_giro" type="text" placeholder="Actividades de consultoria de informatica y gestion de instalaciones"></div>
+        <div class="f" style="grid-column:1/-1"><label>Direccion</label><input id="e_dir" type="text" placeholder="Apoquindo 6410 Of. 1004"></div>
+        <div class="f"><label>Comuna</label><input id="e_comuna" type="text" placeholder="Las Condes"></div>
         <div class="f"><label>Ciudad</label><input id="e_ciudad" type="text" placeholder="Santiago"></div>
-        <div class="f"><label>Teléfono (opcional)</label><input id="e_tel" type="text" placeholder="+56 2 1234 5678"></div>
-        <div class="f"><label>Ambiente</label><select id="e_amb"><option value="certificacion" selected>Certificación (maullin)</option><option value="produccion">Producción (palena)</option></select></div>
+        <div class="f"><label>Telefono (opcional)</label><input id="e_tel" type="text" placeholder="+56 2 1234 5678"></div>
+        <div class="f"><label>Ambiente</label><select id="e_amb"><option value="certificacion" selected>Certificacion (maullin)</option><option value="produccion">Produccion (palena)</option></select></div>
       </div>
-      <div class="brow"><button class="btn bp" onclick="crearEmisor()">Crear emisor</button></div>
+
+      <!-- Actividades Economicas -->
+      <div class="sec-lbl">Actividades Economicas (ACTECO)</div>
+      <p style="font-size:12px;color:#64748b;margin-bottom:12px">Codigo y descripcion segun el SII. El primero es el principal que va en el DTE.</p>
+      <div style="display:grid;grid-template-columns:130px 1fr 32px;gap:8px;margin-bottom:6px;">
+        <span style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Codigo</span>
+        <span style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Descripcion</span>
+        <span></span>
+      </div>
+      <div id="actecos">
+        <div class="acteco-row" id="acteco-0">
+          <input type="text" class="mono" placeholder="620200" maxlength="10" id="ac_cod_0" style="border:1px solid rgba(16,185,129,.4)">
+          <input type="text" placeholder="Consultoria de informatica..." id="ac_desc_0">
+          <button class="acteco-del" onclick="delActeco(0)" title="Eliminar" style="opacity:.3;cursor:default">-</button>
+        </div>
+      </div>
+      <button class="btn bg" onclick="addActeco()" style="font-size:12px;padding:6px 14px;margin-top:6px">+ Agregar actividad economica</button>
+
+      <!-- Glosa descriptiva -->
+      <div class="sec-lbl" style="margin-top:18px">Glosa Descriptiva</div>
+      <div class="f"><input id="e_glosa" type="text" placeholder="Desarrollo de software, servicios informaticos, soluciones tecnologicas" style="margin-bottom:0"><p style="font-size:11px;color:#64748b;margin-top:6px">Descripcion breve del giro de la empresa, como aparece en el SII.</p></div>
+
+      <div class="brow"><button class="btn bp" onclick="crearEmisor()">Crear / Actualizar emisor</button></div>
       <div class="result" id="r1"><div class="rlbl" id="r1l"></div><div class="rbody" id="r1c"></div></div>
     </div>
   </div>
 
-  <!-- Paso 2 -->
+  <!-- PASO 2: CERTIFICADO -->
   <div class="card locked" id="c2">
     <div class="ch" onclick="tgl(2)">
       <div class="sn">2</div><div class="ct">Certificado Digital (.p12)</div>
@@ -216,20 +233,20 @@ nav{position:sticky;top:0;z-index:100;background:rgba(7,9,15,.95);backdrop-filte
     </div>
     <div class="cb">
       <div class="ibox" id="cert_info"><div class="ibox-t">Certificado activo en BD</div><div class="ibox-b" id="cert_info_b"></div></div>
-      <p style="font-size:13px;color:#64748b;margin-bottom:16px">Sube un nuevo <code style="font-family:'JetBrains Mono',monospace;color:#e2e8f0">.p12</code> para reemplazar el certificado actual.</p>
+      <p style="font-size:13px;color:#64748b;margin-bottom:16px">Sube el archivo <code style="font-family:'JetBrains Mono',monospace;color:#e2e8f0">.p12</code> o <code style="font-family:'JetBrains Mono',monospace;color:#e2e8f0">.pfx</code> que obtuviste de tu PSC (E-Sign, E-Cert, Certinet, etc.).</p>
       <div class="uzone" id="z2" ondragover="dOv(event,'z2')" ondragleave="dLv('z2')" ondrop="dDp(event,'fp12','z2',showP12)">
         <input type="file" id="fp12" accept=".p12,.pfx" onchange="showP12(this)">
-        <div class="uicon">🔐</div>
-        <div class="utxt"><strong>Arrastra el .p12 aquí o haz clic</strong>Formatos: .p12 / .pfx</div>
+        <div class="uicon">&#128272;</div>
+        <div class="utxt"><strong>Arrastra el .p12 aqui o haz clic</strong>Formatos: .p12 / .pfx</div>
       </div>
-      <div class="chip" id="chip2"><span>📄</span><span id="name2"></span></div>
-      <div class="f" style="margin-top:14px"><label>Contraseña del certificado</label><input type="password" id="p12pw" placeholder="••••••••"></div>
+      <div class="chip" id="chip2"><span>&#128196;</span><span id="name2"></span></div>
+      <div class="f" style="margin-top:14px"><label>Contrasena del certificado</label><input type="password" id="p12pw" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;"></div>
       <div class="brow"><button class="btn bp" onclick="subirCert()">Subir certificado</button></div>
       <div class="result" id="r2"><div class="rlbl" id="r2l"></div><div class="rbody" id="r2c"></div></div>
     </div>
   </div>
 
-  <!-- Paso 3 -->
+  <!-- PASO 3: CAFs -->
   <div class="card locked" id="c3">
     <div class="ch" onclick="tgl(3)">
       <div class="sn">3</div><div class="ct">CAFs del SII</div>
@@ -237,10 +254,10 @@ nav{position:sticky;top:0;z-index:100;background:rgba(7,9,15,.95);backdrop-filte
     </div>
     <div class="cb">
       <div class="ibox" id="cafs_info"><div class="ibox-t">CAFs activos en BD</div><div class="ibox-b" id="cafs_info_b"></div></div>
-      <p style="font-size:13px;color:#64748b;margin-bottom:16px">Mínimo necesitas <code style="font-family:'JetBrains Mono',monospace;color:#60a5fa">tipo 39</code> y <code style="font-family:'JetBrains Mono',monospace;color:#60a5fa">tipo 41</code>.</p>
+      <p style="font-size:13px;color:#64748b;margin-bottom:16px">Para el SET BASICO de Facturas necesitas CAFs de <code style="font-family:'JetBrains Mono',monospace;color:#60a5fa">tipo 33</code> (Factura), <code style="font-family:'JetBrains Mono',monospace;color:#60a5fa">tipo 61</code> (N.Credito) y <code style="font-family:'JetBrains Mono',monospace;color:#60a5fa">tipo 56</code> (N.Debito). Solicitalos en el portal del SII.</p>
       <div class="uzone" id="z3" ondragover="dOv(event,'z3')" ondragleave="dLv('z3')" ondrop="dpCAFs(event)">
         <input type="file" id="fcafs" accept=".xml" multiple onchange="addCAFs(this.files)">
-        <div class="uicon">📑</div>
+        <div class="uicon">&#128209;</div>
         <div class="utxt"><strong>Arrastra los XML de CAF o haz clic</strong>Puedes seleccionar varios a la vez</div>
       </div>
       <div class="clist" id="clist"></div>
@@ -252,117 +269,64 @@ nav{position:sticky;top:0;z-index:100;background:rgba(7,9,15,.95);backdrop-filte
     </div>
   </div>
 
-  <!-- Paso 4: Generar XML para subir manualmente al SII -->
+  <!-- PASO 4: SET DE PRUEBA SII -->
   <div class="card locked" id="c4">
     <div class="ch" onclick="tgl(4)">
-      <div class="sn">4</div><div class="ct">Generar XML de Certificación</div>
+      <div class="sn">4</div><div class="ct">Set de Prueba SII</div>
       <span class="badge p" id="b4">pendiente</span>
     </div>
     <div class="cb">
-      <p style="font-size:13px;color:#64748b;margin-bottom:16px">
-        El motor firma las 5 boletas con TED individual, arma el
-        <code style="font-family:'JetBrains Mono',monospace;color:#e2e8f0">EnvioBOLETA</code>
-        y te entrega el XML para que lo subas tú en el portal del SII.
-      </p>
-
-      <div class="chklist">
-        <div class="chkt">Checklist previo</div>
-        <div class="chki" id="chke">⬜ Emisor cargado</div>
-        <div class="chki" id="chkc">⬜ Certificado .p12 cargado</div>
-        <div class="chki" id="chk39">⬜ CAF tipo 39 (Boleta)</div>
-        <div class="chki" id="chk41">⬜ CAF tipo 41 (Boleta exenta)</div>
+      <p style="font-size:13px;color:#64748b;margin-bottom:16px">Sube el archivo <code style="font-family:'JetBrains Mono',monospace;color:#e2e8f0">.txt</code> que el SII te entrego con tu numero de atencion y los 8 casos del SET BASICO de Facturas.</p>
+      <div class="uzone" id="z4" ondragover="dOv(event,'z4')" ondragleave="dLv('z4')" ondrop="dpSet(event)">
+        <input type="file" id="fset" accept=".txt" onchange="cargarSet(this.files[0])">
+        <div class="uicon">&#128196;</div>
+        <div class="utxt"><strong>Arrastra el .txt del SII o haz clic</strong>El archivo con "SET BASICO - NUMERO DE ATENCION: ..."</div>
       </div>
 
-      <div class="brow" style="flex-direction:column;gap:10px">
-        <button class="btn bp bfull" id="btnGenerar" onclick="generarXML()" style="padding:13px">
-          ⚙️ &nbsp;Generar XML de certificación
-        </button>
-        <button class="btn bg bfull" onclick="previewCert()" style="font-size:13px">
-          Ver preview de los 5 casos (sin generar)
-        </button>
-      </div>
-
-      <!-- Descarga -->
-      <div class="download-box" id="dlbox">
-        <div class="dl-icon">📥</div>
-        <div class="dl-name" id="dl_name"></div>
-        <button class="btn bp" id="btnDescargar" onclick="descargarXML()" style="padding:11px 28px">
-          Descargar XML
-        </button>
-        <div class="dl-sub">Una vez descargado, súbelo manualmente en el portal SII</div>
-      </div>
-
-      <!-- Pasos para subir al SII -->
-      <div class="sii-steps" id="sii_steps">
-        <div class="sii-steps-title">Cómo subir el XML al SII</div>
-        <div class="sii-step">
-          <div class="sii-num">1</div>
-          <div class="sii-txt">Descarga el XML con el botón de arriba</div>
-        </div>
-        <div class="sii-step">
-          <div class="sii-num">2</div>
-          <div class="sii-txt">Entra a <a href="https://maullin.sii.cl" target="_blank">maullin.sii.cl</a> con tu RUT y clave tributaria</div>
-        </div>
-        <div class="sii-step">
-          <div class="sii-num">3</div>
-          <div class="sii-txt">Ve a <strong style="color:#e2e8f0">Factura Electrónica → Envío de DTE → Enviar Archivo</strong></div>
-        </div>
-        <div class="sii-step">
-          <div class="sii-num">4</div>
-          <div class="sii-txt">Selecciona el XML descargado y envíalo — el SII te dará un <strong style="color:#10b981">Track ID</strong></div>
-        </div>
-        <div class="sii-step">
-          <div class="sii-num">5</div>
-          <div class="sii-txt">Guarda el Track ID para consultar el resultado de la certificación</div>
-        </div>
+      <!-- Resultado del parseo -->
+      <div class="set-box" id="set_parsed">
+        <div class="set-nat" id="set_nat"></div>
+        <div class="set-sub" id="set_sub"></div>
+        <div class="set-casos" id="set_casos"></div>
       </div>
 
       <div class="result" id="r4"><div class="rlbl" id="r4l"></div><div class="rbody" id="r4c"></div></div>
+      <div class="brow">
+        <button class="btn bp bfull" id="btnConfSet" onclick="confirmarSet()" style="padding:13px;display:none">Confirmar y continuar al paso 5</button>
+      </div>
     </div>
   </div>
 
-  <!-- Paso 5: SET BASICO de Facturas (Número de Atención 4784337) -->
+  <!-- PASO 5: GENERAR XML -->
   <div class="card locked" id="c5">
     <div class="ch" onclick="tgl(5)">
-      <div class="sn">5</div><div class="ct">SET BASICO Facturas — N° Atención 4784337</div>
+      <div class="sn">5</div><div class="ct" id="c5_titulo">Generar SET BASICO Facturas</div>
       <span class="badge p" id="b5">pendiente</span>
     </div>
     <div class="cb">
-      <p style="font-size:13px;color:#64748b;margin-bottom:16px">
-        Genera el <code style="font-family:'JetBrains Mono',monospace;color:#e2e8f0">EnvioDTE</code>
-        con los 8 documentos del SET BASICO de Facturas:
-        4 Facturas Electrónicas (tipo 33), 3 Notas de Crédito (tipo 61) y 1 Nota de Débito (tipo 56).
-        Número de Atención: <strong style="color:#10b981">4784337</strong>
-      </p>
-
-      <div class="chklist">
-        <div class="chkt">Documentos incluidos</div>
-        <div class="chki">📄 CASO 1 — Factura: Cajón AFECTO + Relleno AFECTO</div>
-        <div class="chki">📄 CASO 2 — Factura con descuentos por línea (12% y 30%)</div>
-        <div class="chki">📄 CASO 3 — Factura afecto + ítem exento</div>
-        <div class="chki">📄 CASO 4 — Factura con descuento global 28%</div>
-        <div class="chki">📋 CASO 5 — NC: Corrige giro receptor (ref CASO 1)</div>
-        <div class="chki">📋 CASO 6 — NC: Devolución parcial (ref CASO 2)</div>
-        <div class="chki">📋 CASO 7 — NC: Anula factura (ref CASO 3)</div>
-        <div class="chki">📋 CASO 8 — ND: Anula nota de crédito (ref CASO 5)</div>
+      <div class="ibox show" id="set_resumen">
+        <div class="ibox-t">Set configurado</div>
+        <div class="ibox-b" id="set_resumen_b">No se ha cargado un set de prueba aun.</div>
       </div>
-
+      <p style="font-size:13px;color:#64748b;margin-bottom:16px">Genera el <code style="font-family:'JetBrains Mono',monospace;color:#e2e8f0">EnvioDTE</code> con los 8 documentos firmados, listo para subir al SII.</p>
       <div class="brow" style="flex-direction:column;gap:10px">
         <button class="btn bp bfull" id="btnGenerarFact" onclick="generarXMLFacturas()" style="padding:13px">
-          ⚙️ &nbsp;Generar SET BASICO Facturas
+          &#9881;&#65039; &nbsp;Generar SET BASICO Facturas
         </button>
       </div>
-
-      <!-- Descarga -->
       <div class="download-box" id="dlbox5">
-        <div class="dl-icon">📥</div>
+        <div class="dl-icon">&#128229;</div>
         <div class="dl-name" id="dl_name5"></div>
-        <button class="btn bp" id="btnDescargar5" onclick="descargarXMLFacturas()" style="padding:11px 28px">
-          Descargar XML
-        </button>
-        <div class="dl-sub">Una vez descargado, súbelo en maullin.sii.cl → Envío de DTE</div>
+        <button class="btn bp" id="btnDescargar5" onclick="descargarXMLFacturas()" style="padding:11px 28px">Descargar XML</button>
+        <div class="dl-sub">Descargado el XML, subelo en maullin.sii.cl &rarr; Envio de DTE</div>
       </div>
-
+      <div class="sii-steps" id="sii_steps5">
+        <div class="sii-steps-title">Como subir el XML al SII</div>
+        <div class="sii-step"><div class="sii-num">1</div><div class="sii-txt">Descarga el XML con el boton de arriba</div></div>
+        <div class="sii-step"><div class="sii-num">2</div><div class="sii-txt">Entra a <a href="https://maullin.sii.cl" target="_blank">maullin.sii.cl</a> con tu RUT y clave tributaria</div></div>
+        <div class="sii-step"><div class="sii-num">3</div><div class="sii-txt">Ve a <strong style="color:#e2e8f0">Factura Electronica &rarr; Envio de DTE &rarr; Enviar Archivo</strong></div></div>
+        <div class="sii-step"><div class="sii-num">4</div><div class="sii-txt">Sube el XML — el SII te entregara un <strong style="color:#10b981">Track ID</strong> para consultar el resultado</div></div>
+      </div>
       <div class="result" id="r5"><div class="rlbl" id="r5l"></div><div class="rbody" id="r5c"></div></div>
     </div>
   </div>
@@ -370,41 +334,42 @@ nav{position:sticky;top:0;z-index:100;background:rgba(7,9,15,.95);backdrop-filte
 </div><!-- /steps -->
 
 <div class="conpanel">
-  <div class="conh"><div class="cont">▸ consola API</div><div class="concl" onclick="clrLog()">limpiar</div></div>
+  <div class="conh"><div class="cont">&#9655; consola API</div><div class="concl" onclick="clrLog()">limpiar</div></div>
   <div class="conb" id="conb"></div>
 </div>
 </div>
 
 <script>
-const S={id:null,cert:false,tipos:new Set(),cafs:[],xmlBlob:null,xmlNombre:null};
-const TN={33:'Factura',34:'Fact.Exenta',39:'Boleta',41:'Boleta Exenta',52:'Guía',56:'N.Débito',61:'N.Crédito'};
+const S={id:null,cert:false,tipos:new Set(),cafs:[],xmlBlobFact:null,xmlNombreFact:null,setData:null,actecos:[{cod:'',desc:''}]};
+const TN={33:'Factura',34:'Fact.Exenta',39:'Boleta',41:'Boleta Exenta',52:'Guia',56:'N.Debito',61:'N.Credito'};
+const DOC_MAP={'FACTURA ELECTRONICA':33,'FACTURA NO AFECTA O EXENTA ELECTRONICA':34,'NOTA DE CREDITO ELECTRONICA':61,'NOTA DE CREDITO':61,'NOTA DE DEBITO ELECTRONICA':56,'NOTA DE DEBITO':56,'LIQUIDACION FACTURA ELECTRONICA':43};
 
+/* ─── Utils ─────────────────────────────── */
 function rutSII(r){let c=r.replace(/[.\s]/g,'').toUpperCase();if(!c.includes('-')&&c.length>1)c=c.slice(0,-1)+'-'+c.slice(-1);return c;}
 function vRut(r){const c=r.replace(/[.\s-]/g,'').toUpperCase();if(c.length<2)return false;const dv=c.slice(-1),b=c.slice(0,-1);if(!/^\d+$/.test(b))return false;let s=0,m=2;for(let i=b.length-1;i>=0;i--){s+=parseInt(b[i])*m;m=m===7?2:m+1;}const e=11-(s%11);return dv===(e===11?'0':e===10?'K':String(e));}
-function onRut(inp,hid){const h=document.getElementById(hid);if(!inp.value){inp.className='mono';h.textContent='RUT sin puntos con guión';h.className='hint';return;}const ok=vRut(inp.value);inp.classList.toggle('valid',ok);inp.classList.toggle('invalid',!ok);if(ok){h.textContent='✓ SII recibirá: '+rutSII(inp.value);h.className='hint ok';}else{h.textContent='✗ Dígito verificador inválido';h.className='hint bad';}}
-
+function onRut(inp,hid){const h=document.getElementById(hid);if(!inp.value){inp.className='mono';h.textContent='RUT sin puntos con guion';h.className='hint';return;}const ok=vRut(inp.value);inp.classList.toggle('valid',ok);inp.classList.toggle('invalid',!ok);if(ok){h.textContent='✓ SII recibira: '+rutSII(inp.value);h.className='hint ok';}else{h.textContent='✗ Digito verificador invalido';h.className='hint bad';}}
 function log(msg,t='info'){const b=document.getElementById('conb');const now=new Date().toLocaleTimeString('es-CL',{hour12:false});const d=document.createElement('div');d.className='lg '+t;d.innerHTML='<span class="lgt">'+now+'</span>'+msg;b.appendChild(d);b.scrollTop=b.scrollHeight;}
 function clrLog(){document.getElementById('conb').innerHTML='';}
-
 function base(){return(document.getElementById('apiUrl').value||'').trim().replace(/\/$/,'');}
 async function api(path,opts={}){
-  log('→ '+(opts.method||'GET')+' '+path,'info');
+  log((opts.method||'GET')+' '+path,'info');
   const r=await fetch(base()+path,opts);
-  const txt=await r.text();
-  let d;try{d=JSON.parse(txt);}catch{d=txt;}
-  r.ok?log('← '+r.status+' OK','ok'):log('← '+r.status+' '+JSON.stringify(d).slice(0,120),'err');
+  const txt=await r.text();let d;try{d=JSON.parse(txt);}catch{d=txt;}
+  r.ok?log(r.status+' OK','ok'):log(r.status+' '+JSON.stringify(d).slice(0,120),'err');
   if(!r.ok)throw{status:r.status,data:d};
   return d;
 }
 function res(n,ok,body){
   const box=document.getElementById('r'+n);box.className='result show '+(ok?'ok':'fail');
   document.getElementById('r'+n+'l').className='rlbl '+(ok?'ok':'fail');
-  document.getElementById('r'+n+'l').textContent=ok?'✓ éxito':'✗ error';
+  document.getElementById('r'+n+'l').textContent=ok?'✓ exito':'✗ error';
   document.getElementById('r'+n+'c').textContent=typeof body==='string'?body:JSON.stringify(body,null,2);
 }
 
-async function testConn(){const dot=document.getElementById('dot');dot.className='ld';try{await api('/v1/health');dot.className='on';log('API conectada ✓','ok');}catch{dot.className='err';log('Sin respuesta','err');}}
+/* ─── Conexion ───────────────────────────── */
+async function testConn(){const dot=document.getElementById('dot');dot.className='ld';try{await api('/v1/health');dot.className='on';log('API conectada','ok');}catch{dot.className='err';log('Sin respuesta','err');}}
 
+/* ─── Auto-carga ─────────────────────────── */
 async function autoCargar(){
   log('Detectando emisor en BD...','info');
   try{
@@ -428,6 +393,7 @@ async function cargarEmisor(e){
   document.getElementById('e_ciudad').value=e.ciudad||'';
   document.getElementById('e_tel').value=e.telefono||'';
   document.getElementById('e_amb').value=e.ambiente||'certificacion';
+  if(e.acteco){document.getElementById('ac_cod_0').value=e.acteco;}
   done(1,'✓ cargado');unlock(2);
   await cargarCert(e.id);
   await cargarCAFs(e.id,e.ambiente);
@@ -442,7 +408,7 @@ async function cargarCert(eid){
       document.getElementById('cert_info').classList.add('show');
       done(2,'✓ activo');unlock(3);log('Certificado activo — vence '+d.vence,'ok');
     }
-  }catch{log('Sin certificado','warn');}
+  }catch{log('Sin certificado cargado','warn');}
 }
 
 async function cargarCAFs(eid,amb){
@@ -453,44 +419,75 @@ async function cargarCAFs(eid,amb){
       activos.forEach(c=>S.tipos.add(c.tipo_dte));
       document.getElementById('cafs_info_b').textContent=activos.map(c=>'Tipo '+c.tipo_dte+' ('+TN[c.tipo_dte]+') — folios '+c.folio_actual+'-'+c.folio_hasta+' ('+c.disponibles+' disp.)').join('\n');
       document.getElementById('cafs_info').classList.add('show');
-      if(S.tipos.has(39)){done(3,activos.length+' CAFs');unlock(4);unlock(5);}
+      if(S.tipos.size>0){done(3,activos.length+' CAFs');unlock(4);unlock(5);}
       log(activos.length+' CAFs detectados','ok');
     }
   }catch{log('No se pudieron cargar CAFs','warn');}
-  upChk();
 }
 
 async function buscarEmisor(){
   const rut=rutSII(document.getElementById('buscar_rut').value);
   if(!rut){log('Ingresa un RUT','warn');return;}
-  log('Buscando RUT='+rut,'info');
   try{
     const es=await api('/v1/emisores/');
     const found=es.find(e=>e.rut===rut||e.rut.replace(/\./g,'')===rut);
-    if(found){await cargarEmisor(found);res(1,true,'Emisor cargado ✓\nID: '+found.id+'\n'+found.razon_social);}
+    if(found){await cargarEmisor(found);res(1,true,'Emisor cargado\nID: '+found.id+'\n'+found.razon_social);}
     else{res(1,false,'No encontrado: '+rut);log('Emisor no encontrado','warn');}
   }catch(e){res(1,false,e.data?.detail||JSON.stringify(e.data));}
 }
 
 function cambiarEmisor(){
-  S.id=null;S.cert=false;S.tipos.clear();S.cafs=[];S.xmlBlob=null;
+  S.id=null;S.cert=false;S.tipos.clear();S.cafs=[];S.xmlBlobFact=null;S.setData=null;
   document.getElementById('ebanner').classList.remove('show');
   document.getElementById('cert_info').classList.remove('show');
   document.getElementById('cafs_info').classList.remove('show');
-  document.getElementById('dlbox').classList.remove('show');
-  document.getElementById('sii_steps').classList.remove('show');
+  document.getElementById('set_parsed').classList.remove('show');
   ['c2','c3','c4','c5'].forEach(id=>{const c=document.getElementById(id);c.className='card locked';c.querySelector('.cb').style.display='none';});
-  ['b1','b2','b3','b4'].forEach(id=>{document.getElementById(id).textContent='pendiente';document.getElementById(id).className='badge p';});
+  ['b1','b2','b3','b4','b5'].forEach(id=>{document.getElementById(id).textContent='pendiente';document.getElementById(id).className='badge p';});
   document.getElementById('c1').className='card active';
   document.getElementById('c1').querySelector('.cb').style.display='block';
-  upChk();
+}
+
+/* ─── Paso 1: Emisor ─────────────────────── */
+function addActeco(){
+  const rows=document.getElementById('actecos').querySelectorAll('.acteco-row');
+  if(rows.length>=4){log('Maximo 4 actividades economicas','warn');return;}
+  const i=rows.length;
+  const div=document.createElement('div');div.className='acteco-row';div.id='acteco-'+i;
+  div.innerHTML='<input type="text" class="mono" placeholder="620900" maxlength="10" id="ac_cod_'+i+'"><input type="text" placeholder="Otras actividades de tecnologia..." id="ac_desc_'+i+'"><button class="acteco-del" onclick="delActeco('+i+')" title="Eliminar">-</button>';
+  document.getElementById('actecos').appendChild(div);
+}
+function delActeco(i){
+  const row=document.getElementById('acteco-'+i);
+  if(row)row.remove();
+}
+function getActeco(){
+  const rows=document.getElementById('actecos').querySelectorAll('.acteco-row');
+  const result=[];
+  rows.forEach((row,idx)=>{
+    const cod=document.getElementById('ac_cod_'+idx);
+    if(cod&&cod.value.trim())result.push({cod:cod.value.trim(),desc:(document.getElementById('ac_desc_'+idx)||{value:''}).value.trim()});
+  });
+  return result;
 }
 
 async function crearEmisor(){
   const rut=document.getElementById('e_rut').value;
-  if(!vRut(rut)){res(1,false,'RUT inválido.');return;}
-  const body={rut:rutSII(rut),razon_social:document.getElementById('e_rs').value,giro:document.getElementById('e_giro').value,direccion:document.getElementById('e_dir').value,comuna:document.getElementById('e_comuna').value,ciudad:document.getElementById('e_ciudad').value,telefono:document.getElementById('e_tel').value||null,ambiente:document.getElementById('e_amb').value};
-  for(const[k,v]of Object.entries(body)){if(!v&&k!=='telefono'){res(1,false,'Campo requerido: '+k);return;}}
+  if(!vRut(rut)){res(1,false,'RUT invalido');return;}
+  const actecos=getActeco();
+  const acteco_principal=actecos.length>0?actecos[0].cod:null;
+  const body={
+    rut:rutSII(rut),
+    razon_social:document.getElementById('e_rs').value,
+    giro:document.getElementById('e_giro').value,
+    direccion:document.getElementById('e_dir').value,
+    comuna:document.getElementById('e_comuna').value,
+    ciudad:document.getElementById('e_ciudad').value,
+    telefono:document.getElementById('e_tel').value||null,
+    ambiente:document.getElementById('e_amb').value,
+    acteco:acteco_principal,
+  };
+  for(const[k,v]of Object.entries(body)){if(!v&&k!=='telefono'&&k!=='acteco'){res(1,false,'Campo requerido: '+k);return;}}
   try{
     const d=await api('/v1/emisores/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     S.id=d.id;
@@ -498,35 +495,37 @@ async function crearEmisor(){
     document.getElementById('eb_rut').textContent=d.rut;
     document.getElementById('eb_amb').textContent='Ambiente: '+d.ambiente+' · Activo';
     document.getElementById('ebanner').classList.add('show');
-    res(1,true,'Emisor creado ✓\nID: '+d.id+'\nRUT: '+d.rut+'\nAPI Key: '+d.api_key);
-    done(1,'✓ creado');unlock(2);upChk();
+    res(1,true,'Emisor creado\nID: '+d.id+'\nRUT: '+d.rut+'\nActeco: '+(acteco_principal||'—')+'\nAPI Key: '+d.api_key);
+    done(1,'✓ creado');unlock(2);
   }catch(e){res(1,false,e.data?.detail||JSON.stringify(e.data));}
 }
 
+/* ─── Paso 2: Certificado ────────────────── */
 function showP12(inp){if(!inp.files[0])return;document.getElementById('name2').textContent=inp.files[0].name;document.getElementById('chip2').classList.add('show');}
 async function subirCert(){
   const fi=document.getElementById('fp12'),pw=document.getElementById('p12pw').value;
-  if(!fi.files[0]){res(2,false,'Selecciona el .p12.');return;}
-  if(!pw){res(2,false,'Ingresa la contraseña.');return;}
-  if(!S.id){res(2,false,'Primero carga el emisor.');return;}
+  if(!fi.files[0]){res(2,false,'Selecciona el .p12');return;}
+  if(!pw){res(2,false,'Ingresa la contrasena');return;}
+  if(!S.id){res(2,false,'Primero carga el emisor');return;}
   const fd=new FormData();fd.append('password',pw);fd.append('archivo',fi.files[0]);
   try{
     const d=await api('/v1/certificados/'+S.id+'/subir',{method:'POST',body:fd});
     S.cert=true;
-    document.getElementById('cert_info_b').textContent='Titular: '+(d.rut||'')+'  Vence: '+(d.vence||'');
+    document.getElementById('cert_info_b').textContent='Titular: '+(d.rut||'')+'\nVence: '+(d.vence||'');
     document.getElementById('cert_info').classList.add('show');
-    res(2,true,'Certificado cargado ✓\nVence: '+(d.vence||''));
-    done(2,'✓ activo');unlock(3);upChk();
+    res(2,true,'Certificado cargado\nVence: '+(d.vence||''));
+    done(2,'✓ activo');unlock(3);
   }catch(e){res(2,false,e.data?.detail||JSON.stringify(e.data));}
 }
 
+/* ─── Paso 3: CAFs ───────────────────────── */
 async function tipoCaf(f){return new Promise(r=>{const rd=new FileReader();rd.onload=e=>{const m=e.target.result.match(/<TD>(\d+)<\/TD>/);r(m?parseInt(m[1]):null);};rd.readAsText(f);});}
 async function addCAFs(files){for(const f of files){if(S.cafs.find(c=>c.file.name===f.name))continue;const t=await tipoCaf(f);S.cafs.push({file:f,tipo:t});}rndrCAFs();document.getElementById('bcafs').disabled=S.cafs.length===0;}
 function rndrCAFs(){document.getElementById('clist').innerHTML=S.cafs.map((c,i)=>'<div class="crow"><span class="ctipo">tipo '+c.tipo+'</span><span class="cnombre">'+(TN[c.tipo]||'Desconocido')+'</span><span style="font-family:monospace;font-size:10px;color:#64748b">'+c.file.name+'</span><span class="cdel" onclick="delC('+i+')">×</span></div>').join('');}
 function delC(i){S.cafs.splice(i,1);rndrCAFs();document.getElementById('bcafs').disabled=S.cafs.length===0;}
 function clrCAFs(){S.cafs=[];rndrCAFs();document.getElementById('bcafs').disabled=true;}
 async function subirCAFs(){
-  if(!S.id){res(3,false,'Primero carga el emisor.');return;}
+  if(!S.id){res(3,false,'Primero carga el emisor');return;}
   const amb=document.getElementById('e_amb').value;
   let ok=0,fail=0,msgs=[];
   for(const c of S.cafs){
@@ -534,81 +533,125 @@ async function subirCAFs(){
     try{const d=await api('/v1/caf/cargar-archivo',{method:'POST',body:fd});ok++;S.tipos.add(c.tipo);msgs.push('✓ Tipo '+c.tipo+': '+d.disponibles+' folios');}
     catch(e){fail++;msgs.push('✗ Tipo '+c.tipo+': '+(e.data?.detail||'Error'));}
   }
-  res(3,fail===0,ok+' cargados'+(fail?', '+fail+' error':'')+'\\n\\n'+msgs.join('\\n'));
-  if(ok>0){done(3,'✓ '+ok+' CAFs');unlock(4);unlock(5);upChk();}
+  res(3,fail===0,ok+' cargados'+(fail?', '+fail+' error':'')+'\n\n'+msgs.join('\n'));
+  if(ok>0){done(3,'✓ '+ok+' CAFs');unlock(4);unlock(5);}
 }
 
-function upChk(){
-  const m=(id,ok,lbl)=>{document.getElementById(id).textContent=(ok?'✅':'⬜')+' '+lbl;};
-  m('chke',!!S.id,'Emisor cargado');m('chkc',S.cert,'Certificado .p12 cargado');
-  m('chk39',S.tipos.has(39),'CAF tipo 39 (Boleta)');m('chk41',S.tipos.has(41),'CAF tipo 41 (Boleta exenta)');
+/* ─── Paso 4: Parser Set SII ────────────── */
+function dpSet(e){e.preventDefault();dLv('z4');const f=e.dataTransfer.files[0];if(f)cargarSet(f);}
+
+function cargarSet(file){
+  if(!file)return;
+  const rd=new FileReader();
+  rd.onload=function(e){
+    const txt=e.target.result;
+    const parsed=parsearSetSII(txt);
+    if(!parsed){res(4,false,'No se pudo parsear el archivo.\nVerifica que sea el .txt del SII con el formato correcto.');return;}
+    S.setData=parsed;
+    mostrarSetParseado(parsed);
+    log('Set SII parseado: N° Atencion '+parsed.natencion+' — '+parsed.casos.length+' casos','ok');
+    res(4,true,'Set detectado: N° Atencion '+parsed.natencion+'\n'+parsed.casos.length+' casos encontrados');
+    document.getElementById('btnConfSet').style.display='block';
+  };
+  rd.readAsText(file,'UTF-8');
 }
 
-async function previewCert(){
-  if(!S.id){log('Carga el emisor primero','warn');return;}
-  try{res(4,true,await api('/v1/certificacion/preview/'+S.id));}
-  catch(e){res(4,false,e.data?.detail||JSON.stringify(e.data));}
-}
+function parsearSetSII(txt){
+  // Extraer N° Atencion
+  const mNat=txt.match(/NUMERO\s+DE\s+ATENCION\s*:\s*(\d+)/i);
+  if(!mNat)return null;
+  const natencion=mNat[1];
 
-/* Generar XML — descarga el sobre listo para subir al SII */
-async function generarXML(){
-  if(!S.id){log('Carga el emisor primero','warn');return;}
-  const btn=document.getElementById('btnGenerar');
-  btn.disabled=true;btn.textContent='⚙️  Generando XML...';
-  log('Generando XML de certificación...','info');
-  try{
-    const r=await fetch(base()+'/v1/certificacion/generar-xml?emisor_id='+S.id,{method:'POST'});
-    if(!r.ok){
-      const txt=await r.text();
-      log('Error '+r.status,'err');
-      res(4,false,'Error '+r.status+': '+txt.slice(0,200));
-      return;
+  // Extraer casos
+  const casos=[];
+  const casoBlocks=txt.split(/CASO\s+\d+-\d+\s*\n={2,}/);
+  const casoHeaders=txt.match(/CASO\s+(\d+-\d+)/g)||[];
+
+  casoBlocks.slice(1).forEach((block,idx)=>{
+    const casoN=casoHeaders[idx]?casoHeaders[idx].replace('CASO ','').trim():String(idx+1);
+    // Detectar tipo de documento
+    let tipoDoc=null;
+    for(const[nombre,cod]of Object.entries(DOC_MAP)){
+      if(block.toUpperCase().includes(nombre)){{tipoDoc=cod;break;}}
     }
-    // Obtener nombre del archivo desde el header
-    const cd=r.headers.get('Content-Disposition')||'';
-    const match=cd.match(/filename="([^"]+)"/);
-    S.xmlNombre=match?match[1]:'EnvioBOLETA_certificacion.xml';
-    S.xmlBlob=await r.blob();
+    // Extraer items
+    const items=[];
+    const lineaItems=block.split('\n');
+    let enItems=false;
+    let tieneDescuento=block.includes('DESCUENTO ITEM');
+    let descGlobal=null;
+    const mDG=block.match(/DESCUENTO\s+GLOBAL\s+ITEMES\s+AFECTOS\s+([\d.]+)%/i);
+    if(mDG)descGlobal=parseFloat(mDG[1]);
 
-    const casos=r.headers.get('X-Casos-Generados')||'?';
-    const errores=r.headers.get('X-Casos-Error')||'0';
+    for(const linea of lineaItems){
+      const l=linea.trim();
+      if(l.startsWith('ITEM')&&l.includes('CANTIDAD')){{enItems=true;continue;}}
+      if(enItems&&l&&!l.startsWith('DESCUENTO')&&!l.startsWith('REFERENCIA')&&!l.startsWith('RAZON')){
+        // Parsear linea de item: nombre + numeros
+        const partes=l.split(/\s{2,}/).map(p=>p.trim()).filter(Boolean);
+        if(partes.length>=2){
+          const nombre=partes[0];
+          const nums=partes.slice(1).map(p=>p.replace(/[^0-9.]/g,''));
+          const cantidad=parseInt(nums[0])||0;
+          const precio=parseInt(nums[1])||0;
+          const descPct=tieneDescuento&&nums[2]?parseFloat(nums[2]):null;
+          const exento=nombre.toLowerCase().includes('exento');
+          if(cantidad&&precio){
+            const item={nombre,cantidad,precio_unitario:precio,exento};
+            if(descPct)item.descuento_pct=descPct;
+            items.push(item);
+          }
+        }
+      }
+    }
+    // Referencia
+    const mRef=block.match(/REFERENCIA\s+.+?\s+(CASO\s+[\d-]+)/i);
+    const mRazon=block.match(/RAZON\s+REFERENCIA\s+(.+)/i);
+    casos.push({
+      caso:casoN,tipo_doc:tipoDoc,items,desc_global:descGlobal,
+      ref_caso:mRef?mRef[1]:null,
+      razon:mRazon?mRazon[1].trim():null,
+    });
+  });
 
-    log('XML generado — '+casos+'/5 casos firmados'+(errores!=='0'?' ('+errores+' con error)':''),'ok');
-
-    // Mostrar botón de descarga y pasos
-    document.getElementById('dl_name').textContent=S.xmlNombre;
-    document.getElementById('dlbox').classList.add('show');
-    document.getElementById('sii_steps').classList.add('show');
-    done(4,'✓ XML listo');
-    res(4,true,'XML generado con '+casos+'/5 casos.\nNombre: '+S.xmlNombre+'\nDescárgalo y súbelo en maullin.sii.cl');
-
-  }catch(e){
-    log('Error generando XML: '+e,'err');
-    res(4,false,'Error: '+String(e));
-  }finally{
-    btn.disabled=false;btn.innerHTML='⚙️ &nbsp;Generar XML de certificación';
-  }
+  return{natencion,casos};
 }
 
-function descargarXML(){
-  if(!S.xmlBlob){log('Primero genera el XML','warn');return;}
-  const url=URL.createObjectURL(S.xmlBlob);
-  const a=document.createElement('a');
-  a.href=url;a.download=S.xmlNombre;
-  document.body.appendChild(a);a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  log('XML descargado: '+S.xmlNombre,'ok');
+function mostrarSetParseado(parsed){
+  document.getElementById('set_nat').textContent='N° Atencion: '+parsed.natencion;
+  document.getElementById('set_sub').textContent=parsed.casos.length+' casos detectados';
+  const cont=document.getElementById('set_casos');
+  cont.innerHTML=parsed.casos.map(c=>{
+    const docNombre=Object.entries(DOC_MAP).find(([_,v])=>v===c.tipo_doc)?.[0]||'Documento '+c.tipo_doc;
+    const items=c.items.map(i=>i.cantidad+'× '+i.nombre+(i.descuento_pct?' (-'+i.descuento_pct+'%)':'')).join(', ');
+    return '<div class="set-caso"><div class="set-caso-n">CASO '+c.caso+'</div><div class="set-caso-t">'+docNombre+(items?' — '+items:'')+(c.desc_global?' — Dcto. global '+c.desc_global+'%':'')+(c.razon?' — '+c.razon:'')+'</div></div>';
+  }).join('');
+  document.getElementById('set_parsed').classList.add('show');
 }
 
-/* Generar XML SET BASICO Facturas */
+function confirmarSet(){
+  if(!S.setData)return;
+  const nat=S.setData.natencion;
+  document.getElementById('c5_titulo').textContent='SET BASICO Facturas — N° '+nat;
+  document.getElementById('set_resumen_b').textContent='N° Atencion: '+nat+'\n'+S.setData.casos.length+' casos configurados\nListo para generar el XML.';
+  done(4,'✓ '+nat);
+  log('Set '+nat+' confirmado — procediendo a generar','ok');
+  // Asegurar que el paso 5 este desbloqueado
+  const c5=document.getElementById('c5');
+  if(c5.classList.contains('locked')){unlock(5);}
+  else{c5.scrollIntoView({behavior:'smooth',block:'nearest'});}
+}
+
+/* ─── Paso 5: Generar XML ────────────────── */
 async function generarXMLFacturas(){
   if(!S.id){log('Carga el emisor primero','warn');return;}
   const btn=document.getElementById('btnGenerarFact');
-  btn.disabled=true;btn.textContent='⚙️  Generando SET BASICO...';
-  log('Generando SET BASICO de Facturas (N° Atención 4784337)...','info');
+  btn.disabled=true;btn.textContent='Generando SET BASICO...';
+  const natencion=S.setData?S.setData.natencion:'';
+  log('Generando SET BASICO'+(natencion?' N° '+natencion:'')+'...','info');
   try{
-    const r=await fetch(base()+'/v1/certificacion-facturas/generar-xml?emisor_id='+S.id,{method:'POST'});
+    const url=base()+'/v1/certificacion-facturas/generar-xml?emisor_id='+S.id;
+    const r=await fetch(url,{method:'POST'});
     if(!r.ok){
       const txt=await r.text();
       log('Error '+r.status,'err');
@@ -621,30 +664,29 @@ async function generarXMLFacturas(){
     S.xmlBlobFact=await r.blob();
     const casos=r.headers.get('X-Casos-Generados')||'?';
     const errores=r.headers.get('X-Casos-Error')||'0';
-    log('SET BASICO generado — '+casos+'/8 documentos firmados'+(errores!=='0'?' ('+errores+' con error)':''),'ok');
+    log('XML generado — '+casos+'/8 documentos firmados'+(errores!=='0'?' ('+errores+' con error)':''),'ok');
     document.getElementById('dl_name5').textContent=S.xmlNombreFact;
     document.getElementById('dlbox5').classList.add('show');
-    done(5,'✓ SET BASICO listo');
-    res(5,true,'EnvioDTE generado con '+casos+'/8 documentos.\nNombre: '+S.xmlNombreFact+'\nDescárgalo y súbelo en maullin.sii.cl');
+    document.getElementById('sii_steps5').classList.add('show');
+    done(5,'✓ XML listo');
+    res(5,true,'EnvioDTE generado con '+casos+'/8 documentos.\nArchivo: '+S.xmlNombreFact+'\nDescargalo y subelo en maullin.sii.cl');
   }catch(e){
-    log('Error generando SET BASICO: '+e,'err');
+    log('Error: '+e,'err');
     res(5,false,'Error: '+String(e));
   }finally{
-    btn.disabled=false;btn.innerHTML='⚙️ &nbsp;Generar SET BASICO Facturas';
+    btn.disabled=false;btn.innerHTML='&#9881;&#65039; &nbsp;Generar SET BASICO Facturas';
   }
 }
 
 function descargarXMLFacturas(){
-  if(!S.xmlBlobFact){log('Primero genera el XML de facturas','warn');return;}
+  if(!S.xmlBlobFact){log('Primero genera el XML','warn');return;}
   const url=URL.createObjectURL(S.xmlBlobFact);
-  const a=document.createElement('a');
-  a.href=url;a.download=S.xmlNombreFact;
-  document.body.appendChild(a);a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  const a=document.createElement('a');a.href=url;a.download=S.xmlNombreFact;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
   log('XML descargado: '+S.xmlNombreFact,'ok');
 }
 
+/* ─── UI helpers ─────────────────────────── */
 function tgl(n){const c=document.getElementById('c'+n);if(c.classList.contains('locked'))return;const b=c.querySelector('.cb');b.style.display=b.style.display==='none'?'block':'none';}
 function unlock(n){const c=document.getElementById('c'+n);c.classList.remove('locked');c.classList.add('active');c.querySelector('.cb').style.display='block';c.scrollIntoView({behavior:'smooth',block:'nearest'});}
 function done(n,txt){document.getElementById('c'+n).classList.replace('active','done');const b=document.getElementById('b'+n);b.textContent=txt;b.className='badge ok';}
