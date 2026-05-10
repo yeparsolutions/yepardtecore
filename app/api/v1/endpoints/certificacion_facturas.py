@@ -35,9 +35,11 @@ RECEPTOR = {
 
 
 def _ref_set(n: int, fecha: str) -> dict:
+    # Instrucciones SII certificación: TpoDocRef="SET", RazonRef="CASO NNNNN-N"
+    # Esta referencia siempre va en la PRIMERA línea de cada DTE del set
     return {
-        "tipo_doc_ref": 801,
-        "folio_ref":    n,
+        "tipo_doc_ref": "SET",   # string "SET", no código numérico
+        "folio_ref":    n,       # número de caso (se ignora al escribir SET)
         "fecha_ref":    fecha,
         "razon_ref":    f"CASO {NATENCION}-{n}",
     }
@@ -146,8 +148,8 @@ async def generar_xml_facturas(
                 {"nombre": "Relleno AFECTO", "cantidad":  57, "precio_unitario": 2430, "exento": False},
             ],
             "referencias": [
-                _ref_doc(33, folios[1], fecha, 2, "CORRIGE GIRO DEL RECEPTOR"),
-                _ref_set(5, fecha),
+                _ref_set(5, fecha),                                          # línea 1: SET (obligatorio)
+                _ref_doc(33, folios[1], fecha, 2, "CORRIGE GIRO DEL RECEPTOR"),  # línea 2: doc referenciado
             ],
         })
 
@@ -160,8 +162,8 @@ async def generar_xml_facturas(
                 {"nombre": "ITEM 2 AFECTO",  "cantidad": 190, "precio_unitario": 1857, "exento": False, "descuento_pct": 9},
             ],
             "referencias": [
-                _ref_doc(33, folios[2], fecha, 3, "DEVOLUCION DE MERCADERIAS"),
-                _ref_set(6, fecha),
+                _ref_set(6, fecha),                                           # línea 1: SET (obligatorio)
+                _ref_doc(33, folios[2], fecha, 3, "DEVOLUCION DE MERCADERIAS"),  # línea 2: doc referenciado
             ],
         })
 
@@ -175,8 +177,8 @@ async def generar_xml_facturas(
                 {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   1, "precio_unitario": 34834, "exento": True},
             ],
             "referencias": [
-                _ref_doc(33, folios[3], fecha, 1, "ANULA FACTURA"),
-                _ref_set(7, fecha),
+                _ref_set(7, fecha),                              # línea 1: SET (obligatorio)
+                _ref_doc(33, folios[3], fecha, 1, "ANULA FACTURA"),  # línea 2: doc referenciado
             ],
         })
 
@@ -189,8 +191,8 @@ async def generar_xml_facturas(
                 {"nombre": "Relleno AFECTO", "cantidad":  57, "precio_unitario": 2430, "exento": False},
             ],
             "referencias": [
-                _ref_doc(61, folios[5], fecha, 2, "ANULA NOTA DE CREDITO ELECTRONICA"),
-                _ref_set(8, fecha),
+                _ref_set(8, fecha),                                                    # línea 1: SET (obligatorio)
+                _ref_doc(61, folios[5], fecha, 1, "ANULA NOTA DE CREDITO ELECTRONICA"),  # línea 2: CodRef=1 (anula)
             ],
         })
 
