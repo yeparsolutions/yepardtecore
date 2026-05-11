@@ -57,7 +57,7 @@ class SIIAuth:
         self.url_semilla = SII_SEMILLA_CERT if ambiente == "certificacion" else SII_SEMILLA_PROD
         self.url_token   = SII_TOKEN_CERT   if ambiente == "certificacion" else SII_TOKEN_PROD
 
-        # Cargar certificado .p12
+        # Cargar certificado .p12 (puede ser el de firma o el de autenticacion)
         pwd_bytes = password.encode("utf-8") if isinstance(password, str) else password
         private_key, certificate, _ = pkcs12.load_key_and_certificates(
             p12_bytes, pwd_bytes, backend=default_backend()
@@ -296,27 +296,30 @@ _token_cache: dict[str, dict] = {}
 
 
 async def obtener_token_cached(p12_bytes: bytes, password: str,
-                                ambiente: str = "certificacion") -> str:
+                                ambiente: str = "certificacion",
+                                auth_p12_bytes: bytes = None,
+                                auth_password: str = None) -> str:
     """
     Obtiene el token SII con cache en memoria.
-    Si el token tiene menos de 55 minutos, lo reutiliza.
-    Si expiró, pide uno nuevo automáticamente.
+    Si auth_p12_bytes está presente, lo usa para autenticarse (en vez de p12_bytes).
+    Esto permite usar un certificado homologado SII para auth y otro para firmar DTEs.
     """
-    cache_key = f"{ambiente}_{hash(p12_bytes)}"
+    # Usar certificado de auth si existe, si no usar el de firma
+    token_p12   = auth_p12_bytes if auth_p12_bytes else p12_bytes
+    token_pwd   = auth_password  if auth_password  else password
+
+    cache_key = f"{ambiente}_{hash(token_p12)}"
     ahora     = datetime.now(timezone.utc)
 
-    # Verificar si hay token válido en cache
     if cache_key in _token_cache:
         cached          = _token_cache[cache_key]
         tiempo_restante = (cached["expira"] - ahora).total_seconds()
         if tiempo_restante > 60:
             return cached["token"]
 
-    # Pedir token nuevo al SII
-    auth  = SIIAuth(p12_bytes, password, ambiente)
+    auth  = SIIAuth(token_p12, token_pwd, ambiente)
     token = await auth.obtener_token()
 
-    # Guardar en cache con expiración de 55 minutos
     _token_cache[cache_key] = {
         "token":  token,
         "expira": ahora + timedelta(minutes=55),
