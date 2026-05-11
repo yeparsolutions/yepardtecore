@@ -159,8 +159,8 @@ class SIIAuth:
             f'<getToken><item><Semilla>{semilla}</Semilla></item></getToken>'
         )
 
-        # 2. Construir el elemento Signature
-        sig_el  = ET.SubElement(root, f"{{{NS}}}Signature")
+        # 2. Construir el elemento Signature con namespace correcto (sin prefijo ns0)
+        sig_el  = ET.SubElement(root, f"{{{NS}}}Signature", nsmap={None: NS})
         si_el   = ET.SubElement(sig_el, f"{{{NS}}}SignedInfo")
         ET.SubElement(si_el, f"{{{NS}}}CanonicalizationMethod").set(
             "Algorithm", "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
@@ -198,30 +198,35 @@ class SIIAuth:
             self._certificate.public_bytes(serialization.Encoding.DER)
         ).decode()
 
-        # 3. Calcular DigestValue del documento completo (con Signature ya incluido)
-        #    Enveloped-signature: se excluye el elemento Signature del digest
-        #    Implementacion: c14n del documento sin el nodo Signature
+        # 3. Calcular DigestValue
+        #    URI="" + enveloped-signature = documento completo SIN el nodo Signature
+        #    El Signature ya fue agregado al arbol, lo excluimos para el digest
 
         import copy, io
-        root_copy = copy.deepcopy(root)
-        # Quitar Signature de la copia para calcular el digest
-        sig_copy = root_copy.find(f"{{{NS}}}Signature")
-        if sig_copy is not None:
-            root_copy.remove(sig_copy)
 
+        # Copia del root SIN Signature para el digest
+        root_for_digest = copy.deepcopy(root)
+        sig_in_copy = root_for_digest.find(f"{{{NS}}}Signature")
+        if sig_in_copy is not None:
+            root_for_digest.remove(sig_in_copy)
+
+        # c14n standalone del documento sin Signature
+        root_str  = ET.tostring(root_for_digest)
+        root_alone = ET.fromstring(root_str)
         buf = io.BytesIO()
-        root_copy.getroottree().write_c14n(buf, exclusive=False, with_comments=False)
+        root_alone.getroottree().write_c14n(buf, exclusive=False, with_comments=False)
         digest_bytes = hashlib.sha1(buf.getvalue()).digest()
         dv_el.text = b64encode(digest_bytes).decode()
 
-        # 4. Calcular SignatureValue sobre el SignedInfo c14n standalone
-        si_raw  = ET.tostring(si_el)
+        # 4. Calcular SignatureValue sobre SignedInfo c14n standalone
+        #    (ahora que DigestValue ya esta relleno en si_el)
+        si_raw   = ET.tostring(si_el)
         si_alone = ET.fromstring(si_raw)
-        si_c14n = ET.tostring(si_alone, method="c14n", exclusive=False, with_comments=False)
-        sig_raw = self._private_key.sign(si_c14n, padding.PKCS1v15(), hashes.SHA1())
+        si_c14n  = ET.tostring(si_alone, method="c14n", exclusive=False, with_comments=False)
+        sig_raw  = self._private_key.sign(si_c14n, padding.PKCS1v15(), hashes.SHA1())
         sv_el.text = b64encode(sig_raw).decode()
 
-        # 5. Serializar y retornar
+        # 5. Serializar y retornar (sin declaracion XML - va dentro de SOAP)
         return ET.tostring(root, encoding="unicode", xml_declaration=False)
 
     # ── Paso 3: Obtener token ─────────────────────────────────
