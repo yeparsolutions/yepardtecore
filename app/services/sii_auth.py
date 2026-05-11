@@ -141,90 +141,88 @@ class SIIAuth:
         except etree.XMLSyntaxError:
             raise Exception(f"Respuesta inválida del SII: {response.text[:200]}")
 
-    # ── Paso 2: Firmar la semilla con xmlsec1 ─────────────────
+    # ── Paso 2: Firmar la semilla con Python puro ─────────────
 
     def _firmar_semilla(self, semilla: str) -> str:
         """
-        Firma la semilla usando xmlsec1 — herramienta oficial para XMLDSig.
-        xmlsec1 rellena automáticamente DigestValue, SignatureValue,
-        Modulus, Exponent y X509Certificate en el template XML.
+        Firma la semilla usando Python puro (cryptography + lxml).
+        Implementa XMLDSig enveloped signature sobre el getToken.
+        No depende de xmlsec1 CLI para evitar problemas de compatibilidad.
         """
-        # Template XML con placeholders que xmlsec1 rellena automáticamente
-        template = (
-            '<?xml version="1.0"?>'
-            '<getToken>'
-            f'<item><Semilla>{semilla}</Semilla></item>'
-            '<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">'
-            '<SignedInfo>'
-            '<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>'
-            '<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>'
-            '<Reference URI="">'
-            '<Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/></Transforms>'
-            '<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>'
-            '<DigestValue/>'
-            '</Reference>'
-            '</SignedInfo>'
-            '<SignatureValue/>'
-            '<KeyInfo>'
-            '<KeyValue><RSAKeyValue><Modulus/><Exponent/></RSAKeyValue></KeyValue>'
-            '<X509Data><X509Certificate/></X509Data>'
-            '</KeyInfo>'
-            '</Signature>'
-            '</getToken>'
+        import hashlib
+        from lxml import etree as ET
+
+        NS = "http://www.w3.org/2000/09/xmldsig#"
+
+        # 1. Construir el documento getToken
+        root = ET.fromstring(
+            f'<getToken><item><Semilla>{semilla}</Semilla></item></getToken>'
         )
 
-        # Crear archivos temporales para xmlsec1
-        path_in   = None
-        path_key  = None
-        path_cert = None
-        path_out  = None
+        # 2. Construir el elemento Signature
+        sig_el  = ET.SubElement(root, f"{{{NS}}}Signature")
+        si_el   = ET.SubElement(sig_el, f"{{{NS}}}SignedInfo")
+        ET.SubElement(si_el, f"{{{NS}}}CanonicalizationMethod").set(
+            "Algorithm", "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
+        )
+        ET.SubElement(si_el, f"{{{NS}}}SignatureMethod").set(
+            "Algorithm", f"{NS}rsa-sha1"
+        )
+        ref_el = ET.SubElement(si_el, f"{{{NS}}}Reference")
+        ref_el.set("URI", "")
+        trs = ET.SubElement(ref_el, f"{{{NS}}}Transforms")
+        ET.SubElement(trs, f"{{{NS}}}Transform").set(
+            "Algorithm", f"{NS}enveloped-signature"
+        )
+        ET.SubElement(ref_el, f"{{{NS}}}DigestMethod").set(
+            "Algorithm", f"{NS}sha1"
+        )
+        dv_el = ET.SubElement(ref_el, f"{{{NS}}}DigestValue")
+        sv_el = ET.SubElement(sig_el, f"{{{NS}}}SignatureValue")
 
-        try:
-            # Archivo XML con semilla
-            with tempfile.NamedTemporaryFile(suffix=".xml", delete=False, mode="w") as f:
-                f.write(template)
-                path_in = f.name
+        # KeyInfo
+        ki_el  = ET.SubElement(sig_el, f"{{{NS}}}KeyInfo")
+        kv_el  = ET.SubElement(ki_el,  f"{{{NS}}}KeyValue")
+        rsa_el = ET.SubElement(kv_el,  f"{{{NS}}}RSAKeyValue")
+        pub    = self._private_key.public_key()
+        nums   = pub.public_numbers()
 
-            # Archivo clave privada PEM
-            with tempfile.NamedTemporaryFile(suffix=".pem", delete=False, mode="wb") as f:
-                f.write(self._private_key.private_bytes(
-                    serialization.Encoding.PEM,
-                    serialization.PrivateFormat.TraditionalOpenSSL,
-                    serialization.NoEncryption()
-                ))
-                path_key = f.name
+        def int_to_b64(n: int) -> str:
+            length = (n.bit_length() + 7) // 8
+            return b64encode(n.to_bytes(length, "big")).decode()
 
-            # Archivo certificado PEM
-            with tempfile.NamedTemporaryFile(suffix=".pem", delete=False, mode="wb") as f:
-                f.write(self._certificate.public_bytes(serialization.Encoding.PEM))
-                path_cert = f.name
+        ET.SubElement(rsa_el, f"{{{NS}}}Modulus").text  = int_to_b64(nums.n)
+        ET.SubElement(rsa_el, f"{{{NS}}}Exponent").text = int_to_b64(nums.e)
+        x509d = ET.SubElement(ki_el, f"{{{NS}}}X509Data")
+        ET.SubElement(x509d, f"{{{NS}}}X509Certificate").text = b64encode(
+            self._certificate.public_bytes(serialization.Encoding.DER)
+        ).decode()
 
-            # Archivo de salida firmado
-            path_out = path_in + "_firmado.xml"
+        # 3. Calcular DigestValue del documento completo (con Signature ya incluido)
+        #    Enveloped-signature: se excluye el elemento Signature del digest
+        #    Implementacion: c14n del documento sin el nodo Signature
 
-            # Firmar con xmlsec1
-            result = subprocess.run(
-                ["xmlsec1", "--sign",
-                 "--privkey-pem", f"{path_key},{path_cert}",
-                 "--output", path_out,
-                 path_in],
-                capture_output=True, text=True, timeout=15
-            )
+        import copy, io
+        root_copy = copy.deepcopy(root)
+        # Quitar Signature de la copia para calcular el digest
+        sig_copy = root_copy.find(f"{{{NS}}}Signature")
+        if sig_copy is not None:
+            root_copy.remove(sig_copy)
 
-            if result.returncode != 0:
-                raise Exception(f"xmlsec1 error: {result.stderr}")
+        buf = io.BytesIO()
+        root_copy.getroottree().write_c14n(buf, exclusive=False, with_comments=False)
+        digest_bytes = hashlib.sha1(buf.getvalue()).digest()
+        dv_el.text = b64encode(digest_bytes).decode()
 
-            # Leer y retornar el XML firmado
-            return open(path_out).read()
+        # 4. Calcular SignatureValue sobre el SignedInfo c14n standalone
+        si_raw  = ET.tostring(si_el)
+        si_alone = ET.fromstring(si_raw)
+        si_c14n = ET.tostring(si_alone, method="c14n", exclusive=False, with_comments=False)
+        sig_raw = self._private_key.sign(si_c14n, padding.PKCS1v15(), hashes.SHA1())
+        sv_el.text = b64encode(sig_raw).decode()
 
-        finally:
-            # Limpiar archivos temporales siempre
-            for p in [path_in, path_key, path_cert, path_out]:
-                if p:
-                    try:
-                        os.unlink(p)
-                    except Exception:
-                        pass
+        # 5. Serializar y retornar
+        return ET.tostring(root, encoding="unicode", xml_declaration=False)
 
     # ── Paso 3: Obtener token ─────────────────────────────────
 
