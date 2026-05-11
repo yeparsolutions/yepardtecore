@@ -170,7 +170,9 @@ class SIISender:
         logger.info(f"[SII ENVIO] rutSender={env_limpio} rutCompany={rut_limpio}")
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            logger.info(f"[SII UPLOAD] Enviando a {self.url_upload}")
+            logger.info(f"[SII UPLOAD] rutSender={env_limpio} rutCompany={rut_limpio} archivo={nombre}")
+            async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(self.url_upload, headers=headers, files=files)
 
             logger.info(f"[SII RAW] HTTP={response.status_code} body={response.text[:500]}")
@@ -183,9 +185,15 @@ class SIISender:
             return self._parsear_respuesta_upload(response.text)
 
         except httpx.TimeoutException:
+            logger.error("[SII UPLOAD] TIMEOUT — SII no respondio en 60 segundos")
             return {"track_id": None, "estado": "TIMEOUT",
-                    "mensaje": "El SII no respondio en 30 segundos"}
+                    "mensaje": "El SII no respondio en 60 segundos"}
+        except httpx.RemoteProtocolError as e:
+            logger.error(f"[SII UPLOAD] RemoteProtocolError: {e}")
+            return {"track_id": None, "estado": "ERROR",
+                    "mensaje": f"Server disconnected: {e}"}
         except Exception as e:
+            logger.error(f"[SII UPLOAD] Exception: {type(e).__name__}: {e}")
             return {"track_id": None, "estado": "ERROR", "mensaje": str(e)}
 
     def _parsear_respuesta_upload(self, response_text: str) -> dict:
