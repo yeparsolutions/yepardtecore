@@ -146,8 +146,11 @@ class SIISender:
     async def enviar_sobre(self, sobre_xml: str, rut_emisor: str,
                            rut_enviador: str,
                            p12_bytes: bytes = None,
-                           password: str = None) -> dict:
-        token      = await self._obtener_token(p12_bytes, password)
+                           password: str = None,
+                           auth_p12_bytes: bytes = None,
+                           auth_password: str = None) -> dict:
+        token      = await self._obtener_token(p12_bytes, password,
+                                               auth_p12_bytes, auth_password)
         rut_limpio = self.limpiar_rut(rut_emisor)
         env_limpio = self.limpiar_rut(rut_enviador)
         timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -267,9 +270,15 @@ class SIISender:
                     "raw": response_text[:300]}
 
     async def _obtener_token(self, p12_bytes: bytes = None,
-                             password: str = None) -> str:
+                             password: str = None,
+                             auth_p12_bytes: bytes = None,
+                             auth_password: str = None) -> str:
         if p12_bytes and password:
             from app.services.sii_auth import obtener_token_cached
-            return await obtener_token_cached(p12_bytes, password, self.ambiente)
+            return await obtener_token_cached(
+                p12_bytes, password, self.ambiente,
+                auth_p12_bytes=auth_p12_bytes,
+                auth_password=auth_password
+            )
         logger.warning("[SII AUTH] Usando token 'prueba' — sin certificado")
         return "prueba"
