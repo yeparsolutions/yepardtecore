@@ -30,39 +30,25 @@ def _wrap64(s: str) -> str:
     return '\n' + '\n'.join(textwrap.wrap(clean, 64)) + '\n'
 
 
-def _c14n_intree(el) -> bytes:
+def _c14n_standalone(el) -> bytes:
     """
-    C14N in-tree: canonicaliza el elemento dentro de su arbol completo
-    usando write_c14n del documento entero y extrayendo el fragmento.
+    C14N standalone: serializa el elemento con sus namespaces en-scope,
+    re-parsea como documento independiente, y calcula c14n.
 
-    Este es el metodo que usa el SII al verificar DigestValues:
-    parsea el XML completo, resuelve URI="#ID", y canonicaliza el nodo
-    en su contexto (sin xmlns heredados del padre, porque ya estan
-    declarados en los ancestros del c14n).
+    El SII verifica DigestValues usando este metodo (equivalente a extraer
+    el elemento del documento y re-serializarlo aislado). Usar in-tree c14n
+    produce xmlns="" spurios (causados por interaccion con namespaces de
+    elementos Signature en el arbol) que cambian el DigestValue.
 
-    Verificado empiricamente:
-    - El ejemplo oficial F60T33 del SII coincide con este metodo (✅)
-    - standalone (re-parse) produce xmlns="...SiiDte" en el Documento
-      que el SII no incluye al canonicalizar -> DigestValue distinto -> 505
-
-    NOTA: etree.tostring(el, method='c14n') NO sirve: produce xmlns=""
-    spurios en elementos hijos (bug lxml con namespaces mixtos).
-    El unico metodo correcto es write_c14n del arbol completo.
+    Esto se confirmo empiricamente: el 01/05 con el codigo original
+    (que usaba _c14n_standalone) el sobre daba EPR. Los DigestValues
+    calculados por el SII coinciden con el resultado de este metodo.
     """
-    import io
-    tree = el.getroottree()
-    buf  = io.BytesIO()
-    tree.write_c14n(buf, exclusive=False, with_comments=False)
-    full_c14n = buf.getvalue()
-
-    tag    = el.tag.split('}')[-1] if '}' in el.tag else el.tag
-    el_id  = el.get('ID', '')
-    marker = (f'<{tag} ID="{el_id}"' if el_id else f'<{tag}>').encode()
-    close  = f'</{tag}>'.encode()
-
-    start = full_c14n.find(marker)
-    end   = full_c14n.find(close, start) + len(close)
-    return full_c14n[start:end]
+    raw_bytes  = etree.tostring(el)
+    standalone = etree.fromstring(raw_bytes)
+    return etree.tostring(
+        standalone, method='c14n', exclusive=False, with_comments=False
+    )
 
 
 def _rsa_sign_sha1(private_key, data: bytes) -> bytes:
@@ -262,12 +248,11 @@ class FirmaDTE:
             'Algorithm', f'{NS}rsa-sha1')
         ref = etree.SubElement(si, f'{{{NS}}}Reference')
         ref.set('URI', f'#{doc_id}')
-        # Transform: enveloped-signature (igual que la referencia que pasa certificacion).
-        # El SII requiere este Transform especifico. c14n directo causa RFR.
-        # Nota: el DigestValue es identico porque Signature es hermano de Documento
-        # (no ancestro), por lo que enveloped-signature es un no-op sobre el contenido.
+        # Transform: c14n (confirmado con xmlsec1 y ejemplo oficial SII F60T33).
+        # xmlsec1 genera este Transform al firmar DTEs chilenos.
+        # enveloped-signature causaba DigestValue distinto al que calcula xmlsec1/SII.
         tr = etree.SubElement(ref, f'{{{NS}}}Transforms')
-        etree.SubElement(tr, f'{{{NS}}}Transform').set('Algorithm', ENVELOPED_SIG_ALG)
+        etree.SubElement(tr, f'{{{NS}}}Transform').set('Algorithm', C14N_ALGORITHM)
         etree.SubElement(ref, f'{{{NS}}}DigestMethod').set(
             'Algorithm', f'{NS}sha1')
         etree.SubElement(ref, f'{{{NS}}}DigestValue').text = digest_doc
@@ -372,15 +357,17 @@ class FirmaDTE:
         #    lxml acepta str Unicode sin problemas de codificacion.
         root_final = etree.fromstring(xml_con_ted, parser)
 
-        # 5. DigestValue con c14n IN-TREE (write_c14n del arbol completo).
-        # El SII canonicaliza el Documento en su contexto dentro del EnvioDTE,
-        # lo que produce <Documento ID="..."> SIN xmlns (el namespace ya esta
-        # declarado en el ancestro EnvioDTE). Standalone produce xmlns="...SiiDte"
-        # en el Documento -> DigestValue distinto al del SII -> 505.
-        # Verificado: ejemplo oficial F60T33 coincide con in-tree, no standalone.
+        # 5. DigestValue con c14n STANDALONE (re-parse).
+        # xmlsec1 confirmo que DigestValue standalone es CORRECTO (1/1 OK).
+        # El SII Java parsea el XML fresco = equivalente a standalone.
+        # In-tree produce xmlns="" en IdDoc/TipoDTE que no aparece en parse fresco.
         doc_id = f'DTE-{tipo_dte}-{folio}'
         doc_el = root_final.find(f'.//sii:Documento[@ID="{doc_id}"]', ns)
-        doc_c14n   = _c14n_intree(doc_el)
+        _doc_raw   = etree.tostring(doc_el)
+        _doc_alone = etree.fromstring(_doc_raw)
+        doc_c14n   = etree.tostring(
+            _doc_alone, method='c14n', exclusive=False, with_comments=False
+        )
         digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
         # 6. Signature
@@ -395,15 +382,18 @@ class FirmaDTE:
     def firmar_en_arbol(self, dte_el: etree._Element, doc_id: str) -> None:
         """
         Re-firma un DTE ya insertado en el arbol del EnvioDTE.
-        Usa c14n in-tree (write_c14n del arbol completo) para que
-        DigestValue coincida con la verificacion del SII.
+        Usa c14n in-tree para que DigestValue coincida con la
+        verificacion del SII.
         """
         doc_el = dte_el.find(f'{{{SII_NS}}}Documento')
 
-        # DigestValue con c14n IN-TREE.
-        # El SII canonicaliza en contexto del EnvioDTE -> sin xmlns en Documento.
-        # Standalone agrega xmlns -> DigestValue distinto -> 505.
-        doc_c14n   = _c14n_intree(doc_el)
+        # DigestValue con c14n STANDALONE (re-parse).
+        # xmlsec1 confirmo correcto con standalone. Java fresh parse = standalone.
+        _doc_raw   = etree.tostring(doc_el)
+        _doc_alone = etree.fromstring(_doc_raw)
+        doc_c14n   = etree.tostring(
+            _doc_alone, method='c14n', exclusive=False, with_comments=False
+        )
         digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
         sig_el, si_el = self._build_signature(dte_el, doc_id, digest_doc)
