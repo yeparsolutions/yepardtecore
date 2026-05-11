@@ -397,6 +397,9 @@ async def enviar_xml_facturas(
             rut_enviador=firma.rut_certificado or emisor.rut,
             p12_bytes=cert.certificado_p12,
             password=cert.certificado_password or "",
+            # Si existe certificado de auth separado (ej: E-Sign), usarlo para el token
+            auth_p12_bytes=cert.certificado_auth_p12 or None,
+            auth_password=cert.certificado_auth_password or None,
         )
         logger.info(f"[ENVIAR SII] Resultado: {resultado}")
         return {
