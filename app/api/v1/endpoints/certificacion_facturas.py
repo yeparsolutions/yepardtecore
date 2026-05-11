@@ -233,3 +233,150 @@ async def generar_xml_facturas(
             "X-NroAtencion":     NATENCION,
         }
     )
+
+
+
+@router.post("/enviar", summary="Genera Y envía directo al SII (sin descargar)")
+async def enviar_xml_facturas(
+    emisor_id: int,
+    fecha_override: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Genera el EnvioDTE del Set Básico de Facturas y lo envía
+    directamente al SII via API (sin pasar por el portal web).
+    Retorna el TrackID y estado de recepción.
+    """
+    # Reutilizar la misma logica de generacion
+    from fastapi import Request
+    from fastapi.testclient import TestClient
+
+    # Generar el sobre (misma logica que generar-xml)
+    emisor = await db.get(Emisor, emisor_id)
+    if not emisor:
+        raise HTTPException(status_code=404, detail=f"Emisor {emisor_id} no encontrado")
+
+    cert_result = await db.execute(
+        select(Certificado).where(
+            Certificado.emisor_id == emisor_id,
+            Certificado.activo == True
+        ).limit(1)
+    )
+    cert = cert_result.scalar_one_or_none()
+    if not cert or not cert.certificado_p12:
+        raise HTTPException(status_code=400, detail="Sin certificado .p12 cargado")
+
+    fecha = fecha_override or date.today().isoformat()
+    service = DTEService(db)
+    xmls_firmados = []
+    folios: dict[int, int] = {}
+    errores = []
+
+    async def emitir(caso_n: int, datos: dict):
+        try:
+            r = await service.emitir(
+                emisor_id=emisor_id,
+                datos={**datos, "emisor_id": emisor_id},
+                auto_enviar=False,
+            )
+            xmls_firmados.append(r["xml_firmado"])
+            folios[caso_n] = r["folio"]
+        except Exception as e:
+            errores.append(f"Caso {caso_n}: {e}")
+            logger.error(f"[CERT FAC ENVIO] Error caso {caso_n}: {e}", exc_info=True)
+
+    # Mismos 8 casos
+    await emitir(1, {
+        "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [
+            {"nombre": "Cajón AFECTO",    "cantidad": 133, "precio_unitario": 1489, "exento": False},
+            {"nombre": "Pañuelo AFECTO",  "cantidad": 235, "precio_unitario": 2356, "exento": False},
+        ],
+        "referencias": [_ref_set(1, fecha)],
+    })
+    await emitir(2, {
+        "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [
+            {"nombre": "Cajón AFECTO",    "cantidad": 133, "precio_unitario": 1489, "exento": False},
+            {"nombre": "Pañuelo AFECTO",  "cantidad": 235, "precio_unitario": 2356, "exento": False},
+        ],
+        "referencias": [_ref_set(2, fecha)],
+    })
+    await emitir(3, {
+        "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [
+            {"nombre": "Cajón AFECTO",    "cantidad": 133, "precio_unitario": 1489, "exento": False},
+            {"nombre": "Relleno AFECTO",  "cantidad":  57, "precio_unitario": 2430, "exento": False},
+        ],
+        "referencias": [_ref_set(3, fecha)],
+    })
+    await emitir(4, {
+        "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [
+            {"nombre": "Cajón AFECTO",    "cantidad": 133, "precio_unitario": 1489, "exento": False},
+            {"nombre": "Relleno AFECTO",  "cantidad":  57, "precio_unitario": 2430, "exento": False},
+        ],
+        "referencias": [_ref_set(4, fecha)],
+    })
+
+    if len(xmls_firmados) < 4:
+        raise HTTPException(status_code=500, detail=f"Errores generando DTEs: {errores}")
+
+    # Casos 5-7 NC y 8 ND necesitan folios de facturas anteriores
+    # (simplificado — en produccion usar los folios reales)
+    await emitir(5, {
+        "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [{"nombre": "Cajón AFECTO", "cantidad": 133, "precio_unitario": 1489, "exento": False}],
+        "referencias": [_ref_set(5, fecha), _ref_doc(33, folios.get(1,1), fecha, 1, "ANULA FACTURA")],
+    })
+    await emitir(6, {
+        "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [{"nombre": "Cajón AFECTO", "cantidad": 133, "precio_unitario": 1489, "exento": False}],
+        "referencias": [_ref_set(6, fecha), _ref_doc(33, folios.get(2,2), fecha, 2, "CORRIGE MONTO")],
+    })
+    await emitir(7, {
+        "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [{"nombre": "Cajón AFECTO", "cantidad": 133, "precio_unitario": 1489, "exento": False}],
+        "referencias": [_ref_set(7, fecha), _ref_doc(33, folios.get(3,3), fecha, 3, "CORRIGE TEXTO")],
+    })
+    await emitir(8, {
+        "tipo_dte": 56, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [
+            {"nombre": "Cajón AFECTO",   "cantidad": 133, "precio_unitario": 1489, "exento": False},
+            {"nombre": "Relleno AFECTO", "cantidad":  57, "precio_unitario": 2430, "exento": False},
+        ],
+        "referencias": [_ref_set(8, fecha), _ref_doc(61, folios.get(5,5), fecha, 1, "ANULA NOTA DE CREDITO ELECTRONICA")],
+    })
+
+    # Construir sobre
+    firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
+    sender = SIISender(ambiente=emisor.ambiente)
+    try:
+        sobre_xml = sender.construir_sobre(
+            dtes_xml=xmls_firmados,
+            rut_emisor=emisor.rut,
+            rut_enviador=firma.rut_certificado or emisor.rut,
+            firma_service=firma,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error armando sobre: {e}")
+
+    # Enviar directamente al SII via API
+    try:
+        resultado = await sender.enviar_sobre(
+            sobre_xml=sobre_xml,
+            rut_emisor=emisor.rut,
+            rut_enviador=firma.rut_certificado or emisor.rut,
+            p12_bytes=cert.certificado_p12,
+            password=cert.certificado_password or "",
+        )
+        logger.info(f"[CERT FAC ENVIO] Resultado SII: {resultado}")
+        return {
+            "estado": resultado.get("estado"),
+            "track_id": resultado.get("track_id"),
+            "mensaje": resultado.get("mensaje"),
+            "docs_generados": len(xmls_firmados),
+            "errores_generacion": errores,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error enviando al SII: {e}")
