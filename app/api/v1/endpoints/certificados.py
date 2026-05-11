@@ -95,3 +95,60 @@ async def info_certificado(emisor_id: int, db: AsyncSession = Depends(get_db)):
         "rut": cert.rut_firmante,
         "vence": cert.fecha_vencimiento.strftime("%Y-%m-%d")
     }
+
+
+
+@router.post("/{emisor_id}/subir-auth")
+async def subir_certificado_auth(
+    emisor_id: int,
+    password: str = Form(...),
+    archivo: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Sube el certificado de AUTENTICACION SII separado del de firma.
+    Usar cuando el certificado de firma (Firmadox) no es aceptado
+    por el SII para autenticarse, pero sí para firmar DTEs.
+    Ejemplo: subir E-Sign aquí y Firmadox en /subir.
+    """
+    emisor = await db.get(Emisor, emisor_id)
+    if not emisor:
+        raise HTTPException(status_code=404, detail="Emisor no encontrado")
+
+    p12_bytes = await archivo.read()
+    try:
+        private_key, certificate, _ = pkcs12.load_key_and_certificates(
+            p12_bytes, password.encode(), backend=default_backend()
+        )
+    except Exception:
+        raise HTTPException(status_code=400, detail="Contraseña incorrecta o archivo PFX inválido")
+
+    subject_str  = certificate.subject.rfc4514_string()
+    rut_cert     = _extraer_rut_subject(subject_str)
+    nombre_cert  = _extraer_nombre_subject(subject_str)
+
+    stmt = select(Certificado).where(Certificado.emisor_id == emisor_id)
+    result = await db.execute(stmt)
+    cert_db = result.scalar_one_or_none()
+
+    if not cert_db:
+        raise HTTPException(
+            status_code=400,
+            detail="Primero sube el certificado de firma con POST /subir"
+        )
+
+    cert_db.certificado_auth_p12      = p12_bytes
+    cert_db.certificado_auth_password = password
+
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Error al guardar en base de datos")
+
+    return {
+        "ok": True,
+        "mensaje": f"✅ Certificado de autenticación de {nombre_cert} guardado",
+        "rut": rut_cert,
+        "uso": "Se usará para obtener el token SII. El certificado de firma sigue igual."
+    }
