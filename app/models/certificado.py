@@ -40,11 +40,18 @@ class Certificado(Base):
     rut_firmante: Mapped[str | None] = mapped_column(String(12), nullable=True)
     nombre_firmante: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
-    # ── Certificado ───────────────────────────────────────────
+    # ── Certificado de FIRMA (firma los DTEs) ─────────────────
     # Guardado como bytes en BD — nunca en disco
     certificado_p12: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
-    # Password del certificado
     certificado_password: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    # ── Certificado de AUTENTICACION SII (obtiene el token) ───
+    # Separado del de firma: el SII puede requerir un certificado
+    # homologado (ej: E-Sign) para autenticarse, mientras otro
+    # (ej: Firmadox con nonRepudiation) firma los DTEs.
+    # Si es None, se usa certificado_p12 para ambas funciones.
+    certificado_auth_p12: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    certificado_auth_password: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     # ── Vigencia ──────────────────────────────────────────────
     fecha_emision: Mapped[str | None] = mapped_column(Date, nullable=True)
