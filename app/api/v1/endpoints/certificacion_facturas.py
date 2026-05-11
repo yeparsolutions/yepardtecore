@@ -244,14 +244,8 @@ async def enviar_xml_facturas(
 ):
     """
     Genera el EnvioDTE del Set Básico de Facturas y lo envía
-    directamente al SII via API (sin pasar por el portal web).
-    Retorna el TrackID y estado de recepción.
+    directamente al SII via API. Retorna track_id y estado.
     """
-    # Reutilizar la misma logica de generacion
-    from fastapi import Request
-    from fastapi.testclient import TestClient
-
-    # Generar el sobre (misma logica que generar-xml)
     emisor = await db.get(Emisor, emisor_id)
     if not emisor:
         raise HTTPException(status_code=404, detail=f"Emisor {emisor_id} no encontrado")
@@ -281,72 +275,106 @@ async def enviar_xml_facturas(
             )
             xmls_firmados.append(r["xml_firmado"])
             folios[caso_n] = r["folio"]
+            logger.info(f"[ENVIAR] Caso {caso_n} OK folio={r['folio']}")
         except Exception as e:
             errores.append(f"Caso {caso_n}: {e}")
-            logger.error(f"[CERT FAC ENVIO] Error caso {caso_n}: {e}", exc_info=True)
+            logger.error(f"[ENVIAR] Error caso {caso_n}: {e}", exc_info=True)
 
-    # Mismos 8 casos
+    # Casos 1-4: Facturas (tipo 33)
     await emitir(1, {
         "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "Cajón AFECTO",    "cantidad": 133, "precio_unitario": 1489, "exento": False},
-            {"nombre": "Pañuelo AFECTO",  "cantidad": 235, "precio_unitario": 2356, "exento": False},
+            {"nombre": "Cajón AFECTO",   "cantidad": 133, "precio_unitario": 1489, "exento": False},
+            {"nombre": "Relleno AFECTO", "cantidad":  57, "precio_unitario": 2430, "exento": False},
         ],
         "referencias": [_ref_set(1, fecha)],
     })
     await emitir(2, {
         "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "Cajón AFECTO",    "cantidad": 133, "precio_unitario": 1489, "exento": False},
-            {"nombre": "Pañuelo AFECTO",  "cantidad": 235, "precio_unitario": 2356, "exento": False},
+            {"nombre": "Pañuelo AFECTO", "cantidad": 350, "precio_unitario": 2796, "exento": False, "descuento_pct": 5},
+            {"nombre": "ITEM 2 AFECTO",  "cantidad": 281, "precio_unitario": 1857, "exento": False, "descuento_pct": 9},
         ],
         "referencias": [_ref_set(2, fecha)],
     })
     await emitir(3, {
         "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "Cajón AFECTO",    "cantidad": 133, "precio_unitario": 1489, "exento": False},
-            {"nombre": "Relleno AFECTO",  "cantidad":  57, "precio_unitario": 2430, "exento": False},
+            {"nombre": "Pintura B&W AFECTO",    "cantidad":  28, "precio_unitario":  3118, "exento": False},
+            {"nombre": "ITEM 2 AFECTO",          "cantidad": 168, "precio_unitario":  3137, "exento": False},
+            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   1, "precio_unitario": 34834, "exento": True},
         ],
         "referencias": [_ref_set(3, fecha)],
     })
     await emitir(4, {
         "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "Cajón AFECTO",    "cantidad": 133, "precio_unitario": 1489, "exento": False},
-            {"nombre": "Relleno AFECTO",  "cantidad":  57, "precio_unitario": 2430, "exento": False},
+            {"nombre": "ITEM 1 AFECTO",          "cantidad": 154, "precio_unitario": 2608, "exento": False},
+            {"nombre": "ITEM 2 AFECTO",          "cantidad":  66, "precio_unitario": 2683, "exento": False},
+            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   2, "precio_unitario": 6782, "exento": True},
         ],
+        "descuento_global_pct": 10,
         "referencias": [_ref_set(4, fecha)],
     })
 
-    if len(xmls_firmados) < 4:
-        raise HTTPException(status_code=500, detail=f"Errores generando DTEs: {errores}")
+    # Casos 5-7: NC (tipo 61) — dependen de folios anteriores
+    if 1 in folios:
+        await emitir(5, {
+            "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
+            "items": [
+                {"nombre": "Cajón AFECTO",   "cantidad": 133, "precio_unitario": 1489, "exento": False},
+                {"nombre": "Relleno AFECTO", "cantidad":  57, "precio_unitario": 2430, "exento": False},
+            ],
+            "referencias": [
+                _ref_set(5, fecha),
+                _ref_doc(33, folios[1], fecha, 2, "CORRIGE GIRO DEL RECEPTOR"),
+            ],
+        })
+    if 2 in folios:
+        await emitir(6, {
+            "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
+            "items": [
+                {"nombre": "Pañuelo AFECTO", "cantidad": 129, "precio_unitario": 2796, "exento": False, "descuento_pct": 5},
+                {"nombre": "ITEM 2 AFECTO",  "cantidad": 190, "precio_unitario": 1857, "exento": False, "descuento_pct": 9},
+            ],
+            "referencias": [
+                _ref_set(6, fecha),
+                _ref_doc(33, folios[2], fecha, 3, "DEVOLUCION DE MERCADERIAS"),
+            ],
+        })
+    if 3 in folios:
+        await emitir(7, {
+            "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
+            "items": [
+                {"nombre": "Pintura B&W AFECTO",    "cantidad":  28, "precio_unitario":  3118, "exento": False},
+                {"nombre": "ITEM 2 AFECTO",          "cantidad": 168, "precio_unitario":  3137, "exento": False},
+                {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   1, "precio_unitario": 34834, "exento": True},
+            ],
+            "referencias": [
+                _ref_set(7, fecha),
+                _ref_doc(33, folios[3], fecha, 1, "ANULA FACTURA"),
+            ],
+        })
 
-    # Casos 5-7 NC y 8 ND necesitan folios de facturas anteriores
-    # (simplificado — en produccion usar los folios reales)
-    await emitir(5, {
-        "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
-        "items": [{"nombre": "Cajón AFECTO", "cantidad": 133, "precio_unitario": 1489, "exento": False}],
-        "referencias": [_ref_set(5, fecha), _ref_doc(33, folios.get(1,1), fecha, 1, "ANULA FACTURA")],
-    })
-    await emitir(6, {
-        "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
-        "items": [{"nombre": "Cajón AFECTO", "cantidad": 133, "precio_unitario": 1489, "exento": False}],
-        "referencias": [_ref_set(6, fecha), _ref_doc(33, folios.get(2,2), fecha, 2, "CORRIGE MONTO")],
-    })
-    await emitir(7, {
-        "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
-        "items": [{"nombre": "Cajón AFECTO", "cantidad": 133, "precio_unitario": 1489, "exento": False}],
-        "referencias": [_ref_set(7, fecha), _ref_doc(33, folios.get(3,3), fecha, 3, "CORRIGE TEXTO")],
-    })
-    await emitir(8, {
-        "tipo_dte": 56, "fecha_emision": fecha, "receptor": RECEPTOR,
-        "items": [
-            {"nombre": "Cajón AFECTO",   "cantidad": 133, "precio_unitario": 1489, "exento": False},
-            {"nombre": "Relleno AFECTO", "cantidad":  57, "precio_unitario": 2430, "exento": False},
-        ],
-        "referencias": [_ref_set(8, fecha), _ref_doc(61, folios.get(5,5), fecha, 1, "ANULA NOTA DE CREDITO ELECTRONICA")],
-    })
+    # Caso 8: ND (tipo 56)
+    if 5 in folios:
+        await emitir(8, {
+            "tipo_dte": 56, "fecha_emision": fecha, "receptor": RECEPTOR,
+            "items": [
+                {"nombre": "Cajón AFECTO",   "cantidad": 133, "precio_unitario": 1489, "exento": False},
+                {"nombre": "Relleno AFECTO", "cantidad":  57, "precio_unitario": 2430, "exento": False},
+            ],
+            "referencias": [
+                _ref_set(8, fecha),
+                _ref_doc(61, folios[5], fecha, 1, "ANULA NOTA DE CREDITO ELECTRONICA"),
+            ],
+        })
+
+    if not xmls_firmados:
+        raise HTTPException(
+            status_code=500,
+            detail=f"No se generó ningún documento. Errores: {'; '.join(errores)}"
+        )
 
     # Construir sobre
     firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
@@ -361,7 +389,7 @@ async def enviar_xml_facturas(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error armando sobre: {e}")
 
-    # Enviar directamente al SII via API
+    # Enviar al SII via API
     try:
         resultado = await sender.enviar_sobre(
             sobre_xml=sobre_xml,
@@ -370,7 +398,7 @@ async def enviar_xml_facturas(
             p12_bytes=cert.certificado_p12,
             password=cert.certificado_password or "",
         )
-        logger.info(f"[CERT FAC ENVIO] Resultado SII: {resultado}")
+        logger.info(f"[ENVIAR SII] Resultado: {resultado}")
         return {
             "estado": resultado.get("estado"),
             "track_id": resultado.get("track_id"),
