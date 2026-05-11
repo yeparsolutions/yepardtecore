@@ -317,8 +317,12 @@ async def obtener_token_cached(p12_bytes: bytes, password: str,
         if tiempo_restante > 60:
             return cached["token"]
 
+    import logging as _logging
+    _logger = _logging.getLogger("yepardtecore.dte")
+    _logger.info(f"[SII AUTH] Usando {'auth_p12 (E-Sign)' if auth_p12_bytes else 'p12 (firma)'} para token")
     auth  = SIIAuth(token_p12, token_pwd, ambiente)
     token = await auth.obtener_token()
+    _logger.info(f"[SII AUTH] Token obtenido: {token[:10]}...")
 
     _token_cache[cache_key] = {
         "token":  token,
