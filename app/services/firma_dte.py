@@ -16,6 +16,13 @@ from cryptography.hazmat.backends import default_backend
 from lxml import etree
 from base64 import b64encode
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
+# Timezone de Chile — el SII valida que TmstFirma sea hora local chilena
+_CHILE_TZ = ZoneInfo("America/Santiago")
+
+def _now_chile() -> str:
+    return datetime.now(_CHILE_TZ).strftime('%Y-%m-%dT%H:%M:%S')
 
 XMLDSIG_NS     = "http://www.w3.org/2000/09/xmldsig#"
 SII_NS         = "http://www.sii.cl/SiiDte"
@@ -192,7 +199,7 @@ class FirmaDTE:
             .replace('#', '').replace('<', '&lt;').replace('>', '&gt;')
         ).strip()
 
-        tsted = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
+        tsted = _now_chile()
 
         dd_xml = (
             f'<DD>'
@@ -248,11 +255,12 @@ class FirmaDTE:
             'Algorithm', f'{NS}rsa-sha1')
         ref = etree.SubElement(si, f'{{{NS}}}Reference')
         ref.set('URI', f'#{doc_id}')
-        # Transform: c14n (confirmado con xmlsec1 y ejemplo oficial SII F60T33).
-        # xmlsec1 genera este Transform al firmar DTEs chilenos.
-        # enveloped-signature causaba DigestValue distinto al que calcula xmlsec1/SII.
+        # Transform: enveloped-signature (igual que la referencia que pasa certificacion).
+        # El SII requiere este Transform especifico. c14n directo causa RFR.
+        # Nota: el DigestValue es identico porque Signature es hermano de Documento
+        # (no ancestro), por lo que enveloped-signature es un no-op sobre el contenido.
         tr = etree.SubElement(ref, f'{{{NS}}}Transforms')
-        etree.SubElement(tr, f'{{{NS}}}Transform').set('Algorithm', C14N_ALGORITHM)
+        etree.SubElement(tr, f'{{{NS}}}Transform').set('Algorithm', ENVELOPED_SIG_ALG)
         etree.SubElement(ref, f'{{{NS}}}DigestMethod').set(
             'Algorithm', f'{NS}sha1')
         etree.SubElement(ref, f'{{{NS}}}DigestValue').text = digest_doc
@@ -330,7 +338,7 @@ class FirmaDTE:
         # 2. Actualizar TmstFirma
         tmst_el = root.find('.//sii:TmstFirma', ns)
         if tmst_el is not None:
-            tmst_el.text = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
+            tmst_el.text = _now_chile()
 
         # 3. Serializar DTE a string e insertar TED como string literal
         xml_str = etree.tostring(root, encoding='unicode', xml_declaration=False)
