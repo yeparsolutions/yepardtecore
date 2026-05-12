@@ -391,7 +391,7 @@ async def enviar_xml_facturas(
 
     # Enviar al SII via API
     try:
-        # Log de diagnostico
+        # Log de diagnostico v2
         logger.info(f"[ENVIAR] rut_enviador={firma.rut_certificado or emisor.rut}")
         logger.info(f"[ENVIAR] cert.certificado_p12={'SI' if cert.certificado_p12 else 'NO'}")
         logger.info(f"[ENVIAR] cert.certificado_auth_p12={'SI' if cert.certificado_auth_p12 else 'NO'}")
