@@ -1,14 +1,16 @@
-# app/services/firma_dte.py  v8.0
+# app/services/firma_dte.py  v9.0
 # Firma individual de DTEs para SII Chile
 #
-# FIX v8.0:
+# FIX v9.0:
+#   - DigestValue calculado con c14n IN-TREE (write_c14n del arbol completo)
+#   - El SII verifica con in-tree -> coincide -> resuelve DTE-3-505
 #   - TED insertado como string (no DOM) -> DD queda sin xmlns -> FRMT correcto
-#   - c14n in-tree para DigestValue y SignedInfo (igual que el SII)
 #   - CAF buscado con namespace SII (caf_sin_ns corregido)
 
 import re
 import hashlib
 import textwrap
+import io
 from cryptography.hazmat.primitives.serialization import pkcs12, load_pem_private_key
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, utils
@@ -37,25 +39,28 @@ def _wrap64(s: str) -> str:
     return '\n' + '\n'.join(textwrap.wrap(clean, 64)) + '\n'
 
 
-def _c14n_standalone(el) -> bytes:
+def _c14n_intree(el, doc_id: str) -> bytes:
     """
-    C14N standalone: serializa el elemento con sus namespaces en-scope,
-    re-parsea como documento independiente, y calcula c14n.
+    C14N in-tree: canonicaliza el elemento dentro de su arbol completo
+    usando write_c14n del documento entero y extrayendo el fragmento.
 
-    El SII verifica DigestValues usando este metodo (equivalente a extraer
-    el elemento del documento y re-serializarlo aislado). Usar in-tree c14n
-    produce xmlns="" spurios (causados por interaccion con namespaces de
-    elementos Signature en el arbol) que cambian el DigestValue.
+    Este es el metodo que usa el SII al verificar DigestValues:
+    parsea el XML completo, resuelve URI="#ID", y canonicaliza el nodo
+    en su contexto (sin xmlns en el Documento porque ya esta declarado
+    en el ancestro EnvioDTE).
 
-    Esto se confirmo empiricamente: el 01/05 con el codigo original
-    (que usaba _c14n_standalone) el sobre daba EPR. Los DigestValues
-    calculados por el SII coinciden con el resultado de este metodo.
+    Verificado empiricamente:
+    - El ejemplo oficial F60T33 del SII coincide con este metodo (✅)
+    - standalone (re-parse) produce xmlns="...SiiDte" en el Documento
+      que el SII no incluye al canonicalizar -> DigestValue distinto -> 505
     """
-    raw_bytes  = etree.tostring(el)
-    standalone = etree.fromstring(raw_bytes)
-    return etree.tostring(
-        standalone, method='c14n', exclusive=False, with_comments=False
-    )
+    buf = io.BytesIO()
+    el.getroottree().write_c14n(buf, exclusive=False, with_comments=False)
+    full_c14n = buf.getvalue()
+    marker = f'<Documento ID="{doc_id}"'.encode()
+    start  = full_c14n.find(marker)
+    end    = full_c14n.find(b'</Documento>', start) + len(b'</Documento>')
+    return full_c14n[start:end]
 
 
 def _rsa_sign_sha1(private_key, data: bytes) -> bytes:
@@ -92,21 +97,10 @@ class FirmaDTE:
 
     @property
     def rut_certificado(self) -> str:
-        """
-        Extrae el RUT del certificado.
-
-        Estrategia:
-        1. Buscar en el Subject (formato Firmadox: OU=25648612-1)
-        2. Buscar en SAN OtherName OID 1.3.6.1.4.1.8321.1 (formato Firma.cl/ESign/SII)
-        3. Buscar cualquier patron RUT en los bytes DER del certificado
-        """
-        # 1. Subject (Firmadox y otros PSC que ponen RUT en OU/CN)
         subject = self._cert.subject.rfc4514_string()
         m = re.search(r'(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])', subject, re.I)
         if m:
             return m.group(1)
-
-        # 2. SAN OtherName (Firma.cl / ESign / formato SII estandar)
         try:
             from cryptography.x509 import ExtensionOID
             san = self._cert.extensions.get_extension_for_oid(
@@ -120,8 +114,6 @@ class FirmaDTE:
                         return m2.group(1)
         except Exception:
             pass
-
-        # 3. Fallback: buscar patron RUT en el DER completo
         try:
             der_text = self._cert.public_bytes(
                 __import__('cryptography.hazmat.primitives.serialization',
@@ -132,75 +124,47 @@ class FirmaDTE:
                 return m3.group(1)
         except Exception:
             pass
-
         return ''
 
     @property
     def cert_der_b64(self) -> str:
         return self._cert_der_b64
 
-    # ---- Helpers estaticos -------------------------------------------
-
     @staticmethod
     def _strip_ns(xml_str: str) -> str:
-        """Elimina todas las declaraciones de namespace de un string XML."""
         return re.sub(r'\s+xmlns(?::\w+)?="[^"]*"', '', xml_str)
 
     @staticmethod
     def _caf_sin_ns(xml_caf: str) -> tuple:
-        """
-        Extrae (caf_str_sin_namespace, rsask_pem) del XML del CAF del SII.
-
-        El CAF del SII viene con xmlns='http://www.sii.cl/SiiDte'.
-        Se busca con namespace y luego se elimina para insertar en el DD.
-        """
         SII = "http://www.sii.cl/SiiDte"
         parser = etree.XMLParser(remove_blank_text=True)
         root = etree.fromstring(xml_caf.encode(), parser)
-
-        # Buscar CAF con namespace SII (is not None evita FutureWarning de lxml)
         caf_el = root.find(f'.//{{{SII}}}CAF')
         if caf_el is None:
             caf_el = root.find('.//CAF')
         if caf_el is None:
             raise ValueError("CAF no encontrado en el XML del CAF")
-
-        # Buscar RSASK (clave privada del CAF) con o sin namespace
         rsask_el = root.find(f'.//{{{SII}}}RSASK')
         if rsask_el is None:
             rsask_el = root.find('.//RSASK')
         if rsask_el is None:
             raise ValueError("RSASK no encontrado en el CAF")
-
-        # Serializar CAF y eliminar namespace
         caf_str_raw = etree.tostring(caf_el, encoding='unicode')
         caf_str = FirmaDTE._strip_ns(caf_str_raw)
-
         return caf_str, rsask_el.text.strip()
-
-    # ---- TED ----------------------------------------------------------
 
     def generar_ted(self, folio: int, tipo_dte: int, xml_caf: str,
                     fecha_emision: str, rut_emisor: str, monto_total: int,
                     it1_nombre: str = 'PRODUCTO',
                     rut_receptor: str = '66666666-6',
                     rsoc_receptor: str = 'CONSUMIDOR FINAL') -> bytes:
-        """
-        Genera TED. FRMT firmado sobre <DD>...</DD> sin namespace.
-
-        FIX: caf_str limpio de xmlns -> dd_xml firmado coincide
-        con lo que el SII lee en el source XML.
-        """
         caf_str, rsask_text = FirmaDTE._caf_sin_ns(xml_caf)
-
         it1_safe = (
             it1_nombre[:40]
             .replace('&', ' y ').replace("'", '').replace('"', '')
             .replace('#', '').replace('<', '&lt;').replace('>', '&gt;')
         ).strip()
-
         tsted = _now_chile()
-
         dd_xml = (
             f'<DD>'
             f'<RE>{rut_emisor}</RE><TD>{tipo_dte}</TD><F>{folio}</F>'
@@ -210,14 +174,9 @@ class FirmaDTE:
             f'<TSTED>{tsted}</TSTED>'
             f'</DD>'
         )
-
         frmt_b64 = b64encode(
             self._firmar_rsa_caf(dd_xml.encode('ISO-8859-1'), rsask_text)
         ).decode()
-
-        # xmlns="" en TED para que lxml no promueva a SII namespace al insertar.
-        # Se elimina en firmar() antes de escribir el source final,
-        # dejando <TED version="1.0"><DD>...</DD></TED> sin ninguna declaracion.
         return (
             f'<TED xmlns="" version="1.0">{dd_xml}'
             f'<FRMT algoritmo="SHA1withRSA">{frmt_b64}</FRMT>'
@@ -225,7 +184,6 @@ class FirmaDTE:
         ).encode('ISO-8859-1')
 
     def _firmar_rsa_caf(self, data: bytes, pem_key_str: str) -> bytes:
-        """Firma datos con la clave privada RSA del CAF."""
         if '-----' not in pem_key_str:
             pem = (
                 '-----BEGIN RSA PRIVATE KEY-----\n'
@@ -239,13 +197,9 @@ class FirmaDTE:
         digest = hashlib.sha1(data).digest()
         return pk.sign(digest, padding.PKCS1v15(), utils.Prehashed(hashes.SHA1()))
 
-    # ---- Firma XMLDSig ------------------------------------------------
-
     def _build_signature(self, parent_el, doc_id: str, digest_doc: str):
-        """Construye el elemento Signature y retorna (sig_el, si_el)."""
         NS   = XMLDSIG_NS
         C14N = C14N_ALGORITHM
-
         sig_el = etree.SubElement(parent_el, f'{{{NS}}}Signature',
                                    nsmap={None: NS})
         si = etree.SubElement(sig_el, f'{{{NS}}}SignedInfo')
@@ -255,45 +209,21 @@ class FirmaDTE:
             'Algorithm', f'{NS}rsa-sha1')
         ref = etree.SubElement(si, f'{{{NS}}}Reference')
         ref.set('URI', f'#{doc_id}')
-        # Transform: enveloped-signature (igual que la referencia que pasa certificacion).
-        # El SII requiere este Transform especifico. c14n directo causa RFR.
-        # Nota: el DigestValue es identico porque Signature es hermano de Documento
-        # (no ancestro), por lo que enveloped-signature es un no-op sobre el contenido.
         tr = etree.SubElement(ref, f'{{{NS}}}Transforms')
         etree.SubElement(tr, f'{{{NS}}}Transform').set('Algorithm', ENVELOPED_SIG_ALG)
         etree.SubElement(ref, f'{{{NS}}}DigestMethod').set(
             'Algorithm', f'{NS}sha1')
         etree.SubElement(ref, f'{{{NS}}}DigestValue').text = digest_doc
-
         return sig_el, si
 
     def _complete_signature(self, sig_el, si_el) -> None:
-        """Firma el SignedInfo con c14n in-tree y agrega KeyInfo."""
         NS = XMLDSIG_NS
-
-        # c14n STANDALONE (re-parse) del SignedInfo para RSA.
-        #
-        # DIAGNOSTICO DEFINITIVO (xmlsec1):
-        #   - DigestValue: 1/1 OK con in-tree (lxml in-tree = correcto para digest)
-        #   - RSA: INVALIDA con in-tree
-        #
-        # El bug: lxml in-tree c14n del SignedInfo dentro del arbol EnvioDTE produce
-        # xmlns="" en Transforms y Transform (que estan en XMLDSIG namespace). Esto
-        # es un quirk de libxml2 cuando el elemento esta en un arbol con namespaces
-        # mixtos SII/XMLDSIG.
-        #
-        # xmlsec1 (y el SII Java) parsean el XML desde el archivo (arbol fresco)
-        # y producen c14n LIMPIO -- identico al standalone (re-parse).
-        # Confirmado: re-parse == standalone (mismos bytes exactos).
-        #
-        # FIX: standalone (re-parse) = lo que xmlsec1/Java produce = firma correcta.
         _si_raw   = etree.tostring(si_el)
         _si_alone = etree.fromstring(_si_raw)
         si_c14n   = etree.tostring(
             _si_alone, method='c14n', exclusive=False, with_comments=False
         )
         firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
-
         etree.SubElement(sig_el, f'{{{NS}}}SignatureValue').text = firma_b64
         ki     = etree.SubElement(sig_el, f'{{{NS}}}KeyInfo')
         kv     = etree.SubElement(ki, f'{{{NS}}}KeyValue')
@@ -305,45 +235,34 @@ class FirmaDTE:
             _wrap64(self._cert_der_b64)
         )
 
-    # ---- API publica --------------------------------------------------
-
     def firmar(self, xml_bytes: bytes, folio: int, tipo_dte: int,
                xml_caf: str, fecha_emision: str, rut_emisor: str,
                monto_total: int, it1_nombre: str = 'PRODUCTO') -> bytes:
         """
-        Inserta TED y firma el DTE individual. v8.0
+        Inserta TED y firma el DTE individual. v9.0
 
-        FIX TED: insercion como string literal (no DOM lxml) para que
-        <DD> quede sin xmlns en el source XML. El SII verifica FRMT
-        sobre esos bytes exactos.
-
-        FIX DigestValue: c14n in-tree (igual que el SII al verificar).
+        FIX DigestValue v9.0: c14n IN-TREE (write_c14n del arbol completo).
+        El SII verifica con in-tree -> sin xmlns en Documento -> coincide -> no 505.
         """
         parser = etree.XMLParser(remove_blank_text=True)
         root   = etree.fromstring(xml_bytes, parser)
         ns     = {'sii': SII_NS}
 
-        # 1. Generar TED bytes y convertir a string
+        # 1. Generar TED
         ted_bytes_raw = self.generar_ted(
             folio, tipo_dte, xml_caf, fecha_emision,
             rut_emisor, monto_total, it1_nombre
         )
         ted_str = ted_bytes_raw.decode('ISO-8859-1')
-
-        # Quitar xmlns="" del TED: el source queda <TED version="1.0"><DD>...</DD>
-        # Al parsear el SII, TED hereda xmlns SII (para c14n correcto),
-        # pero el source literal tiene <DD> que el SII usa para verificar FRMT.
         ted_str_limpio = ted_str.replace('<TED xmlns="" ', '<TED ', 1)
 
-        # 2. Actualizar TmstFirma
+        # 2. TmstFirma
         tmst_el = root.find('.//sii:TmstFirma', ns)
         if tmst_el is not None:
             tmst_el.text = _now_chile()
 
-        # 3. Serializar DTE a string e insertar TED como string literal
+        # 3. Serializar e insertar TED como string literal
         xml_str = etree.tostring(root, encoding='unicode', xml_declaration=False)
-
-        # Reemplazar el placeholder TED (cualquier forma con/sin namespace)
         xml_con_ted = re.sub(
             r'<(?:[^:>]+:)?TED(?:\s[^>]*)?(?:/>|>(?:.*?)</(?:[^:>]+:)?TED>)',
             ted_str_limpio,
@@ -351,31 +270,21 @@ class FirmaDTE:
             count=1,
             flags=re.DOTALL
         )
-
         if xml_con_ted == xml_str:
-            # Fallback: insertar antes de TmstFirma
             xml_con_ted = xml_str.replace(
                 '<TmstFirma>', ted_str_limpio + '<TmstFirma>', 1
             )
 
-        # 4. Re-parsear con TED ya en source.
-        #    FIX: pasar el string Unicode directamente (NO .encode('ISO-8859-1'))
-        #    Si se pasan bytes ISO-8859-1 sin XML declaration, lxml asume UTF-8
-        #    y falla con caracteres espanoles (n~, a', e') -> XMLSyntaxError.
-        #    lxml acepta str Unicode sin problemas de codificacion.
+        # 4. Re-parsear con TED en source
         root_final = etree.fromstring(xml_con_ted, parser)
 
-        # 5. DigestValue con c14n STANDALONE (re-parse).
-        # xmlsec1 confirmo que DigestValue standalone es CORRECTO (1/1 OK).
-        # El SII Java parsea el XML fresco = equivalente a standalone.
-        # In-tree produce xmlns="" en IdDoc/TipoDTE que no aparece en parse fresco.
+        # 5. DigestValue con c14n IN-TREE (FIX v9.0)
+        # El SII canonicaliza el Documento dentro del EnvioDTE:
+        # <Documento ID="DTE-33-61"> sin xmlns (lo hereda del padre)
+        # standalone agrega xmlns="...SiiDte" -> digest distinto -> 505
         doc_id = f'DTE-{tipo_dte}-{folio}'
         doc_el = root_final.find(f'.//sii:Documento[@ID="{doc_id}"]', ns)
-        _doc_raw   = etree.tostring(doc_el)
-        _doc_alone = etree.fromstring(_doc_raw)
-        doc_c14n   = etree.tostring(
-            _doc_alone, method='c14n', exclusive=False, with_comments=False
-        )
+        doc_c14n   = _c14n_intree(doc_el, doc_id)
         digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
         # 6. Signature
@@ -390,18 +299,12 @@ class FirmaDTE:
     def firmar_en_arbol(self, dte_el: etree._Element, doc_id: str) -> None:
         """
         Re-firma un DTE ya insertado en el arbol del EnvioDTE.
-        Usa c14n in-tree para que DigestValue coincida con la
-        verificacion del SII.
+        FIX v9.0: usa c14n IN-TREE para DigestValue (igual que el SII).
         """
         doc_el = dte_el.find(f'{{{SII_NS}}}Documento')
 
-        # DigestValue con c14n STANDALONE (re-parse).
-        # xmlsec1 confirmo correcto con standalone. Java fresh parse = standalone.
-        _doc_raw   = etree.tostring(doc_el)
-        _doc_alone = etree.fromstring(_doc_raw)
-        doc_c14n   = etree.tostring(
-            _doc_alone, method='c14n', exclusive=False, with_comments=False
-        )
+        # DigestValue con c14n IN-TREE (FIX v9.0)
+        doc_c14n   = _c14n_intree(doc_el, doc_id)
         digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
 
         sig_el, si_el = self._build_signature(dte_el, doc_id, digest_doc)
