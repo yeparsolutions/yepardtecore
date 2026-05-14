@@ -43,18 +43,24 @@ class DTEService:
         builder   = XMLBuilder(input_dte)
         xml_sin_firma = builder.construir()
 
-        # 4. Firma digital — se necesita el CAF para generar el TED
+        # 4. Firma digital — usa AppDTE para timbre + firma XMLDSig
         try:
-            firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
+            # Pasar ambiente del emisor para usar la URL AppDTE correcta
+            firma = FirmaDigital(
+                cert.certificado_p12,
+                cert.certificado_password or "",
+                ambiente=emisor.ambiente or "certificacion",
+            )
 
             # it1_nombre: primer item del documento (va en el TED)
             it1 = input_dte.items[0].nombre if input_dte.items else "PRODUCTO"
 
-            xml_firmado_bytes = firma.firmar_dte(
+            # await porque firmar_dte ahora llama a la API de AppDTE (async)
+            xml_firmado_bytes = await firma.firmar_dte(
                 xml_bytes     = xml_sin_firma,
                 folio         = folio,
                 tipo_dte      = tipo_dte,
-                xml_caf       = caf.xml_caf,           # CAF para generar el TED
+                xml_caf       = caf.xml_caf,           # CAF para el timbre TED
                 fecha_emision = input_dte.fecha_emision.isoformat(),
                 rut_emisor    = emisor.rut,
                 monto_total   = builder.monto_total,
