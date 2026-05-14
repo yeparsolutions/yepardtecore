@@ -1,162 +1,181 @@
 # app/services/firma_digital.py
 # ══════════════════════════════════════════════════════════════
-# Fachada de firma digital para SII Chile — v10.0 AppDTE
+# Firma digital para SII Chile — v11.0 Java XMLDSig
 #
-# Delega timbre y firma XMLDSig a la API de AppDTE, que implementa
-# correctamente el algoritmo de canonicalización esperado por el SII.
+# Flujo:
+#   1. Python genera el DTE y lo timbra (TED con CAF)
+#   2. Java firma el DTE (XMLDSig nativo — compatible con SII)
+#   3. Python construye el sobre EnvioDTE
+#   4. Java firma el sobre (SetDTE)
+#   5. Python envía al SII
 #
-# Analogía: en vez de hacer el notariado en casa (con riesgo de
-# errores en el protocolo C14N), usamos el notario certificado
-# AppDTE que ya fue validado contra el SII.
-#
-# Flujo de firma de un DTE:
-#   1. timbre_dte → AppDTE inserta el TED con la llave del CAF
-#   2. firma_xml  → AppDTE firma el nodo Documento (XMLDSig)
-#
-# Flujo de firma del sobre:
-#   3. firma_xml  → AppDTE firma el nodo SetDTE (XMLDSig)
+# Java usa javax.xml.crypto.dsig — el mismo motor que el SII.
 # ══════════════════════════════════════════════════════════════
 
+import asyncio
+import base64
 import logging
+import os
 import re
-from cryptography.hazmat.primitives.serialization import pkcs12
-from cryptography.hazmat.backends import default_backend
+import subprocess
+import tempfile
 
-from app.services.appdte_client import AppDTEClient
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.serialization import pkcs12
 
 logger = logging.getLogger("yepardtecore.firma")
+
+# Ruta al .class compilado de FirmaDTE
+# En Railway: /app/FirmaDTE.class (copiado por Dockerfile)
+# En local:   directorio actual
+_JAVA_CLASS_DIR = os.environ.get("FIRMA_JAVA_DIR", "/app")
+_JAVA_CLASS_NAME = "FirmaDTE"
+
+
+def _java_disponible() -> bool:
+    try:
+        r = subprocess.run(["java", "-version"], capture_output=True, timeout=5)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def _firmar_con_java(modo: str, xml_bytes: bytes, pfx_bytes: bytes,
+                     password: str, doc_id: str = "") -> bytes:
+    """
+    Llama a FirmaDTE.java via subprocess.
+
+    Modos:
+      firmar-dte   — firma el nodo Documento (URI="#DTE-33-61")
+      firmar-sobre — firma el nodo SetDTE   (URI="#SetDoc")
+
+    Returns:
+        bytes ISO-8859-1 del XML firmado
+    """
+    xml_b64 = base64.b64encode(xml_bytes).decode()
+    pfx_b64 = base64.b64encode(pfx_bytes).decode()
+
+    cmd = ["java", "-cp", _JAVA_CLASS_DIR, _JAVA_CLASS_NAME,
+           modo, xml_b64, pfx_b64, password]
+    if modo == "firmar-dte" and doc_id:
+        cmd.append(doc_id)
+
+    logger.debug(f"[FirmaJava] {modo} doc_id={doc_id}")
+
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"FirmaDTE.java [{modo}] error: {result.stderr[:300]}"
+        )
+
+    if not result.stdout:
+        raise RuntimeError(f"FirmaDTE.java [{modo}]: sin output")
+
+    return base64.b64decode(result.stdout)
 
 
 class FirmaDigital:
     """
-    Fachada principal de firma digital para DTEs del SII Chile.
+    Fachada de firma digital para DTEs del SII Chile.
 
-    Usa AppDTE para timbre y firma XMLDSig, garantizando
-    compatibilidad con el validador del SII.
+    Usa Java (FirmaDTE.class) para XMLDSig y Python (firma_dte.py)
+    para el timbre TED con la llave CAF.
     """
 
     def __init__(self, p12_bytes: bytes, password: str,
                  ambiente: str = "certificacion"):
-        # Guardar credenciales para pasar a AppDTE en cada llamada
         self._p12_bytes = p12_bytes
         self._password  = password
         self._ambiente  = ambiente
 
-        # Inicializar cliente AppDTE con la URL correcta según ambiente
-        self._appdte = AppDTEClient(ambiente=ambiente)
-
-        # Leer el certificado localmente solo para extraer metadatos
-        # (RUT del firmante, fecha de vencimiento) — NO firma localmente
         pwd = password.encode("utf-8") if isinstance(password, str) else password
         _, cert, _ = pkcs12.load_key_and_certificates(
             p12_bytes, pwd, backend=default_backend()
         )
         self._cert = cert
-
-        # RUT del certificado (usado como rut_enviador)
         self.rut_certificado = self._extraer_rut(cert)
         self.esta_vigente    = True
 
-    # ── Propiedades ───────────────────────────────────────────────────
+        # FirmaDTE Python (solo para timbre TED)
+        from app.services.firma_dte import FirmaDTE as FirmaDTEPy
+        self._dte = FirmaDTEPy(p12_bytes, password)
 
     @property
     def vigente_hasta(self):
-        """Fecha de vencimiento del certificado."""
         return self._cert.not_valid_after_utc
-
-    # ── API pública ───────────────────────────────────────────────────
 
     async def firmar_dte(
         self,
-        xml_bytes:    bytes,
-        folio:        int,
-        tipo_dte:     int,
-        xml_caf:      str,
+        xml_bytes:     bytes,
+        folio:         int,
+        tipo_dte:      int,
+        xml_caf:       str,
         fecha_emision: str,
-        rut_emisor:   str,
-        monto_total:  int,
-        it1_nombre:   str = "PRODUCTO",
+        rut_emisor:    str,
+        monto_total:   int,
+        it1_nombre:    str = "PRODUCTO",
     ) -> bytes:
         """
-        Timbra y firma un DTE individual usando AppDTE.
+        Paso 2-3 del flujo:
+          a. Python inserta el TED (timbre con CAF)
+          b. Java firma el Documento (XMLDSig)
 
-        Pasos:
-          1. /api/timbredte → AppDTE inserta el TED con firma CAF
-          2. /api/firmaxml  → AppDTE firma el nodo Documento (XMLDSig)
-
-        El id_referencia sigue el formato de nuestro xml_builder:
-        "DTE-{tipo}-{folio}" (ej: "DTE-33-65")
-
-        Args:
-            xml_bytes:    XML del DTE sin timbre (bytes ISO-8859-1)
-            folio:        Número de folio
-            tipo_dte:     Tipo de DTE (33, 56, 61, etc.)
-            xml_caf:      XML del CAF del SII
-            fecha_emision: Fecha emisión (formato ISO: "2026-05-14")
-            rut_emisor:   RUT del emisor
-            monto_total:  Monto total del documento
-            it1_nombre:   Nombre del primer ítem (va en el TED)
-
-        Returns:
-            bytes ISO-8859-1 del DTE timbrado y firmado
+        Returns: bytes ISO-8859-1 del DTE timbrado y firmado
         """
-        # Decodificar bytes a string ISO-8859-1
-        xml_str = xml_bytes.decode("iso-8859-1")
-
-        logger.info(f"[FirmaDigital] Timbrando folio={folio} tipo={tipo_dte}")
-
-        # Paso 1: Timbre — AppDTE inserta el TED con la llave del CAF
-        xml_timbrado = await self._appdte.timbre_dte(xml_str, xml_caf)
-
-        logger.info(f"[FirmaDigital] Firmando DTE folio={folio} tipo={tipo_dte}")
-
-        # Paso 2: Firma XMLDSig del Documento
-        # El id_referencia debe coincidir con el atributo ID del Documento
-        # en nuestro xml_builder: Documento ID="DTE-{tipo}-{folio}"
-        id_referencia = f"DTE-{tipo_dte}-{folio}"
-
-        xml_firmado = await self._appdte.firma_xml(
-            xml_iso       = xml_timbrado,
-            pfx_bytes     = self._p12_bytes,
-            password      = self._password,
-            nodo_xml      = "Documento",
-            id_referencia = id_referencia,
+        # a. Timbre TED con Python (firma_dte.py existente)
+        logger.info(f"[FirmaDigital] Timbrando DTE {tipo_dte}-{folio}")
+        xml_timbrado = self._dte.generar_xml_con_ted(
+            xml_bytes     = xml_bytes,
+            folio         = folio,
+            tipo_dte      = tipo_dte,
+            xml_caf       = xml_caf,
+            fecha_emision = fecha_emision,
+            rut_emisor    = rut_emisor,
+            monto_total   = monto_total,
+            it1_nombre    = it1_nombre,
         )
 
-        return xml_firmado.encode("iso-8859-1")
+        # b. Firma XMLDSig con Java
+        doc_id = f"DTE-{tipo_dte}-{folio}"
+        logger.info(f"[FirmaDigital] Firmando con Java {doc_id}")
 
-    async def firmar_sobre(self, sobre_xml: str) -> str:
-        """
-        Firma el SetDTE del EnvioDTE usando AppDTE.
-
-        El sobre se firma con el nodo SetDTE (ID="SetDoc"),
-        que es la referencia que usa el SII para verificar
-        la autenticidad del envío completo.
-
-        Args:
-            sobre_xml: EnvioDTE sin firma (string UTF-8 o ISO-8859-1)
-
-        Returns:
-            EnvioDTE firmado (string ISO-8859-1) con declaración XML
-        """
-        logger.info("[FirmaDigital] Firmando sobre EnvioDTE (SetDTE)")
-
-        xml_firmado = await self._appdte.firma_xml(
-            xml_iso       = sobre_xml,
-            pfx_bytes     = self._p12_bytes,
-            password      = self._password,
-            nodo_xml      = "SetDTE",
-            id_referencia = "SetDoc",
+        loop = asyncio.get_event_loop()
+        xml_firmado = await loop.run_in_executor(
+            None,
+            lambda: _firmar_con_java(
+                "firmar-dte", xml_timbrado, self._p12_bytes,
+                self._password, doc_id
+            )
         )
-
-        # Asegurar declaración XML al inicio
-        if not xml_firmado.lstrip().startswith("<?xml"):
-            xml_firmado = '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + xml_firmado
 
         return xml_firmado
 
+    async def firmar_sobre(self, sobre_xml: str) -> str:
+        """
+        Paso 5 del flujo: Java firma el SetDTE del EnvioDTE.
+
+        Returns: EnvioDTE firmado (string ISO-8859-1)
+        """
+        logger.info("[FirmaDigital] Firmando sobre (SetDTE) con Java")
+
+        xml_bytes = sobre_xml.encode("ISO-8859-1")
+
+        loop = asyncio.get_event_loop()
+        xml_firmado = await loop.run_in_executor(
+            None,
+            lambda: _firmar_con_java(
+                "firmar-sobre", xml_bytes, self._p12_bytes, self._password
+            )
+        )
+
+        result = xml_firmado.decode("ISO-8859-1")
+        if not result.lstrip().startswith("<?xml"):
+            result = '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + result
+
+        return result
+
     def info_certificado(self) -> dict:
-        """Retorna metadata del certificado digital."""
         cert = self._cert
         return {
             "subject":      cert.subject.rfc4514_string(),
@@ -166,30 +185,16 @@ class FirmaDigital:
             "rut":          self.rut_certificado,
         }
 
-    # ── Métodos estáticos ────────────────────────────────────────────
-
-    @staticmethod
-    def cargar_desde_base64(cert_b64: str, password: str,
-                            ambiente: str = "certificacion") -> "FirmaDigital":
-        """Crea una instancia desde un certificado en Base64."""
-        from base64 import b64decode
-        return FirmaDigital(b64decode(cert_b64), password, ambiente)
-
-    # ── Internos ─────────────────────────────────────────────────────
-
     @staticmethod
     def _extraer_rut(cert) -> str:
-        """Extrae el RUT del sujeto del certificado X.509."""
         subject = cert.subject.rfc4514_string()
         m = re.search(r"(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])", subject, re.I)
         if m:
             return m.group(1)
-        # Fallback: buscar en SAN
         try:
             from cryptography.x509 import ExtensionOID
             san = cert.extensions.get_extension_for_oid(
-                ExtensionOID.SUBJECT_ALTERNATIVE_NAME
-            )
+                ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
             for name in san.value:
                 if hasattr(name, "value") and isinstance(name.value, bytes):
                     raw = name.value.decode("utf-8", errors="replace")
