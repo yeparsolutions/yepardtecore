@@ -218,11 +218,15 @@ class FirmaDTE:
 
     def _complete_signature(self, sig_el, si_el) -> None:
         NS = XMLDSIG_NS
-        _si_raw   = etree.tostring(si_el)
-        _si_alone = etree.fromstring(_si_raw)
-        si_c14n   = etree.tostring(
-            _si_alone, method='c14n', exclusive=False, with_comments=False
-        )
+        # c14n IN-TREE del SignedInfo: igual que el SII al verificar.
+        # El SII canonicaliza el SignedInfo en contexto del arbol completo.
+        # standalone agrega xmlns extras que cambian la firma RSA -> 505.
+        buf = io.BytesIO()
+        si_el.getroottree().write_c14n(buf, exclusive=False, with_comments=False)
+        full = buf.getvalue()
+        s = full.find(b'<SignedInfo')
+        e = full.find(b'</SignedInfo>', s) + len(b'</SignedInfo>')
+        si_c14n = full[s:e]
         firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
         etree.SubElement(sig_el, f'{{{NS}}}SignatureValue').text = firma_b64
         ki     = etree.SubElement(sig_el, f'{{{NS}}}KeyInfo')
