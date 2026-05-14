@@ -137,7 +137,7 @@ class FirmaDTE:
     @staticmethod
     def _caf_sin_ns(xml_caf: str) -> tuple:
         SII = "http://www.sii.cl/SiiDte"
-        parser = etree.XMLParser(remove_blank_text=True)
+        parser = etree.XMLParser(remove_blank_text=False)
         root = etree.fromstring(xml_caf.encode(), parser)
         caf_el = root.find(f'.//{{{SII}}}CAF')
         if caf_el is None:
@@ -248,7 +248,7 @@ class FirmaDTE:
         FIX DigestValue v9.0: c14n IN-TREE (write_c14n del arbol completo).
         El SII verifica con in-tree -> sin xmlns en Documento -> coincide -> no 505.
         """
-        parser = etree.XMLParser(remove_blank_text=True)
+        parser = etree.XMLParser(remove_blank_text=False)
         root   = etree.fromstring(xml_bytes, parser)
         ns     = {'sii': SII_NS}
 
@@ -298,6 +298,56 @@ class FirmaDTE:
         # 7. Serializar final
         xml_out = etree.tostring(root_final, encoding='unicode',
                                   xml_declaration=False)
+        return xml_out.encode('ISO-8859-1')
+
+
+    def generar_xml_con_ted(self, xml_bytes: bytes, folio: int, tipo_dte: int,
+                             xml_caf: str, fecha_emision: str, rut_emisor: str,
+                             monto_total: int, it1_nombre: str = 'PRODUCTO') -> bytes:
+        """
+        Inserta el TED (timbre) en el DTE SIN agregar la firma XMLDSig.
+        El XML resultante está listo para ser firmado por Java.
+
+        Pasos:
+          1. Generar TED con llave CAF
+          2. Insertar TED como string en el XML
+          3. Re-parsear con TED en source
+          4. Devolver bytes ISO-8859-1 listos para FirmaDTE.java
+        """
+        parser = etree.XMLParser(remove_blank_text=True)
+        root   = etree.fromstring(xml_bytes, parser)
+        ns     = {'sii': SII_NS}
+
+        # 1. Generar TED
+        ted_bytes_raw = self.generar_ted(
+            folio, tipo_dte, xml_caf, fecha_emision,
+            rut_emisor, monto_total, it1_nombre
+        )
+        ted_str = ted_bytes_raw.decode('ISO-8859-1')
+        ted_str_limpio = ted_str.replace('<TED xmlns="" ', '<TED ', 1)
+
+        # 2. TmstFirma
+        tmst_el = root.find('.//sii:TmstFirma', ns)
+        if tmst_el is not None:
+            tmst_el.text = _now_chile()
+
+        # 3. Serializar e insertar TED como string literal
+        xml_str = etree.tostring(root, encoding='unicode', xml_declaration=False)
+        xml_con_ted = re.sub(
+            r'<(?:[^:>]+:)?TED(?:\s[^>]*)?(?:/>|>(?:.*?)</(?:[^:>]+:)?TED>)',
+            ted_str_limpio,
+            xml_str,
+            count=1,
+            flags=re.DOTALL
+        )
+        if xml_con_ted == xml_str:
+            xml_con_ted = xml_str.replace(
+                '<TmstFirma>', ted_str_limpio + '<TmstFirma>', 1
+            )
+
+        # 4. Re-parsear y devolver bytes ISO-8859-1
+        root_final = etree.fromstring(xml_con_ted, parser)
+        xml_out = etree.tostring(root_final, encoding='unicode', xml_declaration=False)
         return xml_out.encode('ISO-8859-1')
 
     def firmar_en_arbol(self, dte_el: etree._Element, doc_id: str) -> None:
