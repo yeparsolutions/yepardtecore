@@ -18,7 +18,7 @@ RUN echo "bust=$BUST" && \
     pip install --no-cache-dir --no-binary lxml,xmlsec lxml==4.9.4 xmlsec==1.3.17 && \
     pip install --no-cache-dir -r requirements.txt
 COPY . .
-# Compilar FirmaDTE.java en el contenedor para garantizar compatibilidad
+# Compilar FirmaDTE.java en el contenedor para garantizar compatibilidad.
 RUN javac FirmaDTE.java
 EXPOSE 8000
 CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
