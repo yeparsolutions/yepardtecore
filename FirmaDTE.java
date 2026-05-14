@@ -9,24 +9,16 @@ import javax.xml.transform.dom.*;
 import javax.xml.transform.stream.*;
 import org.w3c.dom.*;
 import java.io.*;
+import org.xml.sax.InputSource;
 import java.security.*;
 import java.security.cert.*;
 import java.util.*;
 import java.util.Base64;
 
-/**
- * FirmaDTE.java — Firma XMLDSig para SII Chile
- *
- * Modos:
- *   firmar-dte  <xml_b64> <pfx_b64> <password> <doc_id>
- *   firmar-sobre <xml_b64> <pfx_b64> <password>
- *
- * Salida: XML firmado en Base64 por stdout
- */
 public class FirmaDTE {
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 3) {
+        if (args.length < 4) {
             System.err.println("Uso: java FirmaDTE <modo> <xml_b64> <pfx_b64> <password> [doc_id]");
             System.exit(1);
         }
@@ -43,13 +35,24 @@ public class FirmaDTE {
         PrivateKey privKey = (PrivateKey) ks.getKey(alias, password.toCharArray());
         X509Certificate cert = (X509Certificate) ks.getCertificate(alias);
 
-        // Parsear XML
+        // Parsear XML — forzar ISO-8859-1
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
         dbf.setNamespaceAware(true);
-        Document doc = dbf.newDocumentBuilder()
-                          .parse(new ByteArrayInputStream(xmlBytes));
+        DocumentBuilder builder = dbf.newDocumentBuilder();
+
+        // Convertir bytes ISO-8859-1 a string y luego parsear como UTF-8
+        // El XML declara encoding="ISO-8859-1" — Java lo maneja correctamente
+        // si usamos InputSource con el Reader correcto
+        InputSource is = new InputSource(new InputStreamReader(
+            new ByteArrayInputStream(xmlBytes), "ISO-8859-1"
+        ));
+        Document doc = builder.parse(is);
 
         if (modo.equals("firmar-dte")) {
+            if (args.length < 5) {
+                System.err.println("firmar-dte requiere doc_id");
+                System.exit(1);
+            }
             String docId = args[4];
             firmarDTE(doc, privKey, cert, docId);
         } else if (modo.equals("firmar-sobre")) {
@@ -59,7 +62,7 @@ public class FirmaDTE {
             System.exit(1);
         }
 
-        // Serializar
+        // Serializar en ISO-8859-1
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         Transformer t = TransformerFactory.newInstance().newTransformer();
         t.setOutputProperty(OutputKeys.ENCODING, "ISO-8859-1");
@@ -73,7 +76,6 @@ public class FirmaDTE {
                            X509Certificate cert, String docId) throws Exception {
         XMLSignatureFactory fac = XMLSignatureFactory.getInstance("DOM");
 
-        // Transform c14n
         List<Transform> transforms = Collections.singletonList(
             fac.newTransform(
                 "http://www.w3.org/TR/2001/REC-xml-c14n-20010315",
@@ -125,7 +127,6 @@ public class FirmaDTE {
                              X509Certificate cert) throws Exception {
         XMLSignatureFactory fac = XMLSignatureFactory.getInstance("DOM");
 
-        // Transform c14n para el SetDTE
         List<Transform> transforms = Collections.singletonList(
             fac.newTransform(
                 "http://www.w3.org/TR/2001/REC-xml-c14n-20010315",
@@ -162,7 +163,7 @@ public class FirmaDTE {
             setNodes = doc.getElementsByTagName("SetDTE");
         ((Element) setNodes.item(0)).setIdAttribute("ID", true);
 
-        // Insertar firma dentro del EnvioDTE (hermano del SetDTE)
+        // Firma va dentro del EnvioDTE
         Element envioEl = doc.getDocumentElement();
         DOMSignContext dsc = new DOMSignContext(privKey, envioEl);
         signature.sign(dsc);
