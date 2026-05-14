@@ -144,8 +144,13 @@ class SIISender:
     async def enviar_sobre(self, sobre_xml: str, rut_emisor: str,
                            rut_enviador: str,
                            p12_bytes: bytes = None,
-                           password: str = None) -> dict:
-        token      = await self._obtener_token(p12_bytes, password)
+                           password: str = None,
+                           auth_p12_bytes: bytes = None,
+                           auth_password: str = None) -> dict:
+        # Si hay certificado de auth separado (E-Sign), usarlo para el token
+        token_p12 = auth_p12_bytes or p12_bytes
+        token_pwd = auth_password or password
+        token      = await self._obtener_token(token_p12, token_pwd)
         rut_limpio = self.limpiar_rut(rut_emisor)
         env_limpio = self.limpiar_rut(rut_enviador)
         timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
