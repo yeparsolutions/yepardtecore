@@ -696,3 +696,61 @@ async def get_appdte_xml(emisor_id: int, db: AsyncSession = Depends(get_db)):
             return {"status": "OK", "xml_firmado": xml_firmado}
     
     return {"status": r.status_code, "response": r.text[:500]}
+
+
+@router.get("/get-appdte-xml2")  
+async def get_appdte_xml2(emisor_id: int, db: AsyncSession = Depends(get_db)):
+    """Login en AppDTE y firma el XML."""
+    import httpx, base64 as _b64
+    
+    cert_result = await db.execute(
+        select(Certificado).where(
+            Certificado.emisor_id == emisor_id,
+            Certificado.activo == True
+        ).limit(1)
+    )
+    cert = cert_result.scalar_one_or_none()
+    if not cert:
+        raise HTTPException(400, "Sin certificado")
+    
+    base_url = "https://apicert.appdte.cl"
+    
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        # Paso 1: Login
+        login_r = await client.post(
+            f"{base_url}/AppDTE/api/login",
+            json={"username": "demo", "password": "demo"}
+        )
+        logger.info(f"[APPDTE] Login: {login_r.status_code} {login_r.text[:200]}")
+        
+        if login_r.status_code != 200:
+            # Probar sin /AppDTE
+            login_r = await client.post(
+                f"{base_url}/api/login",
+                json={"username": "demo", "password": "demo"}
+            )
+            logger.info(f"[APPDTE] Login2: {login_r.status_code} {login_r.text[:200]}")
+        
+        # Paso 2: Intentar firmar con diferentes rutas
+        xml_b64 = "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iSVNPLTg4NTktMSI/Pgo8RFRFIHZlcnNpb249IjEuMCI+CjxEb2N1bWVudG8gSUQ9IkY5NVQzMyI+CjxFbmNhYmV6YWRvPgo8SWREb2M+CjxUaXBvRFRFPjMzPC9UaXBvRFRFPgo8Rm9saW8+OTU8L0ZvbGlvPgo8RmNoRW1pcz4yMDI1LTExLTEyPC9GY2hFbWlzPgo8Rm1hUGFnbz4xPC9GbWFQYWdvPgo8L0lkRG9jPgo8RW1pc29yPgo8UlVURW1pc29yPjc2MDQwMzA4LTM8L1JVVEVtaXNvcj4KPFJ6blNvYz5FR0dBIElORk9STUFUSUNBIEVJUkw8L1J6blNvYz4KPEdpcm9FbWlzPlNFUlZJQ0lPUyBJTkZPUk1BVElDT1M8L0dpcm9FbWlzPgo8QWN0ZWNvPjYyMDIwMDwvQWN0ZWNvPgo8Q2RnU0lJU3VjdXI+MTwvQ2RnU0lJU3VjdXI+CjxEaXJPcmlnZW4+UkFGQUVMIENBU0FOT1ZBIDI5NzwvRGlyT3JpZ2VuPgo8Q21uYU9yaWdlbj5TQU5UQSBDUlVaPC9DbW5hT3JpZ2VuPgo8Q2l1ZGFkT3JpZ2VuPlNBTlRBIENSVVo8L0NpdWRhZE9yaWdlbj4KPC9FbWlzb3I+CjxSZWNlcHRvcj4KPFJVVFJlY2VwPjkzNzU4NTUtMjwvUlVUUmVjZXA+CjxSem5Tb2NSZWNlcD5MVVpNSVJBIENFU1BFREVTIE5BVkFSUk88L1J6blNvY1JlY2VwPgo8R2lyb1JlY2VwLz4KPERpclJlY2VwPkFEUklBTk8gRElBWiA1NjA8L0RpclJlY2VwPgo8Q21uYVJlY2VwPlNhbnRhIENydXo8L0NtbmFSZWNlcD4KPENpdWRhZFJlY2VwPlNhbnRhIENydXo8L0NpdWRhZFJlY2VwPgo8L1JlY2VwdG9yPgo8VG90YWxlcz4KPE1udE5ldG8+MTc2NTwvTW50TmV0bz4KPFRhc2FJVkE+MTk8L1Rhc2FJVkE+CjxJVkE+MzM1PC9JVkE+CjxNbnRUb3RhbD4yMTAwPC9NbnRUb3RhbD4KPC9Ub3RhbGVzPgo8L0VuY2FiZXphZG8+CjxEZXRhbGxlPgo8TnJvTGluRGV0PjE8L05yb0xpbkRldD4KPENkZ0l0ZW0+CjxUcG9Db2RpZ28+SU5UPC9UcG9Db2RpZ28+CjxWbHJDb2RpZ28+MDEwMDE8L1ZsckNvZGlnbz4KPC9DZGdJdGVtPgo8Tm1iSXRlbT5QQU4gQ09SUklFTlRFPC9ObWJJdGVtPgo8RHNjSXRlbS8+CjxRdHlJdGVtPjE8L1F0eUl0ZW0+CjxQcmNJdGVtPjE3NjU8L1ByY0l0ZW0+CjxNb250b0l0ZW0+MTc2NTwvTW9udG9JdGVtPgo8L0RldGFsbGU+CjwvRG9jdW1lbnRvPgo8L0RURT4K"
+        pfx_b64 = _b64.b64encode(cert.certificado_p12).decode()
+        
+        results = {}
+        for path in ["/AppDTE/api/firmaxml", "/api/firmaxml", "/AppDTE/api/firma"]:
+            try:
+                r = await client.post(
+                    f"{base_url}{path}",
+                    json={
+                        "xmlBase64": xml_b64,
+                        "pfxBase64": pfx_b64,
+                        "pass_cert": cert.certificado_password or "",
+                        "nodo_xml": "Documento",
+                        "id_referencia": "F95T33",
+                    }
+                )
+                results[path] = {"status": r.status_code, "body": r.text[:200]}
+                logger.info(f"[APPDTE] {path}: {r.status_code}")
+            except Exception as e:
+                results[path] = {"error": str(e)}
+        
+        return {"login": login_r.text[:200], "firma_attempts": results}
