@@ -205,7 +205,7 @@ async def generar_xml_facturas(
     firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
     sender = SIISender(ambiente=emisor.ambiente)
     try:
-        sobre_xml = sender.construir_sobre(
+        sobre_xml = await sender.construir_sobre(
             dtes_xml=xmls_firmados,
             rut_emisor=emisor.rut,
             rut_enviador=firma.rut_certificado or emisor.rut,
@@ -380,7 +380,7 @@ async def enviar_xml_facturas(
     firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
     sender = SIISender(ambiente=emisor.ambiente)
     try:
-        sobre_xml = sender.construir_sobre(
+        sobre_xml = await sender.construir_sobre(
             dtes_xml=xmls_firmados,
             rut_emisor=emisor.rut,
             rut_enviador=firma.rut_certificado or emisor.rut,
@@ -591,7 +591,7 @@ async def enviar_xml_appdte(
     firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
     sender = SIISender(ambiente=emisor.ambiente)
     try:
-        sobre_xml = sender.construir_sobre(
+        sobre_xml = await sender.construir_sobre(
             dtes_xml=xmls_firmados,
             rut_emisor=emisor.rut,
             rut_enviador=firma.rut_certificado or emisor.rut,
