@@ -279,7 +279,7 @@ async def generar_xml_certificacion(
     sender = SIISender(ambiente="certificacion")
 
     try:
-        sobre_xml = sender.construir_sobre(
+        sobre_xml = await sender.construir_sobre(
             dtes_xml      = xmls_firmados,
             rut_emisor    = emisor.rut,
             rut_enviador  = firma.rut_certificado or emisor.rut,
