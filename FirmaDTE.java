@@ -66,10 +66,17 @@ public class FirmaDTE {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         Transformer t = TransformerFactory.newInstance().newTransformer();
         t.setOutputProperty(OutputKeys.ENCODING, "ISO-8859-1");
-        t.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "no");
+        t.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
         t.transform(new DOMSource(doc), new StreamResult(baos));
 
-        System.out.print(Base64.getEncoder().encodeToString(baos.toByteArray()));
+        // Agregar declaracion XML sin standalone
+        byte[] xmlDecl = "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n".getBytes("ISO-8859-1");
+        byte[] xmlBody = baos.toByteArray();
+        byte[] result = new byte[xmlDecl.length + xmlBody.length];
+        System.arraycopy(xmlDecl, 0, result, 0, xmlDecl.length);
+        System.arraycopy(xmlBody, 0, result, xmlDecl.length, xmlBody.length);
+
+        System.out.print(Base64.getEncoder().encodeToString(result));
     }
 
     static void firmarDTE(Document doc, PrivateKey privKey,
