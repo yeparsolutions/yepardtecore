@@ -827,3 +827,13 @@ async def test_integradte():
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.post("https://api.integradte.cl/api/v1/documents/",json=payload,headers={"x-api-key":"6a0632f7ff18240dc6004aed","idempotency-key":"019e2bd3-2b36-7165-a831-568ede3205d0"})
     return {"status":r.status_code,"response":r.text[:3000]}
+
+@router.get("/get-integradte-xml")
+async def get_integradte_xml():
+    import httpx
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get(
+            "https://api.integradte.cl/api/v1/documents/6a071fe3acd6a48159ee601d",
+            headers={"x-api-key":"6a0632f7ff18240dc6004aed"}
+        )
+    return {"status":r.status_code,"response":r.text[:5000]}
