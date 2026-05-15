@@ -120,20 +120,13 @@ class SIISender:
                     dte_str2 = dte_str2[dte_str2.index('?>') + 2:].lstrip()
                 dte_el = etree.fromstring(dte_str2, parser)
 
-                # Remover Signature provisional (calculada standalone)
-                sig_vieja = dte_el.find(f"{{{XMLDSIG_NS}}}Signature")
-                if sig_vieja is not None:
-                    dte_el.remove(sig_vieja)
-
+                # NO remover la Signature — Java ya firmó el DTE correctamente
+                # Solo insertar el DTE tal como viene
                 if i < len(dtes_xml) - 1:
                     dte_el.tail = "\n"
 
                 # Insertar en el árbol del EnvioDTE
                 set_el.append(dte_el)
-
-                # DTEs ya vienen firmados por AppDTE desde dte_service
-                # No re-firmamos in-tree — AppDTE firma correctamente
-                pass
 
             except Exception as e:
                 raise ValueError(f"DTE XML invalido: {e}")
