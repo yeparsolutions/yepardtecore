@@ -160,13 +160,15 @@ class SIISender:
             "archivo":    (nombre, sobre_bytes, "text/xml;charset=ISO-8859-1"),
         }
 
-        logger.info(f"[SII ENVIO] rutSender={env_limpio} rutCompany={rut_limpio}")
+        logger.info(f"[SII ENVIO] rutSender={env_limpio} rutCompany={rut_limpio} token={token[:8]}...")
+        logger.info(f"[SII ENVIO] url={self.url_upload}")
+        logger.info(f"[SII ENVIO] sobre_bytes_len={len(sobre_bytes)}")
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(self.url_upload, headers=headers, files=files)
 
-            logger.info(f"[SII RAW] HTTP={response.status_code} body={response.text[:500]}")
+            logger.info(f"[SII RAW] HTTP={response.status_code} body={response.text[:2000]}")
 
             if response.status_code != 200:
                 return {"track_id": None, "estado": "ERROR_HTTP",
