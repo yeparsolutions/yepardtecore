@@ -825,5 +825,5 @@ async def test_integradte():
     import httpx, json
     payload = {"user_id":"6a0632f7ff18240dc6004aed","business_id":"6a0632f7ff18240dc6004aed","code_sii":"33","data_dte":json.dumps({"Encabezado":{"IdDoc":{"TipoDTE":33,"FchEmis":"2026-05-14","FmaPago":1},"Emisor":{"RUTEmisor":"78377021-0","RznSoc":"YEPAR SOLUTIONS SPA","GiroEmis":"SERVICIOS INFORMATICOS","Acteco":[620200],"DirOrigen":"AV PRUEBA 123","CmnaOrigen":"SANTIAGO"},"Receptor":{"RUTRecep":"77777777-7","RznSocRecep":"EMPRESA LTDA","GiroRecep":"COMPUTACION","DirRecep":"SAN DIEGO 2222","CmnaRecep":"LA FLORIDA"},"Totales":{"MntNeto":100000,"TasaIVA":19.0,"IVA":19000,"MntTotal":119000}},"Detalle":[{"NroLinDet":1,"NmbItem":"Servicio prueba","QtyItem":1,"UnmdItem":"UN","PrcItem":100000,"MontoItem":100000}]})}
     async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.post("https://api.integradte.cl/api/v1/documents/",json=payload,headers={"x-api-key":"6a0632f7ff18240dc6004aed","idempotency-key":"550e8400-e29b-41d4-a716-446655440000"})
+        r = await client.post("https://api.integradte.cl/api/v1/documents/",json=payload,headers={"x-api-key":"6a0632f7ff18240dc6004aed","idempotency-key":"550e8400-e29b-41d4-a716-446655440001"})
     return {"status":r.status_code,"response":r.text[:3000]}
