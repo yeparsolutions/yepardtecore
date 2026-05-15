@@ -837,3 +837,22 @@ async def get_integradte_xml():
             headers={"x-api-key":"6a0632f7ff18240dc6004aed"}
         )
     return {"status":r.status_code,"response":r.text[:5000]}
+
+@router.get("/process-integradte")
+async def process_integradte():
+    import httpx
+    doc_id = "6a071fe3acd6a48159ee601d"
+    async with httpx.AsyncClient(timeout=30) as client:
+        # Intentar endpoint de proceso
+        for path in [
+            f"/api/v1/documents/{doc_id}/process",
+            f"/api/v1/documents/{doc_id}/sign",
+            f"/api/v1/documents/{doc_id}/send",
+        ]:
+            r = await client.post(
+                f"https://api.integradte.cl{path}",
+                headers={"x-api-key":"6a0632f7ff18240dc6004aed"}
+            )
+            if r.status_code != 404:
+                return {"path": path, "status": r.status_code, "response": r.text[:500]}
+    return {"msg": "ningún endpoint de proceso encontrado"}
