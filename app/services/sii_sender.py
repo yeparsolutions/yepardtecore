@@ -109,29 +109,66 @@ class SIISender:
             etree.SubElement(subtot, f"{{{NS}}}TpoDTE").text = str(tipo)
             etree.SubElement(subtot, f"{{{NS}}}NroDTE").text = str(cantidad)
 
-        # ── Insertar DTEs y re-firmar in-tree ─────────────────
-        # AppDTE maneja la firma — no necesitamos instancia local
+        # ── Guardar DTEs como strings para insertar sin parsear ──
+        # CRÍTICO: NO parsear los DTEs con lxml — destruye la firma de Java
+        # Los DTEs se insertarán como texto plano en el XML final
+        dtes_str_list = []
+        for dte_xml in dtes_xml:
+            dte_str2 = dte_xml
+            if dte_str2.startswith('<?xml'):
+                dte_str2 = dte_str2[dte_str2.index('?>') + 2:].lstrip()
+            dtes_str_list.append(dte_str2.strip())
 
-        for i, dte_xml in enumerate(dtes_xml):
-            try:
-                parser = etree.XMLParser(remove_blank_text=True)
-                dte_str2 = dte_xml
-                if dte_str2.startswith('<?xml'):
-                    dte_str2 = dte_str2[dte_str2.index('?>') + 2:].lstrip()
-                dte_el = etree.fromstring(dte_str2, parser)
-
-                # NO remover la Signature — Java ya firmó el DTE correctamente
-                # Solo insertar el DTE tal como viene
-                if i < len(dtes_xml) - 1:
-                    dte_el.tail = "\n"
-
-                # Insertar en el árbol del EnvioDTE
-                set_el.append(dte_el)
-
-            except Exception as e:
-                raise ValueError(f"DTE XML invalido: {e}")
-
-        sobre_sin_firma = etree.tostring(envio_el, encoding="unicode")
+        # Construir el sobre como STRING - NO serializar con lxml
+        # Serializar solo la carátula (sin DTEs) con lxml
+        caratula_xml = etree.tostring(set_el, encoding="unicode")
+        
+        # Extraer solo hasta el final de Caratula y SubTotDTE
+        # Reconstruir SetDTE con DTEs como strings
+        caratula_str = etree.tostring(caratula, encoding="unicode")
+        subtot_strs = ""
+        for tipo, cantidad in tipos_en_sobre.items():
+            subtot_strs += f"<SubTotDTE><TpoDTE>{tipo}</TpoDTE><NroDTE>{cantidad}</NroDTE></SubTotDTE>"
+        
+        # Carátula completa
+        car_str = (
+            f'<Caratula version="1.0">'
+            f'<RutEmisor>{rut_emisor}</RutEmisor>'
+            f'<RutEnvia>{rut_enviador}</RutEnvia>'
+            f'<RutReceptor>60803000-K</RutReceptor>'
+            f'<FchResol>{fch_resol}</FchResol>'
+            f'<NroResol>{nro_resol}</NroResol>'
+            f'<TmstFirmaEnv>{(ahora + timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%S")}</TmstFirmaEnv>'
+            f'{subtot_strs}'
+            f'</Caratula>'
+        )
+        
+        # DTEs como strings
+        dtes_concat = "\n".join(dtes_str_list)
+        
+        # SetDTE completo
+        set_str = f'<SetDTE ID="SetDoc">{car_str}{dtes_concat}</SetDTE>'
+        
+        # EnvioDTE completo
+        NS = SII_NS
+        XSI = XSI_NS
+        if es_boleta:
+            tag = "EnvioBOLETA"
+            schema_name = "EnvioBOLETA_v11.xsd"
+        else:
+            tag = "EnvioDTE"
+            schema_name = "EnvioDTE_v10.xsd"
+        
+        sobre_sin_firma = (
+            f'<?xml version="1.0" encoding="ISO-8859-1"?>\n'
+            f'<{tag} xmlns="{NS}" '
+            f'xmlns:xsi="{XSI}" '
+            f'version="1.0" '
+            f'xsi:schemaLocation="{NS} {schema_name}">'
+            f'{set_str}'
+            f'</{tag}>'
+        )
+        
         return await firma_service.firmar_sobre(sobre_sin_firma)
 
     async def enviar_sobre(self, sobre_xml: str, rut_emisor: str,
