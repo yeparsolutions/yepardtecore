@@ -83,9 +83,10 @@ public class FirmaDTE {
                            X509Certificate cert, String docId) throws Exception {
         XMLSignatureFactory fac = XMLSignatureFactory.getInstance("DOM");
 
+        // Usar enveloped-signature como la libreria oficial NIC Chile
         List<Transform> transforms = Collections.singletonList(
             fac.newTransform(
-                "http://www.w3.org/TR/2001/REC-xml-c14n-20010315",
+                Transform.ENVELOPED,
                 (TransformParameterSpec) null
             )
         );
