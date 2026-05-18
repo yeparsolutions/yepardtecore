@@ -83,14 +83,15 @@ public class FirmaDTE {
                            X509Certificate cert, String docId) throws Exception {
         XMLSignatureFactory fac = XMLSignatureFactory.getInstance("DOM");
 
-        // Usar enveloped-signature como la libreria oficial NIC Chile
+        // Transform c14n sobre el Documento (igual que libreria NIC Chile)
         List<Transform> transforms = Collections.singletonList(
             fac.newTransform(
-                Transform.ENVELOPED,
+                "http://www.w3.org/TR/2001/REC-xml-c14n-20010315",
                 (TransformParameterSpec) null
             )
         );
 
+        // La referencia apunta al ID del Documento (no del DTE)
         Reference ref = fac.newReference(
             "#" + docId,
             fac.newDigestMethod(DigestMethod.SHA1, null),
@@ -113,20 +114,22 @@ public class FirmaDTE {
 
         XMLSignature signature = fac.newXMLSignature(si, ki);
 
-        // Registrar ID del Documento
+        // Registrar ID del Documento para que Java lo encuentre via URI
         NodeList docNodes = doc.getElementsByTagNameNS(
             "http://www.sii.cl/SiiDte", "Documento");
         if (docNodes.getLength() == 0)
             docNodes = doc.getElementsByTagName("Documento");
-        ((Element) docNodes.item(0)).setIdAttribute("ID", true);
+        Element docEl = (Element) docNodes.item(0);
+        docEl.setIdAttribute("ID", true);
 
-        // Insertar firma dentro del DTE
+        // Insertar firma dentro del DTE (hermano del Documento)
         NodeList dteNodes = doc.getElementsByTagNameNS(
             "http://www.sii.cl/SiiDte", "DTE");
         if (dteNodes.getLength() == 0)
             dteNodes = doc.getElementsByTagName("DTE");
         Element dteEl = (Element) dteNodes.item(0);
 
+        // El DOMSignContext apunta al DTE para insertar Signature como hijo
         DOMSignContext dsc = new DOMSignContext(privKey, dteEl);
         signature.sign(dsc);
     }
