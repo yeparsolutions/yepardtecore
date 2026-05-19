@@ -8,14 +8,29 @@ import javax.xml.transform.*;
 import javax.xml.transform.dom.*;
 import javax.xml.transform.stream.*;
 import org.w3c.dom.*;
-import java.io.*;
 import org.xml.sax.InputSource;
+import java.io.*;
 import java.security.*;
 import java.security.cert.*;
 import java.util.*;
 import java.util.Base64;
 
+/**
+ * FirmaDTE.java — Firma XMLDSig para SII Chile
+ *
+ * Modos:
+ *   firmar-sobre-completo <sobre_b64> <pfx_b64> <password>
+ *     → Firma todos los DTEs del sobre y luego el SetDTE
+ *     → Devuelve el sobre completo firmado en Base64
+ *
+ *   firmar-dte  <xml_b64> <pfx_b64> <password> <doc_id>  (legacy)
+ *   firmar-sobre <xml_b64> <pfx_b64> <password>           (legacy)
+ */
 public class FirmaDTE {
+
+    static final String NS_SII    = "http://www.sii.cl/SiiDte";
+    static final String NS_XMLDSIG = "http://www.w3.org/2000/09/xmldsig#";
+    static final String C14N      = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315";
 
     public static void main(String[] args) throws Exception {
         if (args.length < 4) {
@@ -28,32 +43,24 @@ public class FirmaDTE {
         byte[] pfxBytes = Base64.getDecoder().decode(args[2]);
         String password = args[3];
 
-        // Cargar certificado
         KeyStore ks = KeyStore.getInstance("PKCS12");
         ks.load(new ByteArrayInputStream(pfxBytes), password.toCharArray());
         String alias      = ks.aliases().nextElement();
         PrivateKey privKey = (PrivateKey) ks.getKey(alias, password.toCharArray());
         X509Certificate cert = (X509Certificate) ks.getCertificate(alias);
 
-        // Parsear XML — forzar ISO-8859-1
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
         dbf.setNamespaceAware(true);
         DocumentBuilder builder = dbf.newDocumentBuilder();
-
-        // Convertir bytes ISO-8859-1 a string y luego parsear como UTF-8
-        // El XML declara encoding="ISO-8859-1" — Java lo maneja correctamente
-        // si usamos InputSource con el Reader correcto
-        InputSource is = new InputSource(new InputStreamReader(
-            new ByteArrayInputStream(xmlBytes), "ISO-8859-1"
-        ));
+        InputSource is = new InputSource(
+            new InputStreamReader(new ByteArrayInputStream(xmlBytes), "ISO-8859-1")
+        );
         Document doc = builder.parse(is);
 
-        if (modo.equals("firmar-dte")) {
-            if (args.length < 5) {
-                System.err.println("firmar-dte requiere doc_id");
-                System.exit(1);
-            }
-            String docId = args[4];
+        if (modo.equals("firmar-sobre-completo")) {
+            firmarSobreCompleto(doc, privKey, cert);
+        } else if (modo.equals("firmar-dte")) {
+            String docId = args.length > 4 ? args[4] : "";
             firmarDTE(doc, privKey, cert, docId);
         } else if (modo.equals("firmar-sobre")) {
             firmarSobre(doc, privKey, cert);
@@ -62,74 +69,106 @@ public class FirmaDTE {
             System.exit(1);
         }
 
-        // Serializar en ISO-8859-1
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         Transformer t = TransformerFactory.newInstance().newTransformer();
         t.setOutputProperty(OutputKeys.ENCODING, "ISO-8859-1");
         t.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
         t.transform(new DOMSource(doc), new StreamResult(baos));
 
-        // Agregar declaracion XML sin standalone
-        byte[] xmlDecl = "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n".getBytes("ISO-8859-1");
+        byte[] xmlDecl = "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n"
+                         .getBytes("ISO-8859-1");
         byte[] xmlBody = baos.toByteArray();
-        byte[] result = new byte[xmlDecl.length + xmlBody.length];
+        byte[] result  = new byte[xmlDecl.length + xmlBody.length];
         System.arraycopy(xmlDecl, 0, result, 0, xmlDecl.length);
         System.arraycopy(xmlBody, 0, result, xmlDecl.length, xmlBody.length);
 
         System.out.print(Base64.getEncoder().encodeToString(result));
     }
 
-    static void firmarDTE(Document doc, PrivateKey privKey,
-                           X509Certificate cert, String docId) throws Exception {
+    // ── NUEVO MODO: firma todos los DTEs en el sobre + el SetDTE ──────────────
+    static void firmarSobreCompleto(Document doc, PrivateKey privKey,
+                                     X509Certificate cert) throws Exception {
+        // 1. Firmar cada DTE dentro del sobre
+        NodeList dteList = doc.getElementsByTagNameNS(NS_SII, "DTE");
+        for (int i = 0; i < dteList.getLength(); i++) {
+            Element dteEl  = (Element) dteList.item(i);
+            Element docEl  = (Element) dteEl.getElementsByTagNameNS(NS_SII, "Documento").item(0);
+            String  docId  = docEl.getAttribute("ID");
+            docEl.setIdAttribute("ID", true);
+            _firmarElemento(doc, dteEl, docId, privKey, cert);
+        }
+
+        // 2. Firmar SetDTE
+        Element setDTE = (Element) doc.getElementsByTagNameNS(NS_SII, "SetDTE").item(0);
+        setDTE.setIdAttribute("ID", true);
+        Element envioEl = doc.getDocumentElement();
+        _firmarElemento(doc, envioEl, "SetDoc", privKey, cert);
+    }
+
+    static void _firmarElemento(Document doc, Element parent, String refId,
+                                  PrivateKey privKey, X509Certificate cert)
+            throws Exception {
         XMLSignatureFactory fac = XMLSignatureFactory.getInstance("DOM");
 
-        // Transform c14n sobre el Documento (igual que libreria NIC Chile)
         List<Transform> transforms = Collections.singletonList(
-            fac.newTransform(
-                "http://www.w3.org/TR/2001/REC-xml-c14n-20010315",
-                (TransformParameterSpec) null
-            )
+            fac.newTransform(C14N, (TransformParameterSpec) null)
         );
 
-        // La referencia apunta al ID del Documento (no del DTE)
         Reference ref = fac.newReference(
-            "#" + docId,
+            "#" + refId,
             fac.newDigestMethod(DigestMethod.SHA1, null),
             transforms, null, null
         );
 
         SignedInfo si = fac.newSignedInfo(
-            fac.newCanonicalizationMethod(
-                "http://www.w3.org/TR/2001/REC-xml-c14n-20010315",
-                (C14NMethodParameterSpec) null
-            ),
+            fac.newCanonicalizationMethod(C14N, (C14NMethodParameterSpec) null),
             fac.newSignatureMethod(SignatureMethod.RSA_SHA1, null),
             Collections.singletonList(ref)
         );
 
         KeyInfoFactory kif = fac.getKeyInfoFactory();
-        KeyValue kv   = kif.newKeyValue(cert.getPublicKey());
-        X509Data x509 = kif.newX509Data(Collections.singletonList(cert));
-        KeyInfo ki    = kif.newKeyInfo(Arrays.asList(kv, x509));
+        KeyValue  kv   = kif.newKeyValue(cert.getPublicKey());
+        X509Data  x509 = kif.newX509Data(Collections.singletonList(cert));
+        KeyInfo   ki   = kif.newKeyInfo(Arrays.asList(kv, x509));
+
+        XMLSignature signature = fac.newXMLSignature(si, ki);
+        DOMSignContext dsc = new DOMSignContext(privKey, parent);
+        signature.sign(dsc);
+    }
+
+    // ── MODOS LEGACY ──────────────────────────────────────────────────────────
+    static void firmarDTE(Document doc, PrivateKey privKey,
+                           X509Certificate cert, String docId) throws Exception {
+        XMLSignatureFactory fac = XMLSignatureFactory.getInstance("DOM");
+
+        List<Transform> transforms = Collections.singletonList(
+            fac.newTransform(C14N, (TransformParameterSpec) null)
+        );
+        Reference ref = fac.newReference(
+            "#" + docId,
+            fac.newDigestMethod(DigestMethod.SHA1, null),
+            transforms, null, null
+        );
+        SignedInfo si = fac.newSignedInfo(
+            fac.newCanonicalizationMethod(C14N, (C14NMethodParameterSpec) null),
+            fac.newSignatureMethod(SignatureMethod.RSA_SHA1, null),
+            Collections.singletonList(ref)
+        );
+        KeyInfoFactory kif = fac.getKeyInfoFactory();
+        KeyValue  kv   = kif.newKeyValue(cert.getPublicKey());
+        X509Data  x509 = kif.newX509Data(Collections.singletonList(cert));
+        KeyInfo   ki   = kif.newKeyInfo(Arrays.asList(kv, x509));
 
         XMLSignature signature = fac.newXMLSignature(si, ki);
 
-        // Registrar ID del Documento para que Java lo encuentre via URI
-        NodeList docNodes = doc.getElementsByTagNameNS(
-            "http://www.sii.cl/SiiDte", "Documento");
-        if (docNodes.getLength() == 0)
-            docNodes = doc.getElementsByTagName("Documento");
-        Element docEl = (Element) docNodes.item(0);
-        docEl.setIdAttribute("ID", true);
+        NodeList docNodes = doc.getElementsByTagNameNS(NS_SII, "Documento");
+        if (docNodes.getLength() == 0) docNodes = doc.getElementsByTagName("Documento");
+        ((Element) docNodes.item(0)).setIdAttribute("ID", true);
 
-        // Insertar firma dentro del DTE (hermano del Documento)
-        NodeList dteNodes = doc.getElementsByTagNameNS(
-            "http://www.sii.cl/SiiDte", "DTE");
-        if (dteNodes.getLength() == 0)
-            dteNodes = doc.getElementsByTagName("DTE");
+        NodeList dteNodes = doc.getElementsByTagNameNS(NS_SII, "DTE");
+        if (dteNodes.getLength() == 0) dteNodes = doc.getElementsByTagName("DTE");
         Element dteEl = (Element) dteNodes.item(0);
 
-        // El DOMSignContext apunta al DTE para insertar Signature como hijo
         DOMSignContext dsc = new DOMSignContext(privKey, dteEl);
         signature.sign(dsc);
     }
@@ -139,42 +178,29 @@ public class FirmaDTE {
         XMLSignatureFactory fac = XMLSignatureFactory.getInstance("DOM");
 
         List<Transform> transforms = Collections.singletonList(
-            fac.newTransform(
-                "http://www.w3.org/TR/2001/REC-xml-c14n-20010315",
-                (TransformParameterSpec) null
-            )
+            fac.newTransform(C14N, (TransformParameterSpec) null)
         );
-
         Reference ref = fac.newReference(
             "#SetDoc",
             fac.newDigestMethod(DigestMethod.SHA1, null),
             transforms, null, null
         );
-
         SignedInfo si = fac.newSignedInfo(
-            fac.newCanonicalizationMethod(
-                "http://www.w3.org/TR/2001/REC-xml-c14n-20010315",
-                (C14NMethodParameterSpec) null
-            ),
+            fac.newCanonicalizationMethod(C14N, (C14NMethodParameterSpec) null),
             fac.newSignatureMethod(SignatureMethod.RSA_SHA1, null),
             Collections.singletonList(ref)
         );
-
         KeyInfoFactory kif = fac.getKeyInfoFactory();
-        KeyValue kv   = kif.newKeyValue(cert.getPublicKey());
-        X509Data x509 = kif.newX509Data(Collections.singletonList(cert));
-        KeyInfo ki    = kif.newKeyInfo(Arrays.asList(kv, x509));
+        KeyValue  kv   = kif.newKeyValue(cert.getPublicKey());
+        X509Data  x509 = kif.newX509Data(Collections.singletonList(cert));
+        KeyInfo   ki   = kif.newKeyInfo(Arrays.asList(kv, x509));
 
         XMLSignature signature = fac.newXMLSignature(si, ki);
 
-        // Registrar ID del SetDTE
-        NodeList setNodes = doc.getElementsByTagNameNS(
-            "http://www.sii.cl/SiiDte", "SetDTE");
-        if (setNodes.getLength() == 0)
-            setNodes = doc.getElementsByTagName("SetDTE");
+        NodeList setNodes = doc.getElementsByTagNameNS(NS_SII, "SetDTE");
+        if (setNodes.getLength() == 0) setNodes = doc.getElementsByTagName("SetDTE");
         ((Element) setNodes.item(0)).setIdAttribute("ID", true);
 
-        // Firma va dentro del EnvioDTE
         Element envioEl = doc.getDocumentElement();
         DOMSignContext dsc = new DOMSignContext(privKey, envioEl);
         signature.sign(dsc);
