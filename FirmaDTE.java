@@ -1,4 +1,4 @@
-# app/services/firma_dte.py  v9.0
+# app/services/firma_dte.py  v9.1
 # Firma individual de DTEs para SII Chile
 #
 # FIX v9.0:
