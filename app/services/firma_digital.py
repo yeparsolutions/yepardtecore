@@ -153,11 +153,13 @@ class FirmaDigital:
 
     async def firmar_sobre(self, sobre_xml: str) -> str:
         """
-        Paso 5 del flujo: Java firma el SetDTE del EnvioDTE.
+        Firma todos los DTEs y el SetDTE dentro del árbol completo.
+        Usa el modo firmar-sobre-completo de Java para que los DTEs
+        se firmen en el contexto DOM correcto (sin xmlns standalone).
 
         Returns: EnvioDTE firmado (string ISO-8859-1)
         """
-        logger.info("[FirmaDigital] Firmando sobre (SetDTE) con Java")
+        logger.info("[FirmaDigital] Firmando sobre completo con Java (in-tree)")
 
         xml_bytes = sobre_xml.encode("ISO-8859-1")
 
@@ -165,7 +167,7 @@ class FirmaDigital:
         xml_firmado = await loop.run_in_executor(
             None,
             lambda: _firmar_con_java(
-                "firmar-sobre", xml_bytes, self._p12_bytes, self._password
+                "firmar-sobre-completo", xml_bytes, self._p12_bytes, self._password
             )
         )
 
