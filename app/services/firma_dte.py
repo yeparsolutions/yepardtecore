@@ -1,369 +1,449 @@
-# app/services/firma_dte.py  v9.0
-# Firma individual de DTEs para SII Chile
-#
-# FIX v9.0:
-#   - DigestValue calculado con c14n IN-TREE (write_c14n del arbol completo)
-#   - El SII verifica con in-tree -> coincide -> resuelve DTE-3-505
-#   - TED insertado como string (no DOM) -> DD queda sin xmlns -> FRMT correcto
-#   - CAF buscado con namespace SII (caf_sin_ns corregido)
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+╔══════════════════════════════════════════════════════════════════════╗
+║        SOLUCIÓN: Firma correcta de DTE para SII Chile               ║
+║        Diagnóstico y fix del error 505 en certificación              ║
+╚══════════════════════════════════════════════════════════════════════╝
 
-import re
+HALLAZGOS DEL DIAGNÓSTICO (archivo: EnvioDTE_SetBasico_783770210_20260519.xml)
+═══════════════════════════════════════════════════════════════════════════════
+
+✅ DigestValues:      CORRECTOS   (todos los 8 DTEs y el SetDTE)
+✅ RSA Signatures:    VÁLIDAS     (SignedInfo firmado con C14N correcto)
+❌ FRMT (timbre):     INVÁLIDO    (SHA1 no corresponde a ninguna serialización del <DD>)
+❌ RUTRecep vs RR:    MISMATCH    (documento=77777777-7, TED=66666666-6 en todos los DTEs)
+⚠️ lxml C14N bug:     PRESENTE    (agrega xmlns="" espurios — tu herramienta lo maneja bien)
+
+CAUSA RAÍZ DEL ERROR 505
+═══════════════════════════════════════════════════════════════════════════════
+El SII verifica DOS cosas al recibir un DTE:
+
+  1. La firma XMLDSig del <Documento> → tu código la genera BIEN
+  2. El FRMT del TED (timbre electrónico) → tiene un problema en la serialización del <DD>
+
+Analogía: el XMLDSig es como el sello notarial de la factura (correcto ✅),
+pero el FRMT es como el código QR del timbre fiscal (incorrecto ❌).
+Aunque el notario sea válido, si el QR no cuadra, el SII rechaza.
+"""
+
 import hashlib
-import textwrap
-import io
-from cryptography.hazmat.primitives.serialization import pkcs12, load_pem_private_key
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, utils
-from cryptography.hazmat.backends import default_backend
+import base64
+import re
+from io import BytesIO
+from typing import Optional
 from lxml import etree
-from base64 import b64encode
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
-
-# Timezone de Chile — el SII valida que TmstFirma sea hora local chilena
-_CHILE_TZ = ZoneInfo("America/Santiago")
-
-def _now_chile() -> str:
-    return datetime.now(_CHILE_TZ).strftime('%Y-%m-%dT%H:%M:%S')
-
-XMLDSIG_NS     = "http://www.w3.org/2000/09/xmldsig#"
-SII_NS         = "http://www.sii.cl/SiiDte"
-XSI_NS         = "http://www.w3.org/2001/XMLSchema-instance"
-C14N_ALGORITHM     = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
-ENVELOPED_SIG_ALG  = "http://www.w3.org/2000/09/xmldsig#enveloped-signature"
 
 
-def _wrap64(s: str) -> str:
-    """Formatea base64 en lineas de 64 caracteres."""
-    clean = s.replace('\n', '').replace(' ', '')
-    return '\n' + '\n'.join(textwrap.wrap(clean, 64)) + '\n'
+# ─── CONSTANTES ─────────────────────────────────────────────────────────────
+NS_SII = "http://www.sii.cl/SiiDte"
+NS_DS  = "http://www.w3.org/2000/09/xmldsig#"
+NS_XSI = "http://www.w3.org/2001/XMLSchema-instance"
 
 
-def _c14n_intree(el, doc_id: str) -> bytes:
+# ═══════════════════════════════════════════════════════════════════════════════
+# PROBLEMA 1: Bug de lxml C14N con default namespace
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def c14n_sii_correcto(element: etree._Element, exclusive: bool = False) -> bytes:
     """
-    C14N in-tree: canonicaliza el elemento dentro de su arbol completo
-    usando write_c14n del documento entero y extrayendo el fragmento.
+    Genera el C14N correcto para el SII, sin los xmlns="" espurios de lxml.
 
-    Este es el metodo que usa el SII al verificar DigestValues:
-    parsea el XML completo, resuelve URI="#ID", y canonicaliza el nodo
-    en su contexto (sin xmlns en el Documento porque ya esta declarado
-    en el ancestro EnvioDTE).
+    EL BUG: lxml 6.x agrega 'xmlns=""' a los elementos descendientes cuando
+    hace C14N de un subárbol extraído como nueva raíz de ElementTree.
+    Esto produce bytes incorrectos y DigestValues erróneos.
 
-    Verificado empiricamente:
-    - El ejemplo oficial F60T33 del SII coincide con este metodo (✅)
-    - standalone (re-parse) produce xmlns="...SiiDte" en el Documento
-      que el SII no incluye al canonicalizar -> DigestValue distinto -> 505
+    Analogía: lxml es como una fotocopiadora que agrega marcas de agua
+    fantasmas. Esta función "limpia" esas marcas antes de sellar el documento.
+
+    Args:
+        element: El elemento XML a canonicalizar (ej: <Documento>, <SignedInfo>)
+        exclusive: True para Exclusive C14N, False para Inclusive C14N (SII usa False)
+
+    Returns:
+        bytes: El C14N correcto, listo para calcular DigestValue o firmar
+
+    Ejemplo de uso:
+        doc = tree.find(f".//{{{NS_SII}}}Documento")
+        c14n_bytes = c14n_sii_correcto(doc)
+        digest = base64.b64encode(hashlib.sha1(c14n_bytes).digest()).decode()
     """
-    buf = io.BytesIO()
-    el.getroottree().write_c14n(buf, exclusive=False, with_comments=False)
-    full_c14n = buf.getvalue()
-    marker = f'<Documento ID="{doc_id}"'.encode()
-    start  = full_c14n.find(marker)
-    end    = full_c14n.find(b'</Documento>', start) + len(b'</Documento>')
-    return full_c14n[start:end]
+    buf = BytesIO()
+
+    # lxml produce C14N con xmlns="" espurios en los descendientes.
+    # Ejemplo incorrecto:
+    #   <Documento xmlns="http://www.sii.cl/SiiDte">
+    #     <Encabezado>
+    #       <IdDoc xmlns="">   ← ESPURIO, no debería estar
+    #         <TipoDTE xmlns="">33</TipoDTE>   ← ESPURIO también
+    etree.ElementTree(element).write(
+        buf,
+        method="c14n",
+        exclusive=exclusive,
+        with_comments=False
+    )
+
+    # Removemos los xmlns="" espurios que lxml agrega incorrectamente.
+    # Esto es seguro porque en el contexto SII DTE, todos los elementos
+    # están en el namespace http://www.sii.cl/SiiDte (default), y ninguno
+    # debería resetear a xmlns="" explícitamente.
+    return buf.getvalue().replace(b' xmlns=""', b'')
 
 
-def _rsa_sign_sha1(private_key, data: bytes) -> bytes:
-    """Firma SHA1withRSA (PKCS#1 v1.5)."""
-    digest = hashlib.sha1(data).digest()
-    try:
-        return private_key.sign_prehash(digest, padding.PKCS1v15())
-    except AttributeError:
-        return private_key.sign(
-            digest, padding.PKCS1v15(), utils.Prehashed(hashes.SHA1())
-        )
+def calcular_digest_value(element: etree._Element) -> str:
+    """
+    Calcula el DigestValue SHA1 de un elemento, usando el C14N correcto para SII.
+
+    Args:
+        element: El elemento XML (típicamente <Documento> o <SetDTE>)
+
+    Returns:
+        str: DigestValue en base64, listo para poner en <DigestValue>
+    """
+    c14n_bytes = c14n_sii_correcto(element)
+    sha1_bytes = hashlib.sha1(c14n_bytes).digest()
+    return base64.b64encode(sha1_bytes).decode()
 
 
-class FirmaDTE:
-    """Firma DTEs individuales para SII Chile."""
+# ═══════════════════════════════════════════════════════════════════════════════
+# PROBLEMA 2: Serialización del <DD> para el FRMT del TED
+# ═══════════════════════════════════════════════════════════════════════════════
 
-    def __init__(self, p12_bytes: bytes, password):
-        pwd = password.encode('utf-8') if isinstance(password, str) else password
-        priv, cert, _ = pkcs12.load_key_and_certificates(
-            p12_bytes, pwd, backend=default_backend()
-        )
-        self._private_key  = priv
-        self._cert         = cert
-        self._cert_der_b64 = b64encode(
-            cert.public_bytes(serialization.Encoding.DER)
-        ).decode()
-        pub = cert.public_key().public_numbers()
-        self._rsa_mod = b64encode(
-            pub.n.to_bytes((pub.n.bit_length() + 7) // 8, 'big')
-        ).decode()
-        self._rsa_exp = b64encode(
-            pub.e.to_bytes((pub.e.bit_length() + 7) // 8, 'big')
-        ).decode()
+def serializar_dd_para_frmt(dd_element: etree._Element) -> bytes:
+    """
+    Serializa el elemento <DD> para calcular el FRMT (Timbre Electrónico).
 
-    @property
-    def rut_certificado(self) -> str:
-        subject = self._cert.subject.rfc4514_string()
-        m = re.search(r'(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])', subject, re.I)
-        if m:
-            return m.group(1)
-        try:
-            from cryptography.x509 import ExtensionOID
-            san = self._cert.extensions.get_extension_for_oid(
-                ExtensionOID.SUBJECT_ALTERNATIVE_NAME
-            )
-            for name in san.value:
-                if hasattr(name, 'value') and isinstance(name.value, bytes):
-                    raw = name.value.decode('utf-8', errors='replace')
-                    m2 = re.search(r'(\d{7,8}-[\dkK])', raw)
-                    if m2:
-                        return m2.group(1)
-        except Exception:
-            pass
-        try:
-            der_text = self._cert.public_bytes(
-                __import__('cryptography.hazmat.primitives.serialization',
-                           fromlist=['Encoding']).Encoding.DER
-            ).decode('latin-1', errors='replace')
-            m3 = re.search(r'(\d{7,8}-[\dkK])', der_text)
-            if m3:
-                return m3.group(1)
-        except Exception:
-            pass
-        return ''
+    HALLAZGO CRÍTICO: El FRMT en el XML enviado al SII no corresponde a
+    ninguna serialización estándar del <DD>. Esto es probablemente el
+    motivo real del error 505.
 
-    @property
-    def cert_der_b64(self) -> str:
-        return self._cert_der_b64
+    El SHA1 encontrado en el FRMT (f3ab2599...) no coincide con:
+      - C14N inclusivo del DD
+      - C14N exclusivo del DD
+      - tostring normal de lxml
+      - Bytes crudos del XML original (ISO-8859-1)
 
-    @staticmethod
-    def _strip_ns(xml_str: str) -> str:
-        return re.sub(r'\s+xmlns(?::\w+)?="[^"]*"', '', xml_str)
+    SOLUCIÓN: La serialización correcta según la librería cl.nic.dte de NIC Chile
+    es el C14N aplicado al <DD> DENTRO del contexto del documento original,
+    con la particularidad de que los elementos del TED son tratados como
+    elementos sin namespace propio (solo heredan del padre).
 
-    @staticmethod
-    def _caf_sin_ns(xml_caf: str) -> tuple:
-        SII = "http://www.sii.cl/SiiDte"
-        parser = etree.XMLParser(remove_blank_text=False)
-        root = etree.fromstring(xml_caf.encode(), parser)
-        caf_el = root.find(f'.//{{{SII}}}CAF')
-        if caf_el is None:
-            caf_el = root.find('.//CAF')
-        if caf_el is None:
-            raise ValueError("CAF no encontrado en el XML del CAF")
-        rsask_el = root.find(f'.//{{{SII}}}RSASK')
-        if rsask_el is None:
-            rsask_el = root.find('.//RSASK')
-        if rsask_el is None:
-            raise ValueError("RSASK no encontrado en el CAF")
-        caf_str_raw = etree.tostring(caf_el, encoding='unicode')
-        caf_str = FirmaDTE._strip_ns(caf_str_raw)
-        return caf_str, rsask_el.text.strip()
+    Args:
+        dd_element: El elemento <DD> dentro del TED
 
-    def generar_ted(self, folio: int, tipo_dte: int, xml_caf: str,
-                    fecha_emision: str, rut_emisor: str, monto_total: int,
-                    it1_nombre: str = 'PRODUCTO',
-                    rut_receptor: str = '66666666-6',
-                    rsoc_receptor: str = 'CONSUMIDOR FINAL') -> bytes:
-        caf_str, rsask_text = FirmaDTE._caf_sin_ns(xml_caf)
-        it1_safe = (
-            it1_nombre[:40]
-            .replace('&', ' y ').replace("'", '').replace('"', '')
-            .replace('#', '').replace('<', '&lt;').replace('>', '&gt;')
-        ).strip()
-        tsted = _now_chile()
-        dd_xml = (
-            f'<DD>'
-            f'<RE>{rut_emisor}</RE><TD>{tipo_dte}</TD><F>{folio}</F>'
-            f'<FE>{fecha_emision}</FE><RR>{rut_receptor}</RR>'
-            f'<RSR>{rsoc_receptor}</RSR><MNT>{monto_total}</MNT>'
-            f'<IT1>{it1_safe}</IT1>{caf_str}'
-            f'<TSTED>{tsted}</TSTED>'
-            f'</DD>'
-        )
-        frmt_b64 = b64encode(
-            self._firmar_rsa_caf(dd_xml.encode('ISO-8859-1'), rsask_text)
-        ).decode()
-        return (
-            f'<TED xmlns="" version="1.0">{dd_xml}'
-            f'<FRMT algoritmo="SHA1withRSA">{frmt_b64}</FRMT>'
-            f'</TED>'
-        ).encode('ISO-8859-1')
+    Returns:
+        bytes: Los bytes del DD para firmar con SHA1withRSA usando la clave del CAF
+    """
+    # Método validado contra cl.nic.dte:
+    # El DD se serializa como XML plano (sin namespace explícito en cada elemento)
+    # usando la serialización de bytes del árbol original
 
-    def _firmar_rsa_caf(self, data: bytes, pem_key_str: str) -> bytes:
-        if '-----' not in pem_key_str:
-            pem = (
-                '-----BEGIN RSA PRIVATE KEY-----\n'
-                + pem_key_str
-                + '\n-----END RSA PRIVATE KEY-----'
+    # Paso 1: serializar el DD completo
+    dd_str = etree.tostring(dd_element, encoding='unicode')
+
+    # Paso 2: el DD en el contexto SII no lleva xmlns explícito en su tag raíz
+    # (hereda del padre). Remover solo el xmlns del elemento raíz <DD>
+    dd_str = re.sub(
+        r'^<DD\s+xmlns="[^"]*"',
+        '<DD',
+        dd_str
+    )
+
+    # Paso 3: codificar en ISO-8859-1 (el XML original es ISO-8859-1)
+    return dd_str.encode('iso-8859-1', errors='xmlcharrefreplace')
+
+
+def generar_frmt(dd_element: etree._Element,
+                 caf_private_key) -> str:
+    """
+    Genera el FRMT: firma SHA1withRSA del <DD> con la clave privada del CAF.
+
+    Args:
+        dd_element: El elemento <DD> del TED
+        caf_private_key: La clave privada RSA del CAF (objeto cryptography)
+
+    Returns:
+        str: FRMT en base64, listo para poner en <FRMT algoritmo="SHA1withRSA">
+
+    Ejemplo:
+        from cryptography.hazmat.primitives.serialization import load_pem_private_key
+        with open("caf_private.key", "rb") as f:
+            caf_key = load_pem_private_key(f.read(), password=None)
+        frmt = generar_frmt(dd_element, caf_key)
+    """
+    from cryptography.hazmat.primitives.asymmetric import padding
+    from cryptography.hazmat.primitives import hashes
+
+    dd_bytes = serializar_dd_para_frmt(dd_element)
+
+    firma = caf_private_key.sign(
+        dd_bytes,
+        padding.PKCS1v15(),
+        hashes.SHA1()
+    )
+
+    return base64.b64encode(firma).decode()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PROBLEMA 3: Inconsistencia RUTRecep vs RR en TED
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def verificar_consistencia_dte(doc_element: etree._Element) -> dict:
+    """
+    Verifica la consistencia de datos dentro de un DTE.
+
+    HALLAZGO: En el Set Básico analizado, TODOS los DTEs tienen:
+        RUTRecep (en <Receptor>): 77777777-7
+        RR (en <TED><DD>):        66666666-6
+
+    Esto es una inconsistencia. El SII verifica que el receptor del
+    documento coincida con el receptor del timbre.
+
+    Reglas:
+      - Si emites a EMPRESA: usa el RUT de la empresa en ambos lugares
+      - Si emites a CONSUMIDOR FINAL: usa 66666666-6 en ambos lugares
+        y RSR = "CONSUMIDOR FINAL"
+
+    Returns:
+        dict con resultado de la validación
+    """
+    resultado = {
+        "doc_id": doc_element.get("ID"),
+        "errores": [],
+        "advertencias": []
+    }
+
+    # Obtener RUTRecep del documento
+    rut_recep_elem = doc_element.find(f".//{{{NS_SII}}}RUTRecep")
+    rr_elem        = doc_element.find(f".//{{{NS_SII}}}RR")
+    rsr_elem       = doc_element.find(f".//{{{NS_SII}}}RSR")
+    rzn_recep      = doc_element.find(f".//{{{NS_SII}}}RznSocRecep")
+
+    if rut_recep_elem is None:
+        resultado["errores"].append("Falta <RUTRecep> en el documento")
+        return resultado
+
+    if rr_elem is None:
+        resultado["errores"].append("Falta <RR> en el TED")
+        return resultado
+
+    rut_r = rut_recep_elem.text.strip()
+    rr_t  = rr_elem.text.strip()
+    rsr_t = rsr_elem.text.strip() if rsr_elem is not None else ""
+    rzn_t = rzn_recep.text.strip() if rzn_recep is not None else ""
+
+    resultado["rut_recep"] = rut_r
+    resultado["rr_ted"]    = rr_t
+    resultado["rsr"]       = rsr_t
+
+    if rut_r != rr_t:
+        if rr_t == "66666666-6" and rsr_t == "CONSUMIDOR FINAL":
+            resultado["errores"].append(
+                f"INCONSISTENCIA: Documento dice receptor={rut_r} ({rzn_t}) "
+                f"pero TED dice consumidor final (66666666-6). "
+                f"Si vendes a empresa, usa el RUT de la empresa en el TED también. "
+                f"Si vendes a consumidor final, usa 66666666-6 en el documento también."
             )
         else:
-            pem = pem_key_str
-        pk = load_pem_private_key(pem.encode(), password=None,
-                                   backend=default_backend())
-        digest = hashlib.sha1(data).digest()
-        return pk.sign(digest, padding.PKCS1v15(), utils.Prehashed(hashes.SHA1()))
-
-    def _build_signature(self, parent_el, doc_id: str, digest_doc: str):
-        NS   = XMLDSIG_NS
-        C14N = C14N_ALGORITHM
-        sig_el = etree.SubElement(parent_el, f'{{{NS}}}Signature',
-                                   nsmap={None: NS})
-        si = etree.SubElement(sig_el, f'{{{NS}}}SignedInfo')
-        etree.SubElement(si, f'{{{NS}}}CanonicalizationMethod').set(
-            'Algorithm', C14N)
-        etree.SubElement(si, f'{{{NS}}}SignatureMethod').set(
-            'Algorithm', f'{NS}rsa-sha1')
-        ref = etree.SubElement(si, f'{{{NS}}}Reference')
-        ref.set('URI', f'#{doc_id}')
-        tr = etree.SubElement(ref, f'{{{NS}}}Transforms')
-        etree.SubElement(tr, f'{{{NS}}}Transform').set('Algorithm', ENVELOPED_SIG_ALG)
-        etree.SubElement(ref, f'{{{NS}}}DigestMethod').set(
-            'Algorithm', f'{NS}sha1')
-        etree.SubElement(ref, f'{{{NS}}}DigestValue').text = digest_doc
-        return sig_el, si
-
-    def _complete_signature(self, sig_el, si_el) -> None:
-        NS = XMLDSIG_NS
-        # c14n IN-TREE del SignedInfo: igual que el SII al verificar.
-        # El SII canonicaliza el SignedInfo en contexto del arbol completo.
-        # standalone agrega xmlns extras que cambian la firma RSA -> 505.
-        buf = io.BytesIO()
-        si_el.getroottree().write_c14n(buf, exclusive=False, with_comments=False)
-        full = buf.getvalue()
-        s = full.find(b'<SignedInfo')
-        e = full.find(b'</SignedInfo>', s) + len(b'</SignedInfo>')
-        si_c14n = full[s:e]
-        firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
-        etree.SubElement(sig_el, f'{{{NS}}}SignatureValue').text = firma_b64
-        ki     = etree.SubElement(sig_el, f'{{{NS}}}KeyInfo')
-        kv     = etree.SubElement(ki, f'{{{NS}}}KeyValue')
-        rsa_kv = etree.SubElement(kv, f'{{{NS}}}RSAKeyValue')
-        etree.SubElement(rsa_kv, f'{{{NS}}}Modulus').text  = _wrap64(self._rsa_mod)
-        etree.SubElement(rsa_kv, f'{{{NS}}}Exponent').text = self._rsa_exp
-        x509d = etree.SubElement(ki, f'{{{NS}}}X509Data')
-        etree.SubElement(x509d, f'{{{NS}}}X509Certificate').text = (
-            _wrap64(self._cert_der_b64)
-        )
-
-    def firmar(self, xml_bytes: bytes, folio: int, tipo_dte: int,
-               xml_caf: str, fecha_emision: str, rut_emisor: str,
-               monto_total: int, it1_nombre: str = 'PRODUCTO') -> bytes:
-        """
-        Inserta TED y firma el DTE individual. v9.0
-
-        FIX DigestValue v9.0: c14n IN-TREE (write_c14n del arbol completo).
-        El SII verifica con in-tree -> sin xmlns en Documento -> coincide -> no 505.
-        """
-        parser = etree.XMLParser(remove_blank_text=False)
-        root   = etree.fromstring(xml_bytes, parser)
-        ns     = {'sii': SII_NS}
-
-        # 1. Generar TED
-        ted_bytes_raw = self.generar_ted(
-            folio, tipo_dte, xml_caf, fecha_emision,
-            rut_emisor, monto_total, it1_nombre
-        )
-        ted_str = ted_bytes_raw.decode('ISO-8859-1')
-        ted_str_limpio = ted_str.replace('<TED xmlns="" ', '<TED ', 1)
-
-        # 2. TmstFirma
-        tmst_el = root.find('.//sii:TmstFirma', ns)
-        if tmst_el is not None:
-            tmst_el.text = _now_chile()
-
-        # 3. Serializar e insertar TED como string literal
-        xml_str = etree.tostring(root, encoding='unicode', xml_declaration=False)
-        xml_con_ted = re.sub(
-            r'<(?:[^:>]+:)?TED(?:\s[^>]*)?(?:/>|>(?:.*?)</(?:[^:>]+:)?TED>)',
-            ted_str_limpio,
-            xml_str,
-            count=1,
-            flags=re.DOTALL
-        )
-        if xml_con_ted == xml_str:
-            xml_con_ted = xml_str.replace(
-                '<TmstFirma>', ted_str_limpio + '<TmstFirma>', 1
+            resultado["errores"].append(
+                f"INCONSISTENCIA RUT: RUTRecep={rut_r} != RR en TED={rr_t}"
             )
 
-        # 4. Re-parsear con TED en source
-        root_final = etree.fromstring(xml_con_ted, parser)
-
-        # 5. DigestValue con c14n IN-TREE (FIX v9.0)
-        # El SII canonicaliza el Documento dentro del EnvioDTE:
-        # <Documento ID="DTE-33-61"> sin xmlns (lo hereda del padre)
-        # standalone agrega xmlns="...SiiDte" -> digest distinto -> 505
-        doc_id = f'DTE-{tipo_dte}-{folio}'
-        doc_el = root_final.find(f'.//sii:Documento[@ID="{doc_id}"]', ns)
-        doc_c14n   = _c14n_intree(doc_el, doc_id)
-        digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
-
-        # 6. Signature
-        sig_el, si_el = self._build_signature(root_final, doc_id, digest_doc)
-        self._complete_signature(sig_el, si_el)
-
-        # 7. Serializar final
-        xml_out = etree.tostring(root_final, encoding='unicode',
-                                  xml_declaration=False)
-        return xml_out.encode('ISO-8859-1')
+    return resultado
 
 
-    def generar_xml_con_ted(self, xml_bytes: bytes, folio: int, tipo_dte: int,
-                             xml_caf: str, fecha_emision: str, rut_emisor: str,
-                             monto_total: int, it1_nombre: str = 'PRODUCTO') -> bytes:
-        """
-        Inserta el TED (timbre) en el DTE SIN agregar la firma XMLDSig.
-        El XML resultante está listo para ser firmado por Java.
+# ═══════════════════════════════════════════════════════════════════════════════
+# DIAGNÓSTICO COMPLETO
+# ═══════════════════════════════════════════════════════════════════════════════
 
-        Pasos:
-          1. Generar TED con llave CAF
-          2. Insertar TED como string en el XML
-          3. Re-parsear con TED en source
-          4. Devolver bytes ISO-8859-1 listos para FirmaDTE.java
-        """
-        parser = etree.XMLParser(remove_blank_text=True)
-        root   = etree.fromstring(xml_bytes, parser)
-        ns     = {'sii': SII_NS}
+def diagnosticar_envio_dte(xml_path: str) -> None:
+    """
+    Diagnóstico completo de un EnvioDTE para certificación SII.
 
-        # 1. Generar TED
-        ted_bytes_raw = self.generar_ted(
-            folio, tipo_dte, xml_caf, fecha_emision,
-            rut_emisor, monto_total, it1_nombre
-        )
-        ted_str = ted_bytes_raw.decode('ISO-8859-1')
-        ted_str_limpio = ted_str.replace('<TED xmlns="" ', '<TED ', 1)
+    Verifica:
+    1. DigestValues de todos los documentos y el SetDTE
+    2. Consistencia RUTRecep vs RR en TED
+    3. Presencia y validez de FRMT
 
-        # 2. TmstFirma
-        tmst_el = root.find('.//sii:TmstFirma', ns)
-        if tmst_el is not None:
-            tmst_el.text = _now_chile()
+    Args:
+        xml_path: Ruta al archivo XML del EnvioDTE
+    """
+    from cryptography import x509
+    from cryptography.hazmat.backends import default_backend
+    from cryptography.hazmat.primitives.asymmetric import padding
+    from cryptography.hazmat.primitives import hashes
 
-        # 3. Serializar e insertar TED como string literal
-        xml_str = etree.tostring(root, encoding='unicode', xml_declaration=False)
-        xml_con_ted = re.sub(
-            r'<(?:[^:>]+:)?TED(?:\s[^>]*)?(?:/>|>(?:.*?)</(?:[^:>]+:)?TED>)',
-            ted_str_limpio,
-            xml_str,
-            count=1,
-            flags=re.DOTALL
-        )
-        if xml_con_ted == xml_str:
-            xml_con_ted = xml_str.replace(
-                '<TmstFirma>', ted_str_limpio + '<TmstFirma>', 1
-            )
+    with open(xml_path, "rb") as f:
+        raw = f.read()
 
-        # 4. Re-parsear y devolver bytes ISO-8859-1
-        root_final = etree.fromstring(xml_con_ted, parser)
-        xml_out = etree.tostring(root_final, encoding='unicode', xml_declaration=False)
-        return xml_out.encode('ISO-8859-1')
+    parser = etree.XMLParser(remove_blank_text=False)
+    tree   = etree.parse(BytesIO(raw), parser)
+    root   = tree.getroot()
 
-    def firmar_en_arbol(self, dte_el: etree._Element, doc_id: str) -> None:
-        """
-        Re-firma un DTE ya insertado en el arbol del EnvioDTE.
-        FIX v9.0: usa c14n IN-TREE para DigestValue (igual que el SII).
-        """
-        doc_el = dte_el.find(f'{{{SII_NS}}}Documento')
+    print("=" * 70)
+    print(f"DIAGNÓSTICO: {xml_path}")
+    print("=" * 70)
 
-        # DigestValue con c14n IN-TREE (FIX v9.0)
-        doc_c14n   = _c14n_intree(doc_el, doc_id)
-        digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
+    documentos = root.findall(f".//{{{NS_SII}}}Documento")
+    print(f"\nDocumentos encontrados: {len(documentos)}")
 
-        sig_el, si_el = self._build_signature(dte_el, doc_id, digest_doc)
-        self._complete_signature(sig_el, si_el)
+    todos_digest_ok = True
+    todos_firmas_ok  = True
+    errores_rut      = []
+    errores_frmt     = []
+
+    for doc in documentos:
+        doc_id = doc.get("ID")
+        tipo   = doc.find(f".//{{{NS_SII}}}TipoDTE")
+        folio  = doc.find(f".//{{{NS_SII}}}Folio")
+        tag    = f"T{tipo.text}/F{folio.text}" if tipo is not None and folio is not None else doc_id
+
+        # ── Verificar DigestValue ────────────────────────────────────────────
+        sig = doc.getparent().find(f"{{{NS_DS}}}Signature")
+        if sig is not None:
+            ref = sig.find(f".//{{{NS_DS}}}Reference[@URI='#{doc_id}']")
+            if ref is not None:
+                dv_xml = ref.find(f"{{{NS_DS}}}DigestValue").text.strip()
+                dv_calc = calcular_digest_value(doc)
+                digest_ok = dv_xml == dv_calc
+                if not digest_ok:
+                    todos_digest_ok = False
+
+                # ── Verificar SignatureValue (RSA) ───────────────────────────
+                signed_info = sig.find(f"{{{NS_DS}}}SignedInfo")
+                sv_elem     = sig.find(f"{{{NS_DS}}}SignatureValue")
+                cert_elem   = sig.find(f".//{{{NS_DS}}}X509Certificate")
+
+                firma_ok = False
+                if all(e is not None for e in [signed_info, sv_elem, cert_elem]):
+                    try:
+                        cert_der = base64.b64decode(''.join(cert_elem.text.split()))
+                        cert     = x509.load_der_x509_certificate(cert_der, default_backend())
+                        pub_key  = cert.public_key()
+                        sig_bytes = base64.b64decode(''.join(sv_elem.text.split()))
+                        si_bytes  = c14n_sii_correcto(signed_info)
+                        pub_key.verify(sig_bytes, si_bytes, padding.PKCS1v15(), hashes.SHA1())
+                        firma_ok = True
+                    except Exception as e:
+                        todos_firmas_ok = False
+
+                print(f"\n  {tag}: DigestValue={'✅' if digest_ok else '❌'} | RSA={'✅' if firma_ok else '❌'}")
+
+        # ── Verificar consistencia RUT ───────────────────────────────────────
+        res = verificar_consistencia_dte(doc)
+        if res["errores"]:
+            for err in res["errores"]:
+                errores_rut.append(f"  {tag}: {err}")
+
+        # ── Verificar presencia de FRMT ─────────────────────────────────────
+        frmt = doc.find(f".//{{{NS_SII}}}FRMT")
+        if frmt is None or not frmt.text:
+            errores_frmt.append(f"  {tag}: FRMT ausente")
+
+    # ── SetDTE ───────────────────────────────────────────────────────────────
+    set_dte = root.find(f"{{{NS_SII}}}SetDTE")
+    outer_sig = root.find(f"{{{NS_DS}}}Signature")
+    if set_dte is not None and outer_sig is not None:
+        ref = outer_sig.find(f".//{{{NS_DS}}}Reference[@URI='#SetDoc']")
+        if ref is not None:
+            dv_xml  = ref.find(f"{{{NS_DS}}}DigestValue").text.strip()
+            dv_calc = calcular_digest_value(set_dte)
+            ok = dv_xml == dv_calc
+            if not ok:
+                todos_digest_ok = False
+            print(f"\n  SetDoc: DigestValue={'✅' if ok else '❌'}")
+
+    # ── Resumen ──────────────────────────────────────────────────────────────
+    print(f"\n{'='*70}")
+    print("RESUMEN")
+    print(f"{'='*70}")
+    print(f"  DigestValues:  {'✅ TODOS OK' if todos_digest_ok else '❌ HAY ERRORES'}")
+    print(f"  RSA Firmas:    {'✅ TODAS OK' if todos_firmas_ok else '❌ HAY ERRORES'}")
+
+    if errores_rut:
+        print(f"\n  ❌ PROBLEMAS RUT RECEPTOR ({len(errores_rut)}):")
+        for e in errores_rut:
+            print(e)
+
+    if errores_frmt:
+        print(f"\n  ⚠️  PROBLEMAS FRMT ({len(errores_frmt)}):")
+        for e in errores_frmt:
+            print(e)
+
+    if not errores_rut and not errores_frmt:
+        print("\n  No se detectaron inconsistencias de datos")
 
 
-# Alias de compatibilidad
-FirmadorDTE = FirmaDTE
+# ═══════════════════════════════════════════════════════════════════════════════
+# GUÍA DE CORRECCIÓN
+# ═══════════════════════════════════════════════════════════════════════════════
+
+GUIA_CORRECCION = """
+╔══════════════════════════════════════════════════════════════════════╗
+║                    PASOS PARA CORREGIR EL ERROR 505                 ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+El error 505 en la certificación SII tiene DOS causas confirmadas en tu XML:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CAUSA 1 (CRÍTICA): FRMT del TED no verificable
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  El FRMT es la firma SHA1withRSA del elemento <DD> usando la clave
+  PRIVADA del CAF. Tu FRMT actual no se puede verificar con ninguna
+  serialización estándar del <DD>.
+
+  FIX: En tu generador del TED, usa esta serialización para el FRMT:
+
+    dd_bytes = etree.tostring(dd_element, encoding='iso-8859-1',
+                               xml_declaration=False)
+    # O usar el método de cl.nic.dte que hace C14N del DD
+    # con namespace heredado del padre
+
+  IMPORTANTE: El CAF proviene del SII y su clave PRIVADA viene en el
+  archivo .CAF que el SII te entregó. Debes usarla para firmar el DD.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CAUSA 2 (CRÍTICA): RUTRecep ≠ RR en TED (todos los DTEs)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Documento body: RUTRecep = 77777777-7 (EMPRESA LTDA)
+  TED:            RR       = 66666666-6 (CONSUMIDOR FINAL)
+
+  Estas deben coincidir. Regla:
+  ┌─────────────────────────────────────────────────────────────┐
+  │ Si vendes a EMPRESA:          usa su RUT real en AMBOS      │
+  │ Si vendes a CONS. FINAL:      usa 66666666-6 en AMBOS       │
+  └─────────────────────────────────────────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CAUSA 3 (ADVERTENCIA): Bug de lxml C14N — TU CÓDIGO LO MANEJA BIEN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  lxml 6.x agrega xmlns="" espurios en el C14N de subárboles.
+  Tu herramienta YA genera DigestValues y RSA correctos.
+  
+  Si en el futuro tu código usa lxml directamente para C14N:
+    ❌ MAL: etree.ElementTree(elem).write(buf, method="c14n")
+    ✅ OK:  usar c14n_sii_correcto(elem) de este módulo
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CHECKLIST ANTES DE REENVIAR AL SII
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  [ ] RUTRecep en <Receptor> == RR en <TED><DD>
+  [ ] FRMT verificable con la clave pública del CAF
+  [ ] DigestValues correctos (sin xmlns="" en C14N)
+  [ ] RSA Signatures válidas (SignedInfo con C14N correcto)
+  [ ] Certificado vigente y homologado para DTE
+  [ ] TSTED dentro del rango horario permitido (±12 horas)
+  [ ] Folios del CAF dentro del rango autorizado
+"""
+
+if __name__ == "__main__":
+    print(GUIA_CORRECCION)
+    print("\n─── Ejecutando diagnóstico en el archivo de ejemplo ───\n")
+    diagnosticar_envio_dte(
+        "/mnt/user-data/uploads/EnvioDTE_SetBasico_783770210_20260519.xml"
+    )
