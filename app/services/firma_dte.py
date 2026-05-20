@@ -137,7 +137,10 @@ class FirmaDTE:
     @staticmethod
     def _caf_sin_ns(xml_caf: str) -> tuple:
         SII = "http://www.sii.cl/SiiDte"
-        parser = etree.XMLParser(remove_blank_text=False)
+        # remove_blank_text=True es CRÍTICO: elimina whitespace entre tags del CAF
+        # El DD que se firma debe ser idéntico al que se inserta en el XML
+        # Si el CAF tiene saltos de línea, el FRMT firmado no coincide con el DD del XML
+        parser = etree.XMLParser(remove_blank_text=True)
         root = etree.fromstring(xml_caf.encode(), parser)
         caf_el = root.find(f'.//{{{SII}}}CAF')
         if caf_el is None:
