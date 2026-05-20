@@ -149,6 +149,7 @@ class DTEService:
             tipo_dte             = datos["tipo_dte"],
             folio                = folio,
             fecha_emision        = date.fromisoformat(datos.get("fecha_emision", date.today().isoformat())),
+            forzar_monto_cero    = bool(datos.get("forzar_monto_cero", False)),
             emisor               = EmisorDTE(
                 rut          = emisor.rut,
                 razon_social = emisor.razon_social,
