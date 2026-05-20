@@ -22,7 +22,7 @@ from app.services.sii_sender import SIISender
 logger = logging.getLogger("yepardtecore.cert_facturas")
 router = APIRouter(prefix="/certificacion-facturas", tags=["Certificacion Facturas"])
 
-NATENCION = "4816655"
+NATENCION = "4839621"
 
 RECEPTOR = {
     "rut":          "77777777-7",
@@ -100,8 +100,8 @@ async def generar_xml_facturas(
     await emitir(1, {
         "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "Cajón AFECTO",   "cantidad": 133, "precio_unitario": 1489, "exento": False},
-            {"nombre": "Relleno AFECTO", "cantidad":  57, "precio_unitario": 2430, "exento": False},
+            {"nombre": "Cajón AFECTO",   "cantidad": 168, "precio_unitario": 3504, "exento": False},
+            {"nombre": "Relleno AFECTO", "cantidad":  71, "precio_unitario": 5837, "exento": False},
         ],
         "referencias": [_ref_set(1, fecha)],
     })
@@ -110,8 +110,8 @@ async def generar_xml_facturas(
     await emitir(2, {
         "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "Pañuelo AFECTO", "cantidad": 350, "precio_unitario": 2796, "exento": False, "descuento_pct": 5},
-            {"nombre": "ITEM 2 AFECTO",  "cantidad": 281, "precio_unitario": 1857, "exento": False, "descuento_pct": 9},
+            {"nombre": "Pañuelo AFECTO", "cantidad": 762, "precio_unitario": 5896, "exento": False, "descuento_pct": 10},
+            {"nombre": "ITEM 2 AFECTO",  "cantidad": 706, "precio_unitario": 4947, "exento": False, "descuento_pct": 23},
         ],
         "referencias": [_ref_set(2, fecha)],
     })
@@ -120,9 +120,9 @@ async def generar_xml_facturas(
     await emitir(3, {
         "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "Pintura B&W AFECTO",    "cantidad":  28, "precio_unitario":  3118, "exento": False},
-            {"nombre": "ITEM 2 AFECTO",          "cantidad": 168, "precio_unitario":  3137, "exento": False},
-            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   1, "precio_unitario": 34834, "exento": True},
+            {"nombre": "Pintura B&W AFECTO",    "cantidad":  64, "precio_unitario":  6892, "exento": False},
+            {"nombre": "ITEM 2 AFECTO",          "cantidad": 237, "precio_unitario":  4027, "exento": False},
+            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   1, "precio_unitario": 35295, "exento": True},
         ],
         "referencias": [_ref_set(3, fecha)],
     })
@@ -131,11 +131,11 @@ async def generar_xml_facturas(
     await emitir(4, {
         "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "ITEM 1 AFECTO",          "cantidad": 154, "precio_unitario": 2608, "exento": False},
-            {"nombre": "ITEM 2 AFECTO",          "cantidad":  66, "precio_unitario": 2683, "exento": False},
-            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   2, "precio_unitario": 6782, "exento": True},
+            {"nombre": "ITEM 1 AFECTO",          "cantidad": 416, "precio_unitario": 5942, "exento": False},
+            {"nombre": "ITEM 2 AFECTO",          "cantidad": 176, "precio_unitario": 7235, "exento": False},
+            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   2, "precio_unitario": 6833, "exento": True},
         ],
-        "descuento_global_pct": 10,
+        "descuento_global_pct": 22,
         "referencias": [_ref_set(4, fecha)],
     })
 
@@ -158,8 +158,8 @@ async def generar_xml_facturas(
         await emitir(6, {
             "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
             "items": [
-                {"nombre": "Pañuelo AFECTO", "cantidad": 129, "precio_unitario": 2796, "exento": False, "descuento_pct": 5},
-                {"nombre": "ITEM 2 AFECTO",  "cantidad": 190, "precio_unitario": 1857, "exento": False, "descuento_pct": 9},
+                {"nombre": "Pañuelo AFECTO", "cantidad": 279, "precio_unitario": 5896, "exento": False, "descuento_pct": 10},
+                {"nombre": "ITEM 2 AFECTO",  "cantidad": 479, "precio_unitario": 4947, "exento": False, "descuento_pct": 23},
             ],
             "referencias": [
                 _ref_set(6, fecha),                                           # línea 1: SET (obligatorio)
@@ -284,36 +284,36 @@ async def enviar_xml_facturas(
     await emitir(1, {
         "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "Cajón AFECTO",   "cantidad": 133, "precio_unitario": 1489, "exento": False},
-            {"nombre": "Relleno AFECTO", "cantidad":  57, "precio_unitario": 2430, "exento": False},
+            {"nombre": "Cajón AFECTO",   "cantidad": 168, "precio_unitario": 3504, "exento": False},
+            {"nombre": "Relleno AFECTO", "cantidad":  71, "precio_unitario": 5837, "exento": False},
         ],
         "referencias": [_ref_set(1, fecha)],
     })
     await emitir(2, {
         "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "Pañuelo AFECTO", "cantidad": 350, "precio_unitario": 2796, "exento": False, "descuento_pct": 5},
-            {"nombre": "ITEM 2 AFECTO",  "cantidad": 281, "precio_unitario": 1857, "exento": False, "descuento_pct": 9},
+            {"nombre": "Pañuelo AFECTO", "cantidad": 762, "precio_unitario": 5896, "exento": False, "descuento_pct": 10},
+            {"nombre": "ITEM 2 AFECTO",  "cantidad": 706, "precio_unitario": 4947, "exento": False, "descuento_pct": 23},
         ],
         "referencias": [_ref_set(2, fecha)],
     })
     await emitir(3, {
         "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "Pintura B&W AFECTO",    "cantidad":  28, "precio_unitario":  3118, "exento": False},
-            {"nombre": "ITEM 2 AFECTO",          "cantidad": 168, "precio_unitario":  3137, "exento": False},
-            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   1, "precio_unitario": 34834, "exento": True},
+            {"nombre": "Pintura B&W AFECTO",    "cantidad":  64, "precio_unitario":  6892, "exento": False},
+            {"nombre": "ITEM 2 AFECTO",          "cantidad": 237, "precio_unitario":  4027, "exento": False},
+            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   1, "precio_unitario": 35295, "exento": True},
         ],
         "referencias": [_ref_set(3, fecha)],
     })
     await emitir(4, {
         "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "ITEM 1 AFECTO",          "cantidad": 154, "precio_unitario": 2608, "exento": False},
-            {"nombre": "ITEM 2 AFECTO",          "cantidad":  66, "precio_unitario": 2683, "exento": False},
-            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   2, "precio_unitario": 6782, "exento": True},
+            {"nombre": "ITEM 1 AFECTO",          "cantidad": 416, "precio_unitario": 5942, "exento": False},
+            {"nombre": "ITEM 2 AFECTO",          "cantidad": 176, "precio_unitario": 7235, "exento": False},
+            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   2, "precio_unitario": 6833, "exento": True},
         ],
-        "descuento_global_pct": 10,
+        "descuento_global_pct": 22,
         "referencias": [_ref_set(4, fecha)],
     })
 
@@ -334,8 +334,8 @@ async def enviar_xml_facturas(
         await emitir(6, {
             "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
             "items": [
-                {"nombre": "Pañuelo AFECTO", "cantidad": 129, "precio_unitario": 2796, "exento": False, "descuento_pct": 5},
-                {"nombre": "ITEM 2 AFECTO",  "cantidad": 190, "precio_unitario": 1857, "exento": False, "descuento_pct": 9},
+                {"nombre": "Pañuelo AFECTO", "cantidad": 279, "precio_unitario": 5896, "exento": False, "descuento_pct": 10},
+                {"nombre": "ITEM 2 AFECTO",  "cantidad": 479, "precio_unitario": 4947, "exento": False, "descuento_pct": 23},
             ],
             "referencias": [
                 _ref_set(6, fecha),
