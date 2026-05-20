@@ -139,13 +139,12 @@ async def generar_xml_facturas(
         "referencias": [_ref_set(4, fecha)],
     })
 
-    # CASO 5 — NC corrige giro receptor (CodRef=2 = corrige texto, sin montos)
+    # CASO 5 — NC corrige giro receptor (CodRef=2 = corrige texto, exento monto 0)
     if 1 in folios:
         await emitir(5, {
             "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
             "items": [
-                {"nombre": "Cajón AFECTO",   "cantidad": 133, "precio_unitario": 0, "exento": False},
-                {"nombre": "Relleno AFECTO", "cantidad":  57, "precio_unitario": 0, "exento": False},
+                {"nombre": "CORRIGE GIRO DEL RECEPTOR", "cantidad": 1, "precio_unitario": 1, "exento": True},
             ],
             "referencias": [
                 _ref_set(5, fecha),                                          # línea 1: SET (obligatorio)
