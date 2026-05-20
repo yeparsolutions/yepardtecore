@@ -78,6 +78,7 @@ class InputDTE:
     observacion: str = ""
     descuento_global_pct: float = 0.0
     descuento_global_monto: int = 0
+    forzar_monto_cero: bool = False  # Para NC CodRef=2 (corrige texto): fuerza MntTotal=0
 
 
 def _sanitizar_texto(texto: str, largo: int = 80) -> str:
@@ -146,6 +147,13 @@ class XMLBuilder:
             self.monto_iva    = round(monto_afecto * 0.19)
             self.monto_exento = round(subtotal_exento)
             self.monto_total  = self.monto_neto + self.monto_iva + self.monto_exento
+
+        # CodRef=2 (corrige texto): forzar todos los montos a 0
+        if self.datos.forzar_monto_cero:
+            self.monto_neto   = 0
+            self.monto_iva    = 0
+            self.monto_exento = 0
+            self.monto_total  = 0
 
     def construir(self) -> bytes:
         d  = self.datos
