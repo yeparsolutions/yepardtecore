@@ -1,388 +1,821 @@
-# app/services/firma_dte.py  v9.0
-# Firma individual de DTEs para SII Chile
-#
-# FIX v9.0:
-#   - DigestValue calculado con c14n IN-TREE (write_c14n del arbol completo)
-#   - El SII verifica con in-tree -> coincide -> resuelve DTE-3-505
-#   - TED insertado como string (no DOM) -> DD queda sin xmlns -> FRMT correcto
-#   - CAF buscado con namespace SII (caf_sin_ns corregido)
+# app/api/v1/endpoints/certificacion_facturas.py
+# ══════════════════════════════════════════════════════════════
+# SET BASICO de Facturas — Número de Atención: 4794671
+# 8 documentos: 4 Facturas (33), 3 NC (61), 1 ND (56)
+# ══════════════════════════════════════════════════════════════
 
-import re
-import hashlib
-import textwrap
-import io
-from cryptography.hazmat.primitives.serialization import pkcs12, load_pem_private_key
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, utils
-from cryptography.hazmat.backends import default_backend
-from lxml import etree
-from base64 import b64encode
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+import logging
+from datetime import date
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
-# Timezone de Chile — el SII valida que TmstFirma sea hora local chilena
-_CHILE_TZ = ZoneInfo("America/Santiago")
+from app.db.base import get_db
+from app.models.emisor import Emisor
+from app.models.certificado import Certificado
+from app.services.dte_service import DTEService
+from app.services.firma_digital import FirmaDigital
+from app.services.sii_sender import SIISender
 
-def _now_chile() -> str:
-    return datetime.now(_CHILE_TZ).strftime('%Y-%m-%dT%H:%M:%S')
+logger = logging.getLogger("yepardtecore.cert_facturas")
+router = APIRouter(prefix="/certificacion-facturas", tags=["Certificacion Facturas"])
 
-XMLDSIG_NS     = "http://www.w3.org/2000/09/xmldsig#"
-SII_NS         = "http://www.sii.cl/SiiDte"
-XSI_NS         = "http://www.w3.org/2001/XMLSchema-instance"
-C14N_ALGORITHM     = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
-ENVELOPED_SIG_ALG  = "http://www.w3.org/2000/09/xmldsig#enveloped-signature"
+NATENCION = "4839621"
 
-
-def _wrap64(s: str) -> str:
-    """Formatea base64 en lineas de 64 caracteres."""
-    clean = s.replace('\n', '').replace(' ', '')
-    return '\n' + '\n'.join(textwrap.wrap(clean, 64)) + '\n'
+RECEPTOR = {
+    "rut":          "77777777-7",
+    "razon_social": "EMPRESA LTDA",
+    "giro":         "COMPUTACION",
+    "direccion":    "SAN DIEGO 2222",
+    "comuna":       "LA FLORIDA",
+    "ciudad":       "SANTIAGO",
+}
 
 
-def _c14n_intree(el, doc_id: str) -> bytes:
-    """
-    C14N in-tree: canonicaliza el elemento dentro de su arbol completo
-    usando write_c14n del documento entero y extrayendo el fragmento.
-
-    Este es el metodo que usa el SII al verificar DigestValues:
-    parsea el XML completo, resuelve URI="#ID", y canonicaliza el nodo
-    en su contexto (sin xmlns en el Documento porque ya esta declarado
-    en el ancestro EnvioDTE).
-
-    Verificado empiricamente:
-    - El ejemplo oficial F60T33 del SII coincide con este metodo (✅)
-    - standalone (re-parse) produce xmlns="...SiiDte" en el Documento
-      que el SII no incluye al canonicalizar -> DigestValue distinto -> 505
-    """
-    buf = io.BytesIO()
-    el.getroottree().write_c14n(buf, exclusive=False, with_comments=False)
-    full_c14n = buf.getvalue()
-    marker = f'<Documento ID="{doc_id}"'.encode()
-    start  = full_c14n.find(marker)
-    end    = full_c14n.find(b'</Documento>', start) + len(b'</Documento>')
-    return full_c14n[start:end]
+def _ref_set(n: int, fecha: str) -> dict:
+    # Instrucciones SII certificación: TpoDocRef="SET", RazonRef="CASO NNNNN-N"
+    # Esta referencia siempre va en la PRIMERA línea de cada DTE del set
+    return {
+        "tipo_doc_ref": "SET",   # string "SET", no código numérico
+        "folio_ref":    n,       # número de caso (se ignora al escribir SET)
+        "fecha_ref":    fecha,
+        "razon_ref":    f"CASO {NATENCION}-{n}",
+    }
 
 
-def _rsa_sign_sha1(private_key, data: bytes) -> bytes:
-    """Firma SHA1withRSA (PKCS#1 v1.5)."""
-    digest = hashlib.sha1(data).digest()
+def _ref_doc(tipo: int, folio: int, fecha: str, cod: int, razon: str) -> dict:
+    return {
+        "tipo_doc_ref": tipo,
+        "folio_ref":    folio,
+        "fecha_ref":    fecha,
+        "cod_ref":      cod,
+        "razon_ref":    razon,
+    }
+
+
+@router.post("/generar-xml", summary="Genera EnvioDTE SET BASICO Facturas (N° Atención 4816655)")
+async def generar_xml_facturas(
+    emisor_id: int,
+    fecha_override: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    emisor = await db.get(Emisor, emisor_id)
+    if not emisor:
+        raise HTTPException(status_code=404, detail=f"Emisor {emisor_id} no encontrado")
+
+    cert_result = await db.execute(
+        select(Certificado).where(
+            Certificado.emisor_id == emisor_id,
+            Certificado.activo == True
+        ).limit(1)
+    )
+    cert = cert_result.scalar_one_or_none()
+    if not cert or not cert.certificado_p12:
+        raise HTTPException(status_code=400, detail="Sin certificado .p12 cargado")
+    logger.info(f"[CERT FAC] Certificado OK: {cert.rut_firmante}")
+
+    fecha = fecha_override or date.today().isoformat()
+    service = DTEService(db)
+    xmls_firmados = []
+    folios: dict[int, int] = {}
+    errores = []
+
+    async def emitir(caso_n: int, datos: dict):
+        try:
+            r = await service.emitir(
+                emisor_id=emisor_id,
+                datos={**datos, "emisor_id": emisor_id},
+                auto_enviar=False,
+            )
+            xmls_firmados.append(r["xml_firmado"])
+            folios[caso_n] = r["folio"]
+            logger.info(f"[CERT FAC] Caso {caso_n} OK folio={r['folio']} total=${r['monto_total']:,.0f}")
+        except Exception as e:
+            errores.append(f"Caso {caso_n}: {e}")
+            logger.error(f"[CERT FAC] Error caso {caso_n}: {e}", exc_info=True)
+
+    # CASO 1 — Factura 2 ítems afectos
+    await emitir(1, {
+        "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [
+            {"nombre": "Cajón AFECTO",   "cantidad": 168, "precio_unitario": 3504, "exento": False},
+            {"nombre": "Relleno AFECTO", "cantidad":  71, "precio_unitario": 5837, "exento": False},
+        ],
+        "referencias": [_ref_set(1, fecha)],
+    })
+
+    # CASO 2 — Factura con descuentos por línea (5% y 9%)
+    await emitir(2, {
+        "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [
+            {"nombre": "Pañuelo AFECTO", "cantidad": 762, "precio_unitario": 5896, "exento": False, "descuento_pct": 10},
+            {"nombre": "ITEM 2 AFECTO",  "cantidad": 706, "precio_unitario": 4947, "exento": False, "descuento_pct": 23},
+        ],
+        "referencias": [_ref_set(2, fecha)],
+    })
+
+    # CASO 3 — Factura afecto + exento
+    await emitir(3, {
+        "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [
+            {"nombre": "Pintura B&W AFECTO",    "cantidad":  64, "precio_unitario":  6892, "exento": False},
+            {"nombre": "ITEM 2 AFECTO",          "cantidad": 237, "precio_unitario":  4027, "exento": False},
+            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   1, "precio_unitario": 35295, "exento": True},
+        ],
+        "referencias": [_ref_set(3, fecha)],
+    })
+
+    # CASO 4 — Factura con descuento global 10% (solo ítems afectos)
+    await emitir(4, {
+        "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [
+            {"nombre": "ITEM 1 AFECTO",          "cantidad": 416, "precio_unitario": 5942, "exento": False},
+            {"nombre": "ITEM 2 AFECTO",          "cantidad": 176, "precio_unitario": 7235, "exento": False},
+            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   2, "precio_unitario": 6833, "exento": True},
+        ],
+        "descuento_global_pct": 22,
+        "referencias": [_ref_set(4, fecha)],
+    })
+
+    # CASO 5 — NC corrige giro receptor (CodRef=2 = corrige texto, MntTotal=0)
+    if 1 in folios:
+        await emitir(5, {
+            "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
+            "items": [
+                {"nombre": "CORRIGE GIRO DEL RECEPTOR", "cantidad": 1, "precio_unitario": 1, "exento": True},
+            ],
+            "forzar_monto_cero": True,
+            "referencias": [
+                _ref_set(5, fecha),
+                _ref_doc(33, folios[1], fecha, 2, "CORRIGE GIRO DEL RECEPTOR"),
+            ],
+        })
+
+    # CASO 6 — NC devolución parcial (cantidades del set: 129 y 190)
+    if 2 in folios:
+        await emitir(6, {
+            "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
+            "items": [
+                {"nombre": "Pañuelo AFECTO", "cantidad": 279, "precio_unitario": 5896, "exento": False, "descuento_pct": 10},
+                {"nombre": "ITEM 2 AFECTO",  "cantidad": 479, "precio_unitario": 4947, "exento": False, "descuento_pct": 23},
+            ],
+            "referencias": [
+                _ref_set(6, fecha),                                           # línea 1: SET (obligatorio)
+                _ref_doc(33, folios[2], fecha, 3, "DEVOLUCION DE MERCADERIAS"),  # línea 2: doc referenciado
+            ],
+        })
+
+    # CASO 7 — NC anula factura caso 3 (mismos ítems EXACTOS del CASO 3)
+    if 3 in folios:
+        await emitir(7, {
+            "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
+            "items": [
+                {"nombre": "Pintura B y W AFECTO",   "cantidad":  64, "precio_unitario":  6892, "exento": False},
+                {"nombre": "ITEM 2 AFECTO",           "cantidad": 237, "precio_unitario":  4027, "exento": False},
+                {"nombre": "ITEM 3 SERVICIO EXENTO",  "cantidad":   1, "precio_unitario": 35295, "exento": True},
+            ],
+            "referencias": [
+                _ref_set(7, fecha),
+                _ref_doc(33, folios[3], fecha, 1, "ANULA FACTURA"),
+            ],
+        })
+
+    # CASO 8 — ND anula NC caso 5 (mismos ítems EXACTOS del CASO 1 del nuevo set)
+    if 5 in folios:
+        await emitir(8, {
+            "tipo_dte": 56, "fecha_emision": fecha, "receptor": RECEPTOR,
+            "items": [
+                {"nombre": "Cajón AFECTO",   "cantidad": 168, "precio_unitario": 3504, "exento": False},
+                {"nombre": "Relleno AFECTO", "cantidad":  71, "precio_unitario": 5837, "exento": False},
+            ],
+            "referencias": [
+                _ref_set(8, fecha),                                                    # línea 1: SET (obligatorio)
+                _ref_doc(61, folios[5], fecha, 1, "ANULA NOTA DE CREDITO ELECTRONICA"),  # línea 2: CodRef=1 (anula)
+            ],
+        })
+
+    if not xmls_firmados:
+        raise HTTPException(
+            status_code=500,
+            detail=f"No se generó ningún documento. Errores: {'; '.join(errores)}"
+        )
+
+    firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
+    sender = SIISender(ambiente=emisor.ambiente)
     try:
-        return private_key.sign_prehash(digest, padding.PKCS1v15())
-    except AttributeError:
-        return private_key.sign(
-            digest, padding.PKCS1v15(), utils.Prehashed(hashes.SHA1())
+        sobre_xml = await sender.construir_sobre(
+            dtes_xml=xmls_firmados,
+            rut_emisor=emisor.rut,
+            rut_enviador=firma.rut_certificado or emisor.rut,
+            firma_service=firma,
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error armando sobre: {e}")
+
+    rut_limpio = emisor.rut.replace(".", "").replace("-", "")
+    nombre     = f"EnvioDTE_SetBasico_{rut_limpio}_{fecha.replace('-','')}.xml"
+
+    logger.info(
+        f"[CERT FAC] Sobre listo {len(xmls_firmados)}/8 docs"
+        + (f" — errores: {errores}" if errores else " ✓")
+    )
+
+    return Response(
+        content=sobre_xml.encode("ISO-8859-1"),
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{nombre}"',
+            "X-Casos-Generados": str(len(xmls_firmados)),
+            "X-Casos-Error":     str(len(errores)),
+            "X-Errores-Detalle": " | ".join(errores) if errores else "",
+            "X-NroAtencion":     NATENCION,
+        }
+    )
 
 
-class FirmaDTE:
-    """Firma DTEs individuales para SII Chile."""
 
-    def __init__(self, p12_bytes: bytes, password):
-        pwd = password.encode('utf-8') if isinstance(password, str) else password
-        priv, cert, _ = pkcs12.load_key_and_certificates(
-            p12_bytes, pwd, backend=default_backend()
-        )
-        self._private_key  = priv
-        self._cert         = cert
-        self._cert_der_b64 = b64encode(
-            cert.public_bytes(serialization.Encoding.DER)
-        ).decode()
-        pub = cert.public_key().public_numbers()
-        self._rsa_mod = b64encode(
-            pub.n.to_bytes((pub.n.bit_length() + 7) // 8, 'big')
-        ).decode()
-        self._rsa_exp = b64encode(
-            pub.e.to_bytes((pub.e.bit_length() + 7) // 8, 'big')
-        ).decode()
+@router.post("/enviar", summary="Genera Y envía directo al SII (sin descargar)")
+async def enviar_xml_facturas(
+    emisor_id: int,
+    fecha_override: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Genera el EnvioDTE del Set Básico de Facturas y lo envía
+    directamente al SII via API. Retorna track_id y estado.
+    """
+    emisor = await db.get(Emisor, emisor_id)
+    if not emisor:
+        raise HTTPException(status_code=404, detail=f"Emisor {emisor_id} no encontrado")
 
-    @property
-    def rut_certificado(self) -> str:
-        subject = self._cert.subject.rfc4514_string()
-        m = re.search(r'(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])', subject, re.I)
-        if m:
-            return m.group(1)
+    cert_result = await db.execute(
+        select(Certificado).where(
+            Certificado.emisor_id == emisor_id,
+            Certificado.activo == True
+        ).limit(1)
+    )
+    cert = cert_result.scalar_one_or_none()
+    if not cert or not cert.certificado_p12:
+        raise HTTPException(status_code=400, detail="Sin certificado .p12 cargado")
+
+    fecha = fecha_override or date.today().isoformat()
+    service = DTEService(db)
+    xmls_firmados = []
+    folios: dict[int, int] = {}
+    errores = []
+
+    async def emitir(caso_n: int, datos: dict):
         try:
-            from cryptography.x509 import ExtensionOID
-            san = self._cert.extensions.get_extension_for_oid(
-                ExtensionOID.SUBJECT_ALTERNATIVE_NAME
+            r = await service.emitir(
+                emisor_id=emisor_id,
+                datos={**datos, "emisor_id": emisor_id},
+                auto_enviar=False,
             )
-            for name in san.value:
-                if hasattr(name, 'value') and isinstance(name.value, bytes):
-                    raw = name.value.decode('utf-8', errors='replace')
-                    m2 = re.search(r'(\d{7,8}-[\dkK])', raw)
-                    if m2:
-                        return m2.group(1)
-        except Exception:
-            pass
+            xmls_firmados.append(r["xml_firmado"])
+            folios[caso_n] = r["folio"]
+            logger.info(f"[ENVIAR] Caso {caso_n} OK folio={r['folio']}")
+        except Exception as e:
+            errores.append(f"Caso {caso_n}: {e}")
+            logger.error(f"[ENVIAR] Error caso {caso_n}: {e}", exc_info=True)
+
+    # Casos 1-4: Facturas (tipo 33)
+    await emitir(1, {
+        "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [
+            {"nombre": "Cajón AFECTO",   "cantidad": 168, "precio_unitario": 3504, "exento": False},
+            {"nombre": "Relleno AFECTO", "cantidad":  71, "precio_unitario": 5837, "exento": False},
+        ],
+        "referencias": [_ref_set(1, fecha)],
+    })
+    await emitir(2, {
+        "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [
+            {"nombre": "Pañuelo AFECTO", "cantidad": 762, "precio_unitario": 5896, "exento": False, "descuento_pct": 10},
+            {"nombre": "ITEM 2 AFECTO",  "cantidad": 706, "precio_unitario": 4947, "exento": False, "descuento_pct": 23},
+        ],
+        "referencias": [_ref_set(2, fecha)],
+    })
+    await emitir(3, {
+        "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [
+            {"nombre": "Pintura B&W AFECTO",    "cantidad":  64, "precio_unitario":  6892, "exento": False},
+            {"nombre": "ITEM 2 AFECTO",          "cantidad": 237, "precio_unitario":  4027, "exento": False},
+            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   1, "precio_unitario": 35295, "exento": True},
+        ],
+        "referencias": [_ref_set(3, fecha)],
+    })
+    await emitir(4, {
+        "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [
+            {"nombre": "ITEM 1 AFECTO",          "cantidad": 416, "precio_unitario": 5942, "exento": False},
+            {"nombre": "ITEM 2 AFECTO",          "cantidad": 176, "precio_unitario": 7235, "exento": False},
+            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   2, "precio_unitario": 6833, "exento": True},
+        ],
+        "descuento_global_pct": 22,
+        "referencias": [_ref_set(4, fecha)],
+    })
+
+    # Casos 5-7: NC (tipo 61) — dependen de folios anteriores
+    if 1 in folios:
+        await emitir(5, {
+            "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
+            "items": [
+                {"nombre": "Cajón AFECTO",   "cantidad": 133, "precio_unitario": 1489, "exento": False},
+                {"nombre": "Relleno AFECTO", "cantidad":  57, "precio_unitario": 2430, "exento": False},
+            ],
+            "referencias": [
+                _ref_set(5, fecha),
+                _ref_doc(33, folios[1], fecha, 2, "CORRIGE GIRO DEL RECEPTOR"),
+            ],
+        })
+    if 2 in folios:
+        await emitir(6, {
+            "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
+            "items": [
+                {"nombre": "Pañuelo AFECTO", "cantidad": 279, "precio_unitario": 5896, "exento": False, "descuento_pct": 10},
+                {"nombre": "ITEM 2 AFECTO",  "cantidad": 479, "precio_unitario": 4947, "exento": False, "descuento_pct": 23},
+            ],
+            "referencias": [
+                _ref_set(6, fecha),
+                _ref_doc(33, folios[2], fecha, 3, "DEVOLUCION DE MERCADERIAS"),
+            ],
+        })
+    if 3 in folios:
+        await emitir(7, {
+            "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
+            "items": [
+                {"nombre": "Pintura B&W AFECTO",    "cantidad":  28, "precio_unitario":  3118, "exento": False},
+                {"nombre": "ITEM 2 AFECTO",          "cantidad": 168, "precio_unitario":  3137, "exento": False},
+                {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   1, "precio_unitario": 34834, "exento": True},
+            ],
+            "referencias": [
+                _ref_set(7, fecha),
+                _ref_doc(33, folios[3], fecha, 1, "ANULA FACTURA"),
+            ],
+        })
+
+    # Caso 8: ND (tipo 56)
+    if 5 in folios:
+        await emitir(8, {
+            "tipo_dte": 56, "fecha_emision": fecha, "receptor": RECEPTOR,
+            "items": [
+                {"nombre": "Cajón AFECTO",   "cantidad": 133, "precio_unitario": 1489, "exento": False},
+                {"nombre": "Relleno AFECTO", "cantidad":  57, "precio_unitario": 2430, "exento": False},
+            ],
+            "referencias": [
+                _ref_set(8, fecha),
+                _ref_doc(61, folios[5], fecha, 1, "ANULA NOTA DE CREDITO ELECTRONICA"),
+            ],
+        })
+
+    if not xmls_firmados:
+        raise HTTPException(
+            status_code=500,
+            detail=f"No se generó ningún documento. Errores: {'; '.join(errores)}"
+        )
+
+    # Construir sobre
+    firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
+    sender = SIISender(ambiente=emisor.ambiente)
+    try:
+        sobre_xml = await sender.construir_sobre(
+            dtes_xml=xmls_firmados,
+            rut_emisor=emisor.rut,
+            rut_enviador=firma.rut_certificado or emisor.rut,
+            firma_service=firma,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error armando sobre: {e}")
+
+    # Enviar al SII via API
+    try:
+        # Log de diagnostico
+        logger.info(f"[ENVIAR] rut_enviador={firma.rut_certificado or emisor.rut}")
+        logger.info(f"[ENVIAR] cert.certificado_p12={'SI' if cert.certificado_p12 else 'NO'}")
+        logger.info(f"[ENVIAR] cert.certificado_auth_p12={'SI' if cert.certificado_auth_p12 else 'NO'}")
+        resultado = await sender.enviar_sobre(
+            sobre_xml=sobre_xml,
+            rut_emisor=emisor.rut,
+            rut_enviador=firma.rut_certificado or emisor.rut,
+            p12_bytes=cert.certificado_p12,
+            password=cert.certificado_password or "",
+            # Si existe certificado de auth separado (ej: E-Sign), usarlo para el token
+            auth_p12_bytes=cert.certificado_auth_p12 or None,
+            auth_password=cert.certificado_auth_password or None,
+        )
+        logger.info(f"[ENVIAR SII] Resultado: {resultado}")
+        return {
+            "estado": resultado.get("estado"),
+            "track_id": resultado.get("track_id"),
+            "mensaje": resultado.get("mensaje"),
+            "docs_generados": len(xmls_firmados),
+            "errores_generacion": errores,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error enviando al SII: {e}")
+
+
+@router.post("/enviar-appdte", summary="Firma con AppDTE Java y envía al SII")
+async def enviar_xml_appdte(
+    emisor_id: int,
+    fecha_override: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Genera los DTEs, los firma usando el servicio Java de AppDTE,
+    y envía al SII. Endpoint de diagnóstico para comparar métodos de firma.
+    """
+    import httpx as _httpx
+    import base64 as _b64
+
+    emisor = await db.get(Emisor, emisor_id)
+    if not emisor:
+        raise HTTPException(status_code=404, detail="Emisor no encontrado")
+
+    cert_result = await db.execute(
+        select(Certificado).where(
+            Certificado.emisor_id == emisor_id,
+            Certificado.activo == True
+        ).limit(1)
+    )
+    cert = cert_result.scalar_one_or_none()
+    if not cert or not cert.certificado_p12:
+        raise HTTPException(status_code=400, detail="Sin certificado .p12")
+
+    fecha = fecha_override or date.today().isoformat()
+    service = DTEService(db)
+    xmls_firmados = []
+    folios: dict[int, int] = {}
+    errores = []
+
+    async def emitir(caso_n: int, datos: dict):
         try:
-            der_text = self._cert.public_bytes(
-                __import__('cryptography.hazmat.primitives.serialization',
-                           fromlist=['Encoding']).Encoding.DER
-            ).decode('latin-1', errors='replace')
-            m3 = re.search(r'(\d{7,8}-[\dkK])', der_text)
-            if m3:
-                return m3.group(1)
-        except Exception:
-            pass
-        return ''
-
-    @property
-    def cert_der_b64(self) -> str:
-        return self._cert_der_b64
-
-    @staticmethod
-    def _strip_ns(xml_str: str) -> str:
-        return re.sub(r'\s+xmlns(?::\w+)?="[^"]*"', '', xml_str)
-
-    @staticmethod
-    def _caf_sin_ns(xml_caf: str) -> tuple:
-        SII = "http://www.sii.cl/SiiDte"
-        parser = etree.XMLParser(remove_blank_text=False)
-        root = etree.fromstring(xml_caf.encode(), parser)
-        caf_el = root.find(f'.//{{{SII}}}CAF')
-        if caf_el is None:
-            caf_el = root.find('.//CAF')
-        if caf_el is None:
-            raise ValueError("CAF no encontrado en el XML del CAF")
-        rsask_el = root.find(f'.//{{{SII}}}RSASK')
-        if rsask_el is None:
-            rsask_el = root.find('.//RSASK')
-        if rsask_el is None:
-            raise ValueError("RSASK no encontrado en el CAF")
-        caf_str_raw = etree.tostring(caf_el, encoding='unicode')
-        caf_str = FirmaDTE._strip_ns(caf_str_raw)
-        return caf_str, rsask_el.text.strip()
-
-    def generar_ted(self, folio: int, tipo_dte: int, xml_caf: str,
-                    fecha_emision: str, rut_emisor: str, monto_total: int,
-                    it1_nombre: str = 'PRODUCTO',
-                    rut_receptor: str = '66666666-6',
-                    rsoc_receptor: str = 'CONSUMIDOR FINAL') -> bytes:
-        caf_str, rsask_text = FirmaDTE._caf_sin_ns(xml_caf)
-        it1_safe = (
-            it1_nombre[:40]
-            .replace('&', ' y ').replace("'", '').replace('"', '')
-            .replace('#', '').replace('<', '&lt;').replace('>', '&gt;')
-        ).strip()
-        tsted = _now_chile()
-        dd_xml = (
-            f'<DD>'
-            f'<RE>{rut_emisor}</RE><TD>{tipo_dte}</TD><F>{folio}</F>'
-            f'<FE>{fecha_emision}</FE><RR>{rut_receptor}</RR>'
-            f'<RSR>{rsoc_receptor}</RSR><MNT>{monto_total}</MNT>'
-            f'<IT1>{it1_safe}</IT1>{caf_str}'
-            f'<TSTED>{tsted}</TSTED>'
-            f'</DD>'
-        )
-        frmt_b64 = b64encode(
-            self._firmar_rsa_caf(dd_xml.encode('ISO-8859-1'), rsask_text)
-        ).decode()
-        return (
-            f'<TED xmlns="" version="1.0">{dd_xml}'
-            f'<FRMT algoritmo="SHA1withRSA">{frmt_b64}</FRMT>'
-            f'</TED>'
-        ).encode('ISO-8859-1')
-
-    def _firmar_rsa_caf(self, data: bytes, pem_key_str: str) -> bytes:
-        """Firma SHA1withRSA — firma los datos directamente, no el hash pre-calculado."""
-        if '-----' not in pem_key_str:
-            pem = (
-                '-----BEGIN RSA PRIVATE KEY-----\n'
-                + pem_key_str
-                + '\n-----END RSA PRIVATE KEY-----'
+            r = await service.emitir(
+                emisor_id=emisor_id,
+                datos={**datos, "emisor_id": emisor_id},
+                auto_enviar=False,
             )
-        else:
-            pem = pem_key_str
-        pk = load_pem_private_key(pem.encode(), password=None,
-                                   backend=default_backend())
-        # SHA1withRSA: firmar los datos completos con SHA1
-        return pk.sign(data, padding.PKCS1v15(), hashes.SHA1())
+            # El XML viene firmado por nuestro codigo
+            # Lo re-firmamos con AppDTE para comparar
+            xml_original = r["xml_firmado"].encode("ISO-8859-1") if isinstance(r["xml_firmado"], str) else r["xml_firmado"]
+            
+            # Extraer el DTE sin firma para enviarlo a AppDTE
+            from lxml import etree as _et
+            NS_SII = 'http://www.sii.cl/SiiDte'
+            NS_SIG = 'http://www.w3.org/2000/09/xmldsig#'
+            
+            root = _et.fromstring(xml_original)
+            # Si es un DTE, quitar la Signature
+            for sig in root.findall(f'{{{NS_SIG}}}Signature'):
+                root.remove(sig)
+            
+            # Obtener el doc_id
+            doc_el = root.find(f'{{{NS_SII}}}Documento')
+            doc_id = doc_el.get('ID', '') if doc_el is not None else ''
+            
+            # Serializar sin firma
+            xml_sin_firma = _et.tostring(root, encoding='ISO-8859-1', xml_declaration=True)
+            
+            # Enviar a AppDTE para firmar
+            pfx_b64 = _b64.b64encode(cert.certificado_p12).decode()
+            xml_b64 = _b64.b64encode(xml_sin_firma).decode()
+            
+            async with _httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    "https://apicert.appdte.cl/api/firmaxml",
+                    json={
+                        "xmlBase64": xml_b64,
+                        "pfxBase64": pfx_b64,
+                        "pass_cert": cert.certificado_password or "",
+                        "nodo_xml": "Documento",
+                        "id_referencia": doc_id,
+                    }
+                )
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                if "xmlFirmado" in data:
+                    xml_appdte = _b64.b64decode(data["xmlFirmado"]).decode("ISO-8859-1")
+                    xmls_firmados.append(xml_appdte)
+                    folios[caso_n] = r["folio"]
+                    logger.info(f"[APPDTE] Caso {caso_n} firmado por AppDTE ✅")
+                else:
+                    raise Exception(f"AppDTE no devolvio xmlFirmado: {data}")
+            else:
+                raise Exception(f"AppDTE error {resp.status_code}: {resp.text[:200]}")
+                
+        except Exception as e:
+            errores.append(f"Caso {caso_n}: {e}")
+            logger.error(f"[APPDTE] Error caso {caso_n}: {e}")
 
-    def _build_signature(self, parent_el, doc_id: str, digest_doc: str):
-        NS   = XMLDSIG_NS
-        C14N = C14N_ALGORITHM
-        sig_el = etree.SubElement(parent_el, f'{{{NS}}}Signature',
-                                   nsmap={None: NS})
-        si = etree.SubElement(sig_el, f'{{{NS}}}SignedInfo')
-        etree.SubElement(si, f'{{{NS}}}CanonicalizationMethod').set(
-            'Algorithm', C14N)
-        etree.SubElement(si, f'{{{NS}}}SignatureMethod').set(
-            'Algorithm', f'{NS}rsa-sha1')
-        ref = etree.SubElement(si, f'{{{NS}}}Reference')
-        ref.set('URI', f'#{doc_id}')
-        tr = etree.SubElement(ref, f'{{{NS}}}Transforms')
-        etree.SubElement(tr, f'{{{NS}}}Transform').set('Algorithm', ENVELOPED_SIG_ALG)
-        etree.SubElement(ref, f'{{{NS}}}DigestMethod').set(
-            'Algorithm', f'{NS}sha1')
-        etree.SubElement(ref, f'{{{NS}}}DigestValue').text = digest_doc
-        return sig_el, si
+    # Generar los 8 casos
+    await emitir(1, {
+        "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [
+            {"nombre": "Cajón AFECTO", "cantidad": 133, "precio_unitario": 1489, "exento": False},
+            {"nombre": "Relleno AFECTO", "cantidad": 57, "precio_unitario": 2430, "exento": False},
+        ],
+        "referencias": [_ref_set(1, fecha)],
+    })
+    await emitir(2, {
+        "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [
+            {"nombre": "Pañuelo AFECTO", "cantidad": 350, "precio_unitario": 2796, "exento": False, "descuento_pct": 5},
+            {"nombre": "ITEM 2 AFECTO", "cantidad": 281, "precio_unitario": 1857, "exento": False, "descuento_pct": 9},
+        ],
+        "referencias": [_ref_set(2, fecha)],
+    })
+    await emitir(3, {
+        "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [
+            {"nombre": "Pintura B&W AFECTO", "cantidad": 28, "precio_unitario": 3118, "exento": False},
+            {"nombre": "ITEM 2 AFECTO", "cantidad": 168, "precio_unitario": 3137, "exento": False},
+            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad": 1, "precio_unitario": 34834, "exento": True},
+        ],
+        "referencias": [_ref_set(3, fecha)],
+    })
+    await emitir(4, {
+        "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "items": [
+            {"nombre": "ITEM 1 AFECTO", "cantidad": 154, "precio_unitario": 2608, "exento": False},
+            {"nombre": "ITEM 2 AFECTO", "cantidad": 66, "precio_unitario": 2683, "exento": False},
+            {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad": 2, "precio_unitario": 6782, "exento": True},
+        ],
+        "descuento_global_pct": 10,
+        "referencias": [_ref_set(4, fecha)],
+    })
+    if 1 in folios:
+        await emitir(5, {
+            "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
+            "items": [
+                {"nombre": "Cajón AFECTO", "cantidad": 133, "precio_unitario": 1489, "exento": False},
+                {"nombre": "Relleno AFECTO", "cantidad": 57, "precio_unitario": 2430, "exento": False},
+            ],
+            "referencias": [_ref_set(5, fecha), _ref_doc(33, folios[1], fecha, 2, "CORRIGE GIRO DEL RECEPTOR")],
+        })
+    if 2 in folios:
+        await emitir(6, {
+            "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
+            "items": [
+                {"nombre": "Pañuelo AFECTO", "cantidad": 129, "precio_unitario": 2796, "exento": False, "descuento_pct": 5},
+                {"nombre": "ITEM 2 AFECTO", "cantidad": 190, "precio_unitario": 1857, "exento": False, "descuento_pct": 9},
+            ],
+            "referencias": [_ref_set(6, fecha), _ref_doc(33, folios[2], fecha, 3, "DEVOLUCION DE MERCADERIAS")],
+        })
+    if 3 in folios:
+        await emitir(7, {
+            "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
+            "items": [
+                {"nombre": "Pintura B&W AFECTO", "cantidad": 28, "precio_unitario": 3118, "exento": False},
+                {"nombre": "ITEM 2 AFECTO", "cantidad": 168, "precio_unitario": 3137, "exento": False},
+                {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad": 1, "precio_unitario": 34834, "exento": True},
+            ],
+            "referencias": [_ref_set(7, fecha), _ref_doc(33, folios[3], fecha, 1, "ANULA FACTURA")],
+        })
+    if 5 in folios:
+        await emitir(8, {
+            "tipo_dte": 56, "fecha_emision": fecha, "receptor": RECEPTOR,
+            "items": [
+                {"nombre": "Cajón AFECTO", "cantidad": 133, "precio_unitario": 1489, "exento": False},
+                {"nombre": "Relleno AFECTO", "cantidad": 57, "precio_unitario": 2430, "exento": False},
+            ],
+            "referencias": [_ref_set(8, fecha), _ref_doc(61, folios[5], fecha, 1, "ANULA NOTA DE CREDITO ELECTRONICA")],
+        })
 
-    def _complete_signature(self, sig_el, si_el) -> None:
-        NS = XMLDSIG_NS
-        # c14n IN-TREE del SignedInfo: igual que el SII al verificar.
-        # El SII canonicaliza el SignedInfo en contexto del arbol completo.
-        # standalone agrega xmlns extras que cambian la firma RSA -> 505.
-        buf = io.BytesIO()
-        si_el.getroottree().write_c14n(buf, exclusive=False, with_comments=False)
-        full = buf.getvalue()
-        s = full.find(b'<SignedInfo')
-        e = full.find(b'</SignedInfo>', s) + len(b'</SignedInfo>')
-        si_c14n = full[s:e]
-        firma_b64 = b64encode(_rsa_sign_sha1(self._private_key, si_c14n)).decode()
-        etree.SubElement(sig_el, f'{{{NS}}}SignatureValue').text = firma_b64
-        ki     = etree.SubElement(sig_el, f'{{{NS}}}KeyInfo')
-        kv     = etree.SubElement(ki, f'{{{NS}}}KeyValue')
-        rsa_kv = etree.SubElement(kv, f'{{{NS}}}RSAKeyValue')
-        etree.SubElement(rsa_kv, f'{{{NS}}}Modulus').text  = _wrap64(self._rsa_mod)
-        etree.SubElement(rsa_kv, f'{{{NS}}}Exponent').text = self._rsa_exp
-        x509d = etree.SubElement(ki, f'{{{NS}}}X509Data')
-        etree.SubElement(x509d, f'{{{NS}}}X509Certificate').text = (
-            _wrap64(self._cert_der_b64)
+    if not xmls_firmados:
+        raise HTTPException(status_code=500, detail=f"Sin DTEs firmados. Errores: {'; '.join(errores)}")
+
+    # Construir y enviar sobre
+    firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
+    sender = SIISender(ambiente=emisor.ambiente)
+    try:
+        sobre_xml = await sender.construir_sobre(
+            dtes_xml=xmls_firmados,
+            rut_emisor=emisor.rut,
+            rut_enviador=firma.rut_certificado or emisor.rut,
+            firma_service=firma,
         )
-
-    def firmar(self, xml_bytes: bytes, folio: int, tipo_dte: int,
-               xml_caf: str, fecha_emision: str, rut_emisor: str,
-               monto_total: int, it1_nombre: str = 'PRODUCTO') -> bytes:
-        """
-        Inserta TED y firma el DTE individual. v9.0
-
-        FIX DigestValue v9.0: c14n IN-TREE (write_c14n del arbol completo).
-        El SII verifica con in-tree -> sin xmlns en Documento -> coincide -> no 505.
-        """
-        parser = etree.XMLParser(remove_blank_text=False)
-        root   = etree.fromstring(xml_bytes, parser)
-        ns     = {'sii': SII_NS}
-
-        # 1. Generar TED
-        # Extraer receptor del XML para el TED
-        rut_recep_el2  = root.find('.//sii:RUTRecep', ns)
-        rsoc_recep_el2 = root.find('.//sii:RznSocRecep', ns)
-        _rut_receptor  = rut_recep_el2.text  if rut_recep_el2  is not None else '66666666-6'
-        _rsoc_receptor = (rsoc_recep_el2.text if rsoc_recep_el2 is not None else 'CONSUMIDOR FINAL')[:40]
-
-        ted_bytes_raw = self.generar_ted(
-            folio, tipo_dte, xml_caf, fecha_emision,
-            rut_emisor, monto_total, it1_nombre,
-            rut_receptor=_rut_receptor,
-            rsoc_receptor=_rsoc_receptor,
+        resultado = await sender.enviar_sobre(
+            sobre_xml=sobre_xml,
+            rut_emisor=emisor.rut,
+            rut_enviador=firma.rut_certificado or emisor.rut,
+            p12_bytes=cert.certificado_p12,
+            password=cert.certificado_password or "",
+            auth_p12_bytes=cert.certificado_auth_p12 or None,
+            auth_password=cert.certificado_auth_password or None,
         )
-        ted_str = ted_bytes_raw.decode('ISO-8859-1')
-        ted_str_limpio = ted_str.replace('<TED xmlns="" ', '<TED ', 1)
+        return {
+            "estado": resultado.get("estado"),
+            "track_id": resultado.get("track_id"),
+            "mensaje": resultado.get("mensaje"),
+            "docs_firmados_appdte": len(xmls_firmados),
+            "errores": errores,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error sobre/envío: {e}")
 
-        # 2. TmstFirma
-        tmst_el = root.find('.//sii:TmstFirma', ns)
-        if tmst_el is not None:
-            tmst_el.text = _now_chile()
 
-        # 3. Serializar e insertar TED como string literal
-        xml_str = etree.tostring(root, encoding='unicode', xml_declaration=False)
-        xml_con_ted = re.sub(
-            r'<(?:[^:>]+:)?TED(?:\s[^>]*)?(?:/>|>(?:.*?)</(?:[^:>]+:)?TED>)',
-            ted_str_limpio,
-            xml_str,
-            count=1,
-            flags=re.DOTALL
+@router.get("/test-appdte")
+async def test_appdte(emisor_id: int, db: AsyncSession = Depends(get_db)):
+    """Test: envia resultado.xml de AppDTE a su servicio Java con nuestro certificado."""
+    import httpx, base64 as _b64
+    
+    cert_result = await db.execute(
+        select(Certificado).where(
+            Certificado.emisor_id == emisor_id,
+            Certificado.activo == True
+        ).limit(1)
+    )
+    cert = cert_result.scalar_one_or_none()
+    if not cert:
+        raise HTTPException(400, "Sin certificado")
+    
+    xml_b64 = "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iSVNPLTg4NTktMSI/Pgo8RFRFIHZlcnNpb249IjEuMCI+CjxEb2N1bWVudG8gSUQ9IkY5NVQzMyI+CjxFbmNhYmV6YWRvPgo8SWREb2M+CjxUaXBvRFRFPjMzPC9UaXBvRFRFPgo8Rm9saW8+OTU8L0ZvbGlvPgo8RmNoRW1pcz4yMDI1LTExLTEyPC9GY2hFbWlzPgo8Rm1hUGFnbz4xPC9GbWFQYWdvPgo8L0lkRG9jPgo8RW1pc29yPgo8UlVURW1pc29yPjc2MDQwMzA4LTM8L1JVVEVtaXNvcj4KPFJ6blNvYz5FR0dBIElORk9STUFUSUNBIEVJUkw8L1J6blNvYz4KPEdpcm9FbWlzPlNFUlZJQ0lPUyBJTkZPUk1BVElDT1M8L0dpcm9FbWlzPgo8QWN0ZWNvPjYyMDIwMDwvQWN0ZWNvPgo8Q2RnU0lJU3VjdXI+MTwvQ2RnU0lJU3VjdXI+CjxEaXJPcmlnZW4+UkFGQUVMIENBU0FOT1ZBIDI5NzwvRGlyT3JpZ2VuPgo8Q21uYU9yaWdlbj5TQU5UQSBDUlVaPC9DbW5hT3JpZ2VuPgo8Q2l1ZGFkT3JpZ2VuPlNBTlRBIENSVVo8L0NpdWRhZE9yaWdlbj4KPC9FbWlzb3I+CjxSZWNlcHRvcj4KPFJVVFJlY2VwPjkzNzU4NTUtMjwvUlVUUmVjZXA+CjxSem5Tb2NSZWNlcD5MVVpNSVJBIENFU1BFREVTIE5BVkFSUk88L1J6blNvY1JlY2VwPgo8R2lyb1JlY2VwLz4KPERpclJlY2VwPkFEUklBTk8gRElBWiA1NjA8L0RpclJlY2VwPgo8Q21uYVJlY2VwPlNhbnRhIENydXo8L0NtbmFSZWNlcD4KPENpdWRhZFJlY2VwPlNhbnRhIENydXo8L0NpdWRhZFJlY2VwPgo8L1JlY2VwdG9yPgo8VG90YWxlcz4KPE1udE5ldG8+MTc2NTwvTW50TmV0bz4KPFRhc2FJVkE+MTk8L1Rhc2FJVkE+CjxJVkE+MzM1PC9JVkE+CjxNbnRUb3RhbD4yMTAwPC9NbnRUb3RhbD4KPC9Ub3RhbGVzPgo8L0VuY2FiZXphZG8+CjxEZXRhbGxlPgo8TnJvTGluRGV0PjE8L05yb0xpbkRldD4KPENkZ0l0ZW0+CjxUcG9Db2RpZ28+SU5UPC9UcG9Db2RpZ28+CjxWbHJDb2RpZ28+MDEwMDE8L1ZsckNvZGlnbz4KPC9DZGdJdGVtPgo8Tm1iSXRlbT5QQU4gQ09SUklFTlRFPC9ObWJJdGVtPgo8RHNjSXRlbS8+CjxRdHlJdGVtPjE8L1F0eUl0ZW0+CjxQcmNJdGVtPjE3NjU8L1ByY0l0ZW0+CjxNb250b0l0ZW0+MTc2NTwvTW9udG9JdGVtPgo8L0RldGFsbGU+CjwvRG9jdW1lbnRvPgo8L0RURT4K"
+    pfx_b64 = _b64.b64encode(cert.certificado_p12).decode()
+    
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        r = await client.post(
+            "https://apicert.appdte.cl/api/firmaxml",
+            json={
+                "xmlBase64": xml_b64,
+                "pfxBase64": pfx_b64,
+                "pass_cert": cert.certificado_password or "",
+                "nodo_xml": "Documento",
+                "id_referencia": "F95T33",
+            }
         )
-        if xml_con_ted == xml_str:
-            xml_con_ted = xml_str.replace(
-                '<TmstFirma>', ted_str_limpio + '<TmstFirma>', 1
+    
+    if r.status_code == 200:
+        data = r.json()
+        if "xmlFirmado" in data:
+            xml_firmado = _b64.b64decode(data["xmlFirmado"]).decode("ISO-8859-1")
+            return {"status": "OK", "xml_firmado": xml_firmado[:3000]}
+    
+    return {"status": r.status_code, "response": r.text[:500]}
+
+@router.get("/get-appdte-xml")
+async def get_appdte_xml(emisor_id: int, db: AsyncSession = Depends(get_db)):
+    """Llama al servicio Java de AppDTE para firmar y devuelve el XML firmado."""
+    import httpx, base64 as _b64
+    
+    cert_result = await db.execute(
+        select(Certificado).where(
+            Certificado.emisor_id == emisor_id,
+            Certificado.activo == True
+        ).limit(1)
+    )
+    cert = cert_result.scalar_one_or_none()
+    if not cert:
+        raise HTTPException(400, "Sin certificado")
+    
+    xml_b64 = "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iSVNPLTg4NTktMSI/Pgo8RFRFIHZlcnNpb249IjEuMCI+CjxEb2N1bWVudG8gSUQ9IkY5NVQzMyI+CjxFbmNhYmV6YWRvPgo8SWREb2M+CjxUaXBvRFRFPjMzPC9UaXBvRFRFPgo8Rm9saW8+OTU8L0ZvbGlvPgo8RmNoRW1pcz4yMDI1LTExLTEyPC9GY2hFbWlzPgo8Rm1hUGFnbz4xPC9GbWFQYWdvPgo8L0lkRG9jPgo8RW1pc29yPgo8UlVURW1pc29yPjc2MDQwMzA4LTM8L1JVVEVtaXNvcj4KPFJ6blNvYz5FR0dBIElORk9STUFUSUNBIEVJUkw8L1J6blNvYz4KPEdpcm9FbWlzPlNFUlZJQ0lPUyBJTkZPUk1BVElDT1M8L0dpcm9FbWlzPgo8QWN0ZWNvPjYyMDIwMDwvQWN0ZWNvPgo8Q2RnU0lJU3VjdXI+MTwvQ2RnU0lJU3VjdXI+CjxEaXJPcmlnZW4+UkFGQUVMIENBU0FOT1ZBIDI5NzwvRGlyT3JpZ2VuPgo8Q21uYU9yaWdlbj5TQU5UQSBDUlVaPC9DbW5hT3JpZ2VuPgo8Q2l1ZGFkT3JpZ2VuPlNBTlRBIENSVVo8L0NpdWRhZE9yaWdlbj4KPC9FbWlzb3I+CjxSZWNlcHRvcj4KPFJVVFJlY2VwPjkzNzU4NTUtMjwvUlVUUmVjZXA+CjxSem5Tb2NSZWNlcD5MVVpNSVJBIENFU1BFREVTIE5BVkFSUk88L1J6blNvY1JlY2VwPgo8R2lyb1JlY2VwLz4KPERpclJlY2VwPkFEUklBTk8gRElBWiA1NjA8L0RpclJlY2VwPgo8Q21uYVJlY2VwPlNhbnRhIENydXo8L0NtbmFSZWNlcD4KPENpdWRhZFJlY2VwPlNhbnRhIENydXo8L0NpdWRhZFJlY2VwPgo8L1JlY2VwdG9yPgo8VG90YWxlcz4KPE1udE5ldG8+MTc2NTwvTW50TmV0bz4KPFRhc2FJVkE+MTk8L1Rhc2FJVkE+CjxJVkE+MzM1PC9JVkE+CjxNbnRUb3RhbD4yMTAwPC9NbnRUb3RhbD4KPC9Ub3RhbGVzPgo8L0VuY2FiZXphZG8+CjxEZXRhbGxlPgo8TnJvTGluRGV0PjE8L05yb0xpbkRldD4KPENkZ0l0ZW0+CjxUcG9Db2RpZ28+SU5UPC9UcG9Db2RpZ28+CjxWbHJDb2RpZ28+MDEwMDE8L1ZsckNvZGlnbz4KPC9DZGdJdGVtPgo8Tm1iSXRlbT5QQU4gQ09SUklFTlRFPC9ObWJJdGVtPgo8RHNjSXRlbS8+CjxRdHlJdGVtPjE8L1F0eUl0ZW0+CjxQcmNJdGVtPjE3NjU8L1ByY0l0ZW0+CjxNb250b0l0ZW0+MTc2NTwvTW9udG9JdGVtPgo8L0RldGFsbGU+CjwvRG9jdW1lbnRvPgo8L0RURT4K"
+    pfx_b64 = _b64.b64encode(cert.certificado_p12).decode()
+    
+    logger.info("[APPDTE] Llamando a apicert.appdte.cl/api/firmaxml...")
+    
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        r = await client.post(
+            "https://apicert.appdte.cl/api/firmaxml",
+            json={
+                "xmlBase64": xml_b64,
+                "pfxBase64": pfx_b64,
+                "pass_cert": cert.certificado_password or "",
+                "nodo_xml": "Documento",
+                "id_referencia": "F95T33",
+            }
+        )
+    
+    logger.info(f"[APPDTE] Status: {r.status_code} Response: {r.text[:200]}")
+    
+    if r.status_code == 200:
+        data = r.json()
+        if "xmlFirmado" in data:
+            xml_firmado = _b64.b64decode(data["xmlFirmado"]).decode("ISO-8859-1")
+            return {"status": "OK", "xml_firmado": xml_firmado}
+    
+    return {"status": r.status_code, "response": r.text[:500]}
+
+
+@router.get("/get-appdte-xml2")  
+async def get_appdte_xml2(emisor_id: int, db: AsyncSession = Depends(get_db)):
+    """Login en AppDTE y firma el XML."""
+    import httpx, base64 as _b64
+    
+    cert_result = await db.execute(
+        select(Certificado).where(
+            Certificado.emisor_id == emisor_id,
+            Certificado.activo == True
+        ).limit(1)
+    )
+    cert = cert_result.scalar_one_or_none()
+    if not cert:
+        raise HTTPException(400, "Sin certificado")
+    
+    base_url = "https://apicert.appdte.cl"
+    
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        # Paso 1: Login
+        login_r = await client.post(
+            f"{base_url}/AppDTE/api/login",
+            json={"username": "demo", "password": "demo"}
+        )
+        logger.info(f"[APPDTE] Login: {login_r.status_code} {login_r.text[:200]}")
+        
+        if login_r.status_code != 200:
+            # Probar sin /AppDTE
+            login_r = await client.post(
+                f"{base_url}/api/login",
+                json={"username": "demo", "password": "demo"}
             )
+            logger.info(f"[APPDTE] Login2: {login_r.status_code} {login_r.text[:200]}")
+        
+        # Paso 2: Intentar firmar con diferentes rutas
+        xml_b64 = "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iSVNPLTg4NTktMSI/Pgo8RFRFIHZlcnNpb249IjEuMCI+CjxEb2N1bWVudG8gSUQ9IkY5NVQzMyI+CjxFbmNhYmV6YWRvPgo8SWREb2M+CjxUaXBvRFRFPjMzPC9UaXBvRFRFPgo8Rm9saW8+OTU8L0ZvbGlvPgo8RmNoRW1pcz4yMDI1LTExLTEyPC9GY2hFbWlzPgo8Rm1hUGFnbz4xPC9GbWFQYWdvPgo8L0lkRG9jPgo8RW1pc29yPgo8UlVURW1pc29yPjc2MDQwMzA4LTM8L1JVVEVtaXNvcj4KPFJ6blNvYz5FR0dBIElORk9STUFUSUNBIEVJUkw8L1J6blNvYz4KPEdpcm9FbWlzPlNFUlZJQ0lPUyBJTkZPUk1BVElDT1M8L0dpcm9FbWlzPgo8QWN0ZWNvPjYyMDIwMDwvQWN0ZWNvPgo8Q2RnU0lJU3VjdXI+MTwvQ2RnU0lJU3VjdXI+CjxEaXJPcmlnZW4+UkFGQUVMIENBU0FOT1ZBIDI5NzwvRGlyT3JpZ2VuPgo8Q21uYU9yaWdlbj5TQU5UQSBDUlVaPC9DbW5hT3JpZ2VuPgo8Q2l1ZGFkT3JpZ2VuPlNBTlRBIENSVVo8L0NpdWRhZE9yaWdlbj4KPC9FbWlzb3I+CjxSZWNlcHRvcj4KPFJVVFJlY2VwPjkzNzU4NTUtMjwvUlVUUmVjZXA+CjxSem5Tb2NSZWNlcD5MVVpNSVJBIENFU1BFREVTIE5BVkFSUk88L1J6blNvY1JlY2VwPgo8R2lyb1JlY2VwLz4KPERpclJlY2VwPkFEUklBTk8gRElBWiA1NjA8L0RpclJlY2VwPgo8Q21uYVJlY2VwPlNhbnRhIENydXo8L0NtbmFSZWNlcD4KPENpdWRhZFJlY2VwPlNhbnRhIENydXo8L0NpdWRhZFJlY2VwPgo8L1JlY2VwdG9yPgo8VG90YWxlcz4KPE1udE5ldG8+MTc2NTwvTW50TmV0bz4KPFRhc2FJVkE+MTk8L1Rhc2FJVkE+CjxJVkE+MzM1PC9JVkE+CjxNbnRUb3RhbD4yMTAwPC9NbnRUb3RhbD4KPC9Ub3RhbGVzPgo8L0VuY2FiZXphZG8+CjxEZXRhbGxlPgo8TnJvTGluRGV0PjE8L05yb0xpbkRldD4KPENkZ0l0ZW0+CjxUcG9Db2RpZ28+SU5UPC9UcG9Db2RpZ28+CjxWbHJDb2RpZ28+MDEwMDE8L1ZsckNvZGlnbz4KPC9DZGdJdGVtPgo8Tm1iSXRlbT5QQU4gQ09SUklFTlRFPC9ObWJJdGVtPgo8RHNjSXRlbS8+CjxRdHlJdGVtPjE8L1F0eUl0ZW0+CjxQcmNJdGVtPjE3NjU8L1ByY0l0ZW0+CjxNb250b0l0ZW0+MTc2NTwvTW9udG9JdGVtPgo8L0RldGFsbGU+CjwvRG9jdW1lbnRvPgo8L0RURT4K"
+        pfx_b64 = _b64.b64encode(cert.certificado_p12).decode()
+        
+        results = {}
+        for path in ["/AppDTE/api/firmaxml", "/api/firmaxml", "/AppDTE/api/firma"]:
+            try:
+                r = await client.post(
+                    f"{base_url}{path}",
+                    json={
+                        "xmlBase64": xml_b64,
+                        "pfxBase64": pfx_b64,
+                        "pass_cert": cert.certificado_password or "",
+                        "nodo_xml": "Documento",
+                        "id_referencia": "F95T33",
+                    }
+                )
+                results[path] = {"status": r.status_code, "body": r.text[:200]}
+                logger.info(f"[APPDTE] {path}: {r.status_code}")
+            except Exception as e:
+                results[path] = {"error": str(e)}
+        
+        return {"login": login_r.text[:200], "firma_attempts": results}
 
-        # 4. Re-parsear con TED en source
-        root_final = etree.fromstring(xml_con_ted, parser)
 
-        # 5. DigestValue con c14n IN-TREE (FIX v9.0)
-        # El SII canonicaliza el Documento dentro del EnvioDTE:
-        # <Documento ID="DTE-33-61"> sin xmlns (lo hereda del padre)
-        # standalone agrega xmlns="...SiiDte" -> digest distinto -> 505
-        doc_id = f'DTE-{tipo_dte}-{folio}'
-        doc_el = root_final.find(f'.//sii:Documento[@ID="{doc_id}"]', ns)
-        doc_c14n   = _c14n_intree(doc_el, doc_id)
-        digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
-
-        # 6. Signature
-        sig_el, si_el = self._build_signature(root_final, doc_id, digest_doc)
-        self._complete_signature(sig_el, si_el)
-
-        # 7. Serializar final
-        xml_out = etree.tostring(root_final, encoding='unicode',
-                                  xml_declaration=False)
-        return xml_out.encode('ISO-8859-1')
-
-
-    def generar_xml_con_ted(self, xml_bytes: bytes, folio: int, tipo_dte: int,
-                             xml_caf: str, fecha_emision: str, rut_emisor: str,
-                             monto_total: int, it1_nombre: str = 'PRODUCTO') -> bytes:
-        """
-        Inserta el TED (timbre) en el DTE SIN agregar la firma XMLDSig.
-        El XML resultante está listo para ser firmado por Java.
-
-        Pasos:
-          1. Generar TED con llave CAF
-          2. Insertar TED como string en el XML
-          3. Re-parsear con TED en source
-          4. Devolver bytes ISO-8859-1 listos para FirmaDTE.java
-        """
-        parser = etree.XMLParser(remove_blank_text=True)
-        root   = etree.fromstring(xml_bytes, parser)
-        ns     = {'sii': SII_NS}
-
-        # Extraer receptor del XML para el TED
-        rut_recep_el  = root.find('.//sii:RUTRecep', ns)
-        rsoc_recep_el = root.find('.//sii:RznSocRecep', ns)
-        rut_receptor  = rut_recep_el.text  if rut_recep_el  is not None else '66666666-6'
-        rsoc_receptor = rsoc_recep_el.text if rsoc_recep_el is not None else 'CONSUMIDOR FINAL'
-        # Truncar a 40 chars como requiere el SII
-        rsoc_receptor = rsoc_receptor[:40]
-
-        # 1. Generar TED con receptor correcto
-        ted_bytes_raw = self.generar_ted(
-            folio, tipo_dte, xml_caf, fecha_emision,
-            rut_emisor, monto_total, it1_nombre,
-            rut_receptor=rut_receptor,
-            rsoc_receptor=rsoc_receptor,
+@router.get("/get-appdte-xml3")  
+async def get_appdte_xml3(emisor_id: int, db: AsyncSession = Depends(get_db)):
+    """Login en AppDTE con token y firma el XML."""
+    import httpx, base64 as _b64
+    
+    cert_result = await db.execute(
+        select(Certificado).where(
+            Certificado.emisor_id == emisor_id,
+            Certificado.activo == True
+        ).limit(1)
+    )
+    cert = cert_result.scalar_one_or_none()
+    if not cert:
+        raise HTTPException(400, "Sin certificado")
+    
+    base_url = "https://apicert.appdte.cl"
+    
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        # Paso 1: Login para obtener token
+        login_r = await client.post(
+            f"{base_url}/api/login",
+            json={"username": "demo", "password": "demo"},
+            headers={"Content-Type": "application/json"}
         )
-        ted_str = ted_bytes_raw.decode('ISO-8859-1')
-        ted_str_limpio = ted_str.replace('<TED xmlns="" ', '<TED ', 1)
-
-        # 2. TmstFirma
-        tmst_el = root.find('.//sii:TmstFirma', ns)
-        if tmst_el is not None:
-            tmst_el.text = _now_chile()
-
-        # 3. Serializar e insertar TED como string literal
-        xml_str = etree.tostring(root, encoding='unicode', xml_declaration=False)
-        xml_con_ted = re.sub(
-            r'<(?:[^:>]+:)?TED(?:\s[^>]*)?(?:/>|>(?:.*?)</(?:[^:>]+:)?TED>)',
-            ted_str_limpio,
-            xml_str,
-            count=1,
-            flags=re.DOTALL
+        logger.info(f"[APPDTE] Login: {login_r.status_code} {login_r.text[:300]}")
+        
+        if login_r.status_code != 200:
+            return {"error": f"Login failed: {login_r.status_code}", "body": login_r.text[:300]}
+        
+        token = login_r.json().get("token", "")
+        logger.info(f"[APPDTE] Token: {token[:30]}...")
+        
+        # Paso 2: Firmar con token en Authorization header
+        xml_b64 = "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iSVNPLTg4NTktMSI/Pgo8RFRFIHZlcnNpb249IjEuMCI+CjxEb2N1bWVudG8gSUQ9IkY5NVQzMyI+CjxFbmNhYmV6YWRvPgo8SWREb2M+CjxUaXBvRFRFPjMzPC9UaXBvRFRFPgo8Rm9saW8+OTU8L0ZvbGlvPgo8RmNoRW1pcz4yMDI1LTExLTEyPC9GY2hFbWlzPgo8Rm1hUGFnbz4xPC9GbWFQYWdvPgo8L0lkRG9jPgo8RW1pc29yPgo8UlVURW1pc29yPjc2MDQwMzA4LTM8L1JVVEVtaXNvcj4KPFJ6blNvYz5FR0dBIElORk9STUFUSUNBIEVJUkw8L1J6blNvYz4KPEdpcm9FbWlzPlNFUlZJQ0lPUyBJTkZPUk1BVElDT1M8L0dpcm9FbWlzPgo8QWN0ZWNvPjYyMDIwMDwvQWN0ZWNvPgo8Q2RnU0lJU3VjdXI+MTwvQ2RnU0lJU3VjdXI+CjxEaXJPcmlnZW4+UkFGQUVMIENBU0FOT1ZBIDI5NzwvRGlyT3JpZ2VuPgo8Q21uYU9yaWdlbj5TQU5UQSBDUlVaPC9DbW5hT3JpZ2VuPgo8Q2l1ZGFkT3JpZ2VuPlNBTlRBIENSVVo8L0NpdWRhZE9yaWdlbj4KPC9FbWlzb3I+CjxSZWNlcHRvcj4KPFJVVFJlY2VwPjkzNzU4NTUtMjwvUlVUUmVjZXA+CjxSem5Tb2NSZWNlcD5MVVpNSVJBIENFU1BFREVTIE5BVkFSUk88L1J6blNvY1JlY2VwPgo8R2lyb1JlY2VwLz4KPERpclJlY2VwPkFEUklBTk8gRElBWiA1NjA8L0RpclJlY2VwPgo8Q21uYVJlY2VwPlNhbnRhIENydXo8L0NtbmFSZWNlcD4KPENpdWRhZFJlY2VwPlNhbnRhIENydXo8L0NpdWRhZFJlY2VwPgo8L1JlY2VwdG9yPgo8VG90YWxlcz4KPE1udE5ldG8+MTc2NTwvTW50TmV0bz4KPFRhc2FJVkE+MTk8L1Rhc2FJVkE+CjxJVkE+MzM1PC9JVkE+CjxNbnRUb3RhbD4yMTAwPC9NbnRUb3RhbD4KPC9Ub3RhbGVzPgo8L0VuY2FiZXphZG8+CjxEZXRhbGxlPgo8TnJvTGluRGV0PjE8L05yb0xpbkRldD4KPENkZ0l0ZW0+CjxUcG9Db2RpZ28+SU5UPC9UcG9Db2RpZ28+CjxWbHJDb2RpZ28+MDEwMDE8L1ZsckNvZGlnbz4KPC9DZGdJdGVtPgo8Tm1iSXRlbT5QQU4gQ09SUklFTlRFPC9ObWJJdGVtPgo8RHNjSXRlbS8+CjxRdHlJdGVtPjE8L1F0eUl0ZW0+CjxQcmNJdGVtPjE3NjU8L1ByY0l0ZW0+CjxNb250b0l0ZW0+MTc2NTwvTW9udG9JdGVtPgo8L0RldGFsbGU+CjwvRG9jdW1lbnRvPgo8L0RURT4K"
+        pfx_b64 = _b64.b64encode(cert.certificado_p12).decode()
+        
+        firma_r = await client.post(
+            f"{base_url}/api/firmaxml",
+            json={
+                "xmlBase64": xml_b64,
+                "pfxBase64": pfx_b64,
+                "pass_cert": cert.certificado_password or "",
+                "nodo_xml": "Documento",
+                "id_referencia": "F95T33",
+            },
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {token}"
+            }
         )
-        if xml_con_ted == xml_str:
-            xml_con_ted = xml_str.replace(
-                '<TmstFirma>', ted_str_limpio + '<TmstFirma>', 1
-            )
-
-        # 4. Re-parsear y devolver bytes ISO-8859-1
-        root_final = etree.fromstring(xml_con_ted, parser)
-        xml_out = etree.tostring(root_final, encoding='unicode', xml_declaration=False)
-        return xml_out.encode('ISO-8859-1')
-
-    def firmar_en_arbol(self, dte_el: etree._Element, doc_id: str) -> None:
-        """
-        Re-firma un DTE ya insertado en el arbol del EnvioDTE.
-        FIX v9.0: usa c14n IN-TREE para DigestValue (igual que el SII).
-        """
-        doc_el = dte_el.find(f'{{{SII_NS}}}Documento')
-
-        # DigestValue con c14n IN-TREE (FIX v9.0)
-        doc_c14n   = _c14n_intree(doc_el, doc_id)
-        digest_doc = b64encode(hashlib.sha1(doc_c14n).digest()).decode()
-
-        sig_el, si_el = self._build_signature(dte_el, doc_id, digest_doc)
-        self._complete_signature(sig_el, si_el)
-
-
-# Alias de compatibilidad
-FirmadorDTE = FirmaDTE
+        logger.info(f"[APPDTE] Firma: {firma_r.status_code} {firma_r.text[:200]}")
+        
+        if firma_r.status_code == 200:
+            data = firma_r.json()
+            if "xmlFirmado" in data:
+                xml_firmado = _b64.b64decode(data["xmlFirmado"]).decode("ISO-8859-1")
+                return {"status": "OK", "xml_firmado": xml_firmado}
+        
+        return {
+            "token": token[:20] + "...",
+            "firma_status": firma_r.status_code,
+            "firma_response": firma_r.text[:500]
+        }
