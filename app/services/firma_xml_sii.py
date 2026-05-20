@@ -115,9 +115,18 @@ def firmar_sobre_completo(sobre_xml: str, p12_bytes: bytes, password: str) -> st
     cert_der = cert.public_bytes(serialization.Encoding.DER)
     pub_key = cert.public_key()
     
-    # Parsear XML
+    # Parsear XML — aceptar tanto string unicode como bytes ISO-8859-1
     parser = etree.XMLParser(remove_blank_text=False)
-    tree = etree.parse(io.BytesIO(sobre_xml.encode('ISO-8859-1')), parser)
+    if isinstance(sobre_xml, str):
+        # Serializar como bytes con declaración correcta
+        xml_bytes = sobre_xml.encode('utf-8')
+        # Reemplazar declaración si existe
+        if xml_bytes.startswith(b'<?xml'):
+            end_decl = xml_bytes.find(b'?>') + 2
+            xml_bytes = b'<?xml version="1.0" encoding="UTF-8"?>' + xml_bytes[end_decl:]
+        tree = etree.parse(io.BytesIO(xml_bytes), parser)
+    else:
+        tree = etree.parse(io.BytesIO(sobre_xml), parser)
     root = tree.getroot()
     
     # ── Paso 1: Firmar cada DTE ──────────────────────────────────────────
@@ -184,9 +193,10 @@ def firmar_sobre_completo(sobre_xml: str, p12_bytes: bytes, password: str) -> st
     sig_set_el = _build_signature_element("SetDoc", digest_set, sig_set_value, cert_der, pub_key, with_xsi=True)
     root.append(sig_set_el)
     
-    # Serializar
-    result = etree.tostring(root, encoding='ISO-8859-1', xml_declaration=True).decode('ISO-8859-1')
-    return result
+    # Serializar en ISO-8859-1 con comillas dobles (requerido por SII)
+    body_bytes = etree.tostring(root, encoding='ISO-8859-1', xml_declaration=False)
+    result_bytes = b'<?xml version="1.0" encoding="ISO-8859-1"?>\n' + body_bytes
+    return result_bytes.decode('ISO-8859-1')
 
 
 if __name__ == "__main__":
