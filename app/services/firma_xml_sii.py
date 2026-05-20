@@ -157,7 +157,7 @@ def firmar_sobre_completo(sobre_xml: str, p12_bytes: bytes, password: str) -> st
         si_el = etree.fromstring(si_xml.encode('utf-8'))
         si_buf = io.BytesIO()
         etree.ElementTree(si_el).write(si_buf, method="c14n", exclusive=False, with_comments=False)
-        si_c14n = si_buf.getvalue()
+        si_c14n = si_buf.getvalue().replace(b' xmlns=""', b'')
         
         # Firmar
         sig_value = _rsa_sign(priv_key, si_c14n)
@@ -182,15 +182,32 @@ def firmar_sobre_completo(sobre_xml: str, p12_bytes: bytes, password: str) -> st
     
     digest_set = _digest_sha1_b64(set_c14n)
     
-    # Para el sobre externo: SignedInfo con xmlns:xsi
-    si_set_xml = _build_signed_info("SetDoc", digest_set, with_xsi=True)
-    si_set_el = etree.fromstring(si_set_xml.encode('utf-8'))
+    # Para el sobre externo: calcular el c14n correcto del SignedInfo
+    # El SII verifica el SignedInfo con xmlns:xsi heredado del EnvioDTE padre
+    # Debemos simular ese contexto explícitamente
+
+    # Construir el SignedInfo con xmlns:xsi explícito (como quedará en c14n)
+    si_set_xml_with_xsi = (
+        f'<SignedInfo xmlns="{NS_DS}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+        f'<CanonicalizationMethod Algorithm="{C14N_ALG}"></CanonicalizationMethod>'
+        f'<SignatureMethod Algorithm="{RSA_SHA1}"></SignatureMethod>'
+        f'<Reference URI="#SetDoc">'
+        f'<Transforms><Transform Algorithm="{C14N_ALG}"></Transform></Transforms>'
+        f'<DigestMethod Algorithm="{SHA1_ALG}"></DigestMethod>'
+        f'<DigestValue>{digest_set}</DigestValue>'
+        f'</Reference>'
+        f'</SignedInfo>'
+    )
+    
+    # C14N de este SignedInfo (ya tiene los namespaces correctos)
+    si_set_el = etree.fromstring(si_set_xml_with_xsi.encode('utf-8'))
     si_set_buf = io.BytesIO()
     etree.ElementTree(si_set_el).write(si_set_buf, method="c14n", exclusive=False, with_comments=False)
-    si_set_c14n = si_set_buf.getvalue()
+    si_set_c14n = si_set_buf.getvalue().replace(b' xmlns=""', b'')
     
+    # Firmar
     sig_set_value = _rsa_sign(priv_key, si_set_c14n)
-    sig_set_el = _build_signature_element("SetDoc", digest_set, sig_set_value, cert_der, pub_key, with_xsi=True)
+    sig_set_el = _build_signature_element("SetDoc", digest_set, sig_set_value, cert_der, pub_key, with_xsi=False)
     root.append(sig_set_el)
     
     # Serializar en ISO-8859-1 con comillas dobles (requerido por SII)
@@ -216,3 +233,102 @@ if __name__ == "__main__":
     print(resultado[:500])
     print("...")
     print(f"✅ Firmado OK — {len(resultado)} chars")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FUNCIÓN PRINCIPAL: Python firma DTEs in-tree + Java firma el sobre
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def firmar_dtes_y_sobre_con_java(sobre_xml: str, p12_bytes: bytes, password: str) -> str:
+    """
+    Flujo híbrido:
+    1. Python firma cada DTE con digest in-tree (correcto para SII)
+    2. Java firma el SetDTE del sobre
+
+    Args:
+        sobre_xml: EnvioDTE XML sin firmas
+        p12_bytes: Certificado PKCS12
+        password: Password del certificado
+
+    Returns:
+        EnvioDTE completamente firmado (string ISO-8859-1)
+    """
+    import subprocess, os, base64 as _b64
+    from cryptography.hazmat.primitives import hashes as _hashes, serialization as _ser
+    from cryptography.hazmat.primitives.asymmetric import padding as _pad
+    from cryptography.hazmat.primitives.serialization import pkcs12 as _pkcs12
+    from cryptography.hazmat.backends import default_backend as _backend
+
+    # Cargar certificado
+    priv_key, cert, _ = _pkcs12.load_key_and_certificates(
+        p12_bytes, password.encode() if isinstance(password, str) else password,
+        _backend()
+    )
+    cert_der = cert.public_bytes(_ser.Encoding.DER)
+    pub_key = cert.public_key()
+
+    # Parsear XML
+    parser = etree.XMLParser(remove_blank_text=False)
+    if isinstance(sobre_xml, str):
+        xml_bytes_in = sobre_xml.encode('utf-8')
+        if xml_bytes_in.startswith(b'<?xml'):
+            end_decl = xml_bytes_in.find(b'?>') + 2
+            xml_bytes_in = b'<?xml version="1.0" encoding="UTF-8"?>' + xml_bytes_in[end_decl:]
+        tree = etree.parse(io.BytesIO(xml_bytes_in), parser)
+    else:
+        tree = etree.parse(io.BytesIO(sobre_xml), parser)
+    root = tree.getroot()
+
+    # ── Paso 1: Python firma cada DTE in-tree ─────────────────────────────────
+    for dte_el in root.findall(f".//{{{NS_SII}}}DTE"):
+        doc_el = dte_el.find(f"{{{NS_SII}}}Documento")
+        if doc_el is None:
+            continue
+        doc_id = doc_el.get("ID")
+
+        # C14N in-tree del Documento
+        full_buf = io.BytesIO()
+        tree.write_c14n(full_buf, exclusive=False, with_comments=False)
+        full_c14n = full_buf.getvalue()
+
+        search = f'<Documento ID="{doc_id}"'.encode()
+        pos = full_c14n.find(search)
+        if pos < 0:
+            raise ValueError(f"Documento {doc_id} no encontrado en c14n")
+        end = full_c14n.find(b'</Documento>', pos) + len(b'</Documento>')
+        doc_c14n = full_c14n[pos:end]
+
+        digest_value = _digest_sha1_b64(doc_c14n)
+
+        # SignedInfo sin xmlns:xsi (firma interna DTE)
+        si_xml = _build_signed_info(doc_id, digest_value, with_xsi=False)
+        si_el = etree.fromstring(si_xml.encode('utf-8'))
+        si_buf = io.BytesIO()
+        etree.ElementTree(si_el).write(si_buf, method="c14n", exclusive=False, with_comments=False)
+        si_c14n = si_buf.getvalue().replace(b' xmlns=""', b'')
+
+        sig_bytes = priv_key.sign(si_c14n, _pad.PKCS1v15(), _hashes.SHA1())
+        sig_el = _build_signature_element(doc_id, digest_value, sig_bytes, cert_der, pub_key, with_xsi=False)
+        dte_el.append(sig_el)
+
+    # ── Paso 2: Serializar sobre con DTEs firmados ────────────────────────────
+    body_bytes = etree.tostring(root, encoding='ISO-8859-1', xml_declaration=False)
+    sobre_con_dtes = b'<?xml version="1.0" encoding="ISO-8859-1"?>\n' + body_bytes
+
+    # ── Paso 3: Java firma el SetDTE ──────────────────────────────────────────
+    java_dir = os.environ.get("FIRMA_JAVA_DIR", "/app")
+
+    xml_b64 = _b64.b64encode(sobre_con_dtes).decode()
+    pfx_b64 = _b64.b64encode(p12_bytes).decode()
+    pwd_str = password if isinstance(password, str) else password.decode()
+
+    cmd = ["java", "-cp", java_dir, "FirmaDTE", "firmar-sobre", xml_b64, pfx_b64, pwd_str]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+    if result.returncode != 0:
+        raise RuntimeError(f"FirmaDTE.java [firmar-sobre] error: {result.stderr[:300]}")
+    if not result.stdout:
+        raise RuntimeError("FirmaDTE.java [firmar-sobre]: sin output")
+
+    sobre_firmado = _b64.b64decode(result.stdout).decode('ISO-8859-1')
+    return sobre_firmado
