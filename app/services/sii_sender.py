@@ -50,19 +50,14 @@ class SIISender:
         rut_enviador = self.limpiar_rut(rut_enviador)
 
         # Detectar tipos de DTE
+        # Detectar tipos con regex para evitar problemas de encoding
+        import re as _re
         tipos_en_sobre: dict[int, int] = {}
         for dte_xml in dtes_xml:
-            try:
-                dte_str = dte_xml
-                if dte_str.startswith('<?xml'):
-                    dte_str = dte_str[dte_str.index('?>') + 2:].lstrip()
-                dte_root = etree.fromstring(dte_str.encode('ISO-8859-1') if isinstance(dte_str, str) else dte_str)
-                tipo_el  = dte_root.find(f".//{{{NS}}}TipoDTE")
-                if tipo_el is not None:
-                    t = int(tipo_el.text)
-                    tipos_en_sobre[t] = tipos_en_sobre.get(t, 0) + 1
-            except Exception:
-                pass
+            m = _re.search(r'<TipoDTE>(\d+)</TipoDTE>', dte_xml)
+            if m:
+                t = int(m.group(1))
+                tipos_en_sobre[t] = tipos_en_sobre.get(t, 0) + 1
 
         es_boleta = bool(tipos_en_sobre) and all(t in TIPOS_BOLETA for t in tipos_en_sobre)
         if es_boleta:
