@@ -64,7 +64,7 @@ class SIISender:
             except Exception:
                 pass
 
-        es_boleta = all(t in TIPOS_BOLETA for t in tipos_en_sobre)
+        es_boleta = bool(tipos_en_sobre) and all(t in TIPOS_BOLETA for t in tipos_en_sobre)
         if es_boleta:
             tag         = "EnvioBOLETA"
             schema_name = "EnvioBOLETA_v11.xsd"
