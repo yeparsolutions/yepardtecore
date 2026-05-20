@@ -1,15 +1,12 @@
 # app/services/firma_digital.py
 # ══════════════════════════════════════════════════════════════
-# Firma digital para SII Chile — v11.0 Java XMLDSig
+# Firma digital para SII Chile — v12.0 Híbrido
 #
 # Flujo:
 #   1. Python genera el DTE y lo timbra (TED con CAF)
-#   2. Java firma el DTE (XMLDSig nativo — compatible con SII)
+#   2. Python firma cada DTE con digest in-tree (correcto para SII)
 #   3. Python construye el sobre EnvioDTE
-#   4. Java firma el sobre (SetDTE)
-#   5. Python envía al SII
-#
-# Java usa javax.xml.crypto.dsig — el mismo motor que el SII.
+#   4. Java firma el sobre (SetDTE) — probado y funciona con EPR
 # ══════════════════════════════════════════════════════════════
 
 import asyncio
@@ -18,18 +15,13 @@ import logging
 import os
 import re
 import subprocess
-import tempfile
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.serialization import pkcs12
 
 logger = logging.getLogger("yepardtecore.firma")
 
-# Ruta al .class compilado de FirmaDTE
-# En Railway: /app/FirmaDTE.class (copiado por Dockerfile)
-# En local:   directorio actual
 _JAVA_CLASS_DIR = os.environ.get("FIRMA_JAVA_DIR", "/app")
-_JAVA_CLASS_NAME = "FirmaDTE"
 
 
 def _java_disponible() -> bool:
@@ -40,37 +32,21 @@ def _java_disponible() -> bool:
         return False
 
 
-def _firmar_con_java(modo: str, xml_bytes: bytes, pfx_bytes: bytes,
-                     password: str, doc_id: str = "") -> bytes:
-    """
-    Llama a FirmaDTE.java via subprocess.
-
-    Modos:
-      firmar-dte   — firma el nodo Documento (URI="#DTE-33-61")
-      firmar-sobre — firma el nodo SetDTE   (URI="#SetDoc")
-
-    Returns:
-        bytes ISO-8859-1 del XML firmado
-    """
-    xml_b64 = base64.b64encode(xml_bytes).decode()
+def _firmar_sobre_con_java(sobre_xml_bytes: bytes, pfx_bytes: bytes, password: str) -> bytes:
+    """Usa Java para firmar el SetDTE del sobre."""
+    import tempfile
+    xml_b64 = base64.b64encode(sobre_xml_bytes).decode()
     pfx_b64 = base64.b64encode(pfx_bytes).decode()
 
-    cmd = ["java", "-cp", _JAVA_CLASS_DIR, _JAVA_CLASS_NAME,
-           modo, xml_b64, pfx_b64, password]
-    if modo == "firmar-dte" and doc_id:
-        cmd.append(doc_id)
+    cmd = ["java", "-cp", _JAVA_CLASS_DIR, "FirmaDTE",
+           "firmar-sobre", xml_b64, pfx_b64, password]
 
-    logger.debug(f"[FirmaJava] {modo} doc_id={doc_id}")
-
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
     if result.returncode != 0:
-        raise RuntimeError(
-            f"FirmaDTE.java [{modo}] error: {result.stderr[:300]}"
-        )
-
+        raise RuntimeError(f"FirmaDTE.java [firmar-sobre] error: {result.stderr[:300]}")
     if not result.stdout:
-        raise RuntimeError(f"FirmaDTE.java [{modo}]: sin output")
+        raise RuntimeError("FirmaDTE.java [firmar-sobre]: sin output")
 
     return base64.b64decode(result.stdout)
 
@@ -78,9 +54,10 @@ def _firmar_con_java(modo: str, xml_bytes: bytes, pfx_bytes: bytes,
 class FirmaDigital:
     """
     Fachada de firma digital para DTEs del SII Chile.
-
-    Usa Java (FirmaDTE.class) para XMLDSig y Python (firma_dte.py)
-    para el timbre TED con la llave CAF.
+    
+    - Timbre TED: Python (firma_dte.py)
+    - Firma DTEs: Python in-tree (firma_xml_sii.py) — digest correcto para SII
+    - Firma Sobre: Java (FirmaDTE.java) — probado y funciona con EPR
     """
 
     def __init__(self, p12_bytes: bytes, password: str,
@@ -97,7 +74,6 @@ class FirmaDigital:
         self.rut_certificado = self._extraer_rut(cert)
         self.esta_vigente    = True
 
-        # FirmaDTE Python (solo para timbre TED)
         from app.services.firma_dte import FirmaDTE as FirmaDTEPy
         self._dte = FirmaDTEPy(p12_bytes, password)
 
@@ -117,13 +93,9 @@ class FirmaDigital:
         it1_nombre:    str = "PRODUCTO",
     ) -> bytes:
         """
-        Paso 2-3 del flujo:
-          a. Python inserta el TED (timbre con CAF)
-          b. Java firma el Documento (XMLDSig)
-
-        Returns: bytes ISO-8859-1 del DTE timbrado y firmado
+        Paso 1-2: Timbra el DTE con CAF (Python).
+        La firma XMLDSig se aplica en firmar_sobre junto con el sobre.
         """
-        # a. Timbre TED con Python (firma_dte.py existente)
         logger.info(f"[FirmaDigital] Timbrando DTE {tipo_dte}-{folio}")
         xml_timbrado = self._dte.generar_xml_con_ted(
             xml_bytes     = xml_bytes,
@@ -135,37 +107,24 @@ class FirmaDigital:
             monto_total   = monto_total,
             it1_nombre    = it1_nombre,
         )
-
-        # b. Firma XMLDSig con Java
-        doc_id = f"DTE-{tipo_dte}-{folio}"
-        logger.info(f"[FirmaDigital] Firmando con Java {doc_id}")
-
-        loop = asyncio.get_event_loop()
-        xml_firmado = await loop.run_in_executor(
-            None,
-            lambda: _firmar_con_java(
-                "firmar-dte", xml_timbrado, self._p12_bytes,
-                self._password, doc_id
-            )
-        )
-
-        return xml_firmado
+        return xml_timbrado
 
     async def firmar_sobre(self, sobre_xml: str) -> str:
         """
-        Firma todos los DTEs y el SetDTE usando Python puro (in-tree).
-        El digest se calcula exactamente como el SII lo verifica.
-
+        Firma todos los DTEs con Python in-tree y el SetDTE con Java.
+        
         Returns: EnvioDTE firmado (string ISO-8859-1)
         """
-        logger.info("[FirmaDigital] Firmando sobre completo con Python in-tree")
+        logger.info("[FirmaDigital] Firmando DTEs con Python in-tree + sobre con Java")
 
-        from app.services.firma_xml_sii import firmar_sobre_completo as _firmar_completo
+        from app.services.firma_xml_sii import firmar_dtes_y_sobre_con_java
 
         loop = asyncio.get_event_loop()
         resultado = await loop.run_in_executor(
             None,
-            lambda: _firmar_completo(sobre_xml, self._p12_bytes, self._password)
+            lambda: firmar_dtes_y_sobre_con_java(
+                sobre_xml, self._p12_bytes, self._password
+            )
         )
         return resultado
 
