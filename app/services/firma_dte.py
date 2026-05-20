@@ -184,6 +184,7 @@ class FirmaDTE:
         ).encode('ISO-8859-1')
 
     def _firmar_rsa_caf(self, data: bytes, pem_key_str: str) -> bytes:
+        """Firma SHA1withRSA — firma los datos directamente, no el hash pre-calculado."""
         if '-----' not in pem_key_str:
             pem = (
                 '-----BEGIN RSA PRIVATE KEY-----\n'
@@ -194,8 +195,8 @@ class FirmaDTE:
             pem = pem_key_str
         pk = load_pem_private_key(pem.encode(), password=None,
                                    backend=default_backend())
-        digest = hashlib.sha1(data).digest()
-        return pk.sign(digest, padding.PKCS1v15(), utils.Prehashed(hashes.SHA1()))
+        # SHA1withRSA: firmar los datos completos con SHA1
+        return pk.sign(data, padding.PKCS1v15(), hashes.SHA1())
 
     def _build_signature(self, parent_el, doc_id: str, digest_doc: str):
         NS   = XMLDSIG_NS
