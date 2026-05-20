@@ -139,13 +139,13 @@ async def generar_xml_facturas(
         "referencias": [_ref_set(4, fecha)],
     })
 
-    # CASO 5 — NC corrige giro receptor (mismos ítems CASO 1)
+    # CASO 5 — NC corrige giro receptor (CodRef=2 = corrige texto, sin montos)
     if 1 in folios:
         await emitir(5, {
             "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
             "items": [
-                {"nombre": "Cajón AFECTO",   "cantidad": 133, "precio_unitario": 1489, "exento": False},
-                {"nombre": "Relleno AFECTO", "cantidad":  57, "precio_unitario": 2430, "exento": False},
+                {"nombre": "Cajón AFECTO",   "cantidad": 133, "precio_unitario": 0, "exento": False},
+                {"nombre": "Relleno AFECTO", "cantidad":  57, "precio_unitario": 0, "exento": False},
             ],
             "referencias": [
                 _ref_set(5, fecha),                                          # línea 1: SET (obligatorio)
@@ -819,40 +819,3 @@ async def get_appdte_xml3(emisor_id: int, db: AsyncSession = Depends(get_db)):
             "firma_status": firma_r.status_code,
             "firma_response": firma_r.text[:500]
         }
-
-@router.get("/test-integradte")
-async def test_integradte():
-    import httpx, json
-    payload = {"user_id":"6a0632f7ff18240dc6004aed","business_id":"6a0632f7ff18240dc6004aed","code_sii":"33","data_dte":json.dumps({"Encabezado":{"IdDoc":{"TipoDTE":33,"FchEmis":"2026-05-14","FmaPago":1},"Emisor":{"RUTEmisor":"78377021-0","RznSoc":"YEPAR SOLUTIONS SPA","GiroEmis":"SERVICIOS INFORMATICOS","Acteco":[620200],"DirOrigen":"AV PRUEBA 123","CmnaOrigen":"SANTIAGO"},"Receptor":{"RUTRecep":"77777777-7","RznSocRecep":"EMPRESA LTDA","GiroRecep":"COMPUTACION","DirRecep":"SAN DIEGO 2222","CmnaRecep":"LA FLORIDA"},"Totales":{"MntNeto":100000,"TasaIVA":19.0,"IVA":19000,"MntTotal":119000}},"Detalle":[{"NroLinDet":1,"NmbItem":"Servicio prueba","QtyItem":1,"UnmdItem":"UN","PrcItem":100000,"MontoItem":100000}]})}
-    async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.post("https://api.integradte.cl/api/v1/documents/",json=payload,headers={"x-api-key":"6a0632f7ff18240dc6004aed","idempotency-key":"019e2bd3-2b36-7165-a831-568ede3205d0"})
-    return {"status":r.status_code,"response":r.text[:3000]}
-
-@router.get("/get-integradte-xml")
-async def get_integradte_xml():
-    import httpx
-    async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.get(
-            "https://api.integradte.cl/api/v1/documents/6a071fe3acd6a48159ee601d",
-            headers={"x-api-key":"6a0632f7ff18240dc6004aed"}
-        )
-    return {"status":r.status_code,"response":r.text[:5000]}
-
-@router.get("/process-integradte")
-async def process_integradte():
-    import httpx
-    doc_id = "6a071fe3acd6a48159ee601d"
-    async with httpx.AsyncClient(timeout=30) as client:
-        # Intentar endpoint de proceso
-        for path in [
-            f"/api/v1/documents/{doc_id}/process",
-            f"/api/v1/documents/{doc_id}/sign",
-            f"/api/v1/documents/{doc_id}/send",
-        ]:
-            r = await client.post(
-                f"https://api.integradte.cl{path}",
-                headers={"x-api-key":"6a0632f7ff18240dc6004aed"}
-            )
-            if r.status_code != 404:
-                return {"path": path, "status": r.status_code, "response": r.text[:500]}
-    return {"msg": "ningún endpoint de proceso encontrado"}
