@@ -153,29 +153,21 @@ class FirmaDigital:
 
     async def firmar_sobre(self, sobre_xml: str) -> str:
         """
-        Firma todos los DTEs y el SetDTE dentro del árbol completo.
-        Usa el modo firmar-sobre-completo de Java para que los DTEs
-        se firmen en el contexto DOM correcto (sin xmlns standalone).
+        Firma todos los DTEs y el SetDTE usando Python puro (in-tree).
+        El digest se calcula exactamente como el SII lo verifica.
 
         Returns: EnvioDTE firmado (string ISO-8859-1)
         """
-        logger.info("[FirmaDigital] Firmando sobre completo con Java (in-tree)")
+        logger.info("[FirmaDigital] Firmando sobre completo con Python in-tree")
 
-        xml_bytes = sobre_xml.encode("ISO-8859-1")
+        from app.services.firma_xml_sii import firmar_sobre_completo as _firmar_completo
 
         loop = asyncio.get_event_loop()
-        xml_firmado = await loop.run_in_executor(
+        resultado = await loop.run_in_executor(
             None,
-            lambda: _firmar_con_java(
-                "firmar-sobre-completo", xml_bytes, self._p12_bytes, self._password
-            )
+            lambda: _firmar_completo(sobre_xml, self._p12_bytes, self._password)
         )
-
-        result = xml_firmado.decode("ISO-8859-1")
-        if not result.lstrip().startswith("<?xml"):
-            result = '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + result
-
-        return result
+        return resultado
 
     def info_certificado(self) -> dict:
         cert = self._cert
