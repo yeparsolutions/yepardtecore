@@ -17,6 +17,7 @@ from app.api.v1.endpoints import (
     certificacion_guia,
     certificacion_notas,
     certificacion_libro_ventas,
+    certificacion_libro_compras,
 )
 
 api_router = APIRouter()
@@ -42,4 +43,5 @@ api_router.include_router(certificacion_boletas.router)   # Set Boletas
 api_router.include_router(certificacion_exentas.router)   # Set 4841548
 api_router.include_router(certificacion_guia.router)      # Set 4841546
 api_router.include_router(certificacion_notas.router)        # Notas legacy
-api_router.include_router(certificacion_libro_ventas.router) # Libro Ventas 4841544
+api_router.include_router(certificacion_libro_ventas.router)  # Libro Ventas 4841544
+api_router.include_router(certificacion_libro_compras.router) # Libro Compras 4841545
