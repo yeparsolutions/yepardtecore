@@ -64,6 +64,8 @@ public class FirmaDTE {
             firmarDTE(doc, privKey, cert, docId);
         } else if (modo.equals("firmar-sobre")) {
             firmarSobre(doc, privKey, cert);
+        } else if (modo.equals("firmar-libro")) {
+            firmarLibro(doc, privKey, cert);
         } else {
             System.err.println("Modo desconocido: " + modo);
             System.exit(1);
@@ -203,6 +205,42 @@ public class FirmaDTE {
 
         Element envioEl = doc.getDocumentElement();
         DOMSignContext dsc = new DOMSignContext(privKey, envioEl);
+        signature.sign(dsc);
+    }
+
+    // ── MODO: firmar-libro ─────────────────────────────────────────────────────
+    // Firma el elemento EnvioLibro con ID="LibroVentas" dentro de LibroCompraVenta
+    static void firmarLibro(Document doc, PrivateKey privKey, X509Certificate cert)
+            throws Exception {
+        XMLSignatureFactory fac = XMLSignatureFactory.getInstance("DOM");
+
+        Reference ref = fac.newReference(
+                "#LibroVentas",
+                fac.newDigestMethod(DigestMethod.SHA1, null),
+                Collections.singletonList(
+                        fac.newTransform(Transform.ENVELOPED, (TransformParameterSpec) null)),
+                null, null);
+
+        SignedInfo si = fac.newSignedInfo(
+                fac.newCanonicalizationMethod(CanonicalizationMethod.INCLUSIVE,
+                        (C14NMethodParameterSpec) null),
+                fac.newSignatureMethod(SignatureMethod.RSA_SHA1, null),
+                Collections.singletonList(ref));
+
+        KeyInfoFactory kif = fac.getKeyInfoFactory();
+        KeyValue kv   = kif.newKeyValue(cert.getPublicKey());
+        X509Data x509 = kif.newX509Data(Collections.singletonList(cert));
+        KeyInfo  ki   = kif.newKeyInfo(Arrays.asList(kv, x509));
+
+        XMLSignature signature = fac.newXMLSignature(si, ki);
+
+        // Registrar ID del EnvioLibro
+        NodeList libroNodes = doc.getElementsByTagNameNS(NS_SII, "EnvioLibro");
+        if (libroNodes.getLength() == 0) libroNodes = doc.getElementsByTagName("EnvioLibro");
+        ((Element) libroNodes.item(0)).setIdAttribute("ID", true);
+
+        Element rootEl = doc.getDocumentElement();
+        DOMSignContext dsc = new DOMSignContext(privKey, rootEl);
         signature.sign(dsc);
     }
 }
