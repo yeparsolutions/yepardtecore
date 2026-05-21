@@ -154,10 +154,21 @@ def _construir_libro_xml(emisor: Emisor, periodo: str, tmst: str) -> bytes:
         etree.SubElement(tot, f"{{{NS}}}TotMntExe").text  = str(t_exe)
         etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text = str(t_neto)
         etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text  = str(t_iva)
+        # IVA no recuperable — estructura: TotIVANoRec > CodIVANoRec + TotOpIVANoRec + TotMntIVANoRec
+        if t_iva_nr:
+            inr = etree.SubElement(tot, f"{{{NS}}}TotIVANoRec")
+            etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text    = str(docs_tipo[0].get("cod_iva_no_rec", 9))
+            etree.SubElement(inr, f"{{{NS}}}TotOpIVANoRec").text  = str(sum(1 for d in docs_tipo if d.get("iva_no_rec",0)))
+            etree.SubElement(inr, f"{{{NS}}}TotMntIVANoRec").text = str(t_iva_nr)
+        # IVA uso común — va después de TotIVANoRec
         if t_iva_uc:
-            etree.SubElement(tot, f"{{{NS}}}TotIVAUsoComun").text = str(t_iva_uc)
-            etree.SubElement(tot, f"{{{NS}}}FctProp").text         = FCT_PROP
-            etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_iva_uc * 0.60))
+            etree.SubElement(tot, f"{{{NS}}}TotIVAUsoComun").text     = str(t_iva_uc)
+            etree.SubElement(tot, f"{{{NS}}}FctProp").text             = FCT_PROP
+            etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text  = str(round(t_iva_uc * 0.60))
+        # IVA retenido total — TotOpIVARetTotal + TotIVARetTotal
+        if t_iva_ret:
+            etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in docs_tipo if d.get("iva_ret_total",0)))
+            etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_iva_ret)
         etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(t_total)
 
     # Detalle de documentos
