@@ -1,0 +1,153 @@
+# app/api/v1/endpoints/certificacion_libro_guias.py
+# ══════════════════════════════════════════════════════════════
+# LIBRO DE GUÍAS — NÚMERO DE ATENCIÓN: 4841547
+# Set Guía 4841546 (tipo 52, folios 54, 55, 56)
+# ══════════════════════════════════════════════════════════════
+
+import logging
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
+from sqlalchemy.ext.asyncio import AsyncSession
+from lxml import etree
+
+from app.db.base import get_db
+from app.models.emisor import Emisor
+from app.models.certificado import Certificado
+from sqlalchemy import select
+from app.services.firma_digital import FirmaDigital
+
+logger = logging.getLogger("yepardtecore.cert_libro_guias")
+router = APIRouter(prefix="/certificacion-libro-guias", tags=["Certificacion Libro Guias"])
+
+NATENCION = "4841547"
+NS        = "http://www.sii.cl/SiiDte"
+PERIODO   = "2026-05"
+RUT_EMISOR = "78377021-0"
+
+DOCUMENTOS = [
+    # Caso 1: traslado interno, receptor = emisor, sin precios
+    {"folio": 54, "fecha": "2026-05-21", "rut_doc": RUT_EMISOR,
+     "razon": "YEPAR SOLUTIONS SPA",
+     "neto": 0, "iva": 0, "total": 0, "ind_traslado": 5},
+    # Caso 2: venta, despacha emisor
+    {"folio": 55, "fecha": "2026-05-21", "rut_doc": "77777777-7",
+     "razon": "EMPRESA LTDA",
+     "neto": 3826814, "iva": 727095, "total": 4553909, "ind_traslado": 1},
+    # Caso 3: venta, retira cliente
+    {"folio": 56, "fecha": "2026-05-21", "rut_doc": "77777777-7",
+     "razon": "EMPRESA LTDA",
+     "neto": 2830303, "iva": 537758, "total": 3368061, "ind_traslado": 2},
+]
+
+
+def _construir_libro_xml(emisor: Emisor, periodo: str, tmst: str) -> bytes:
+    root = etree.Element(f"{{{NS}}}LibroCompraVenta",
+        nsmap={None: NS, "xsi": "http://www.w3.org/2001/XMLSchema-instance"},
+        attrib={
+            "version": "1.0",
+            "{http://www.w3.org/2001/XMLSchema-instance}schemaLocation":
+                f"{NS} LibroCV_v10.xsd",
+        })
+
+    envio = etree.SubElement(root, f"{{{NS}}}EnvioLibro")
+    envio.set("ID", "LibroGuias")
+
+    car = etree.SubElement(envio, f"{{{NS}}}Caratula")
+    etree.SubElement(car, f"{{{NS}}}RutEmisorLibro").text   = emisor.rut
+    etree.SubElement(car, f"{{{NS}}}RutEnvia").text          = "25648612-1"
+    etree.SubElement(car, f"{{{NS}}}PeriodoTributario").text = periodo
+    etree.SubElement(car, f"{{{NS}}}FchResol").text          = "2026-04-19"
+    etree.SubElement(car, f"{{{NS}}}NroResol").text          = "0"
+    etree.SubElement(car, f"{{{NS}}}TipoOperacion").text     = "VENTA"
+    etree.SubElement(car, f"{{{NS}}}TipoLibro").text         = "ESPECIAL"
+    etree.SubElement(car, f"{{{NS}}}TipoEnvio").text         = "TOTAL"
+    etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = NATENCION
+
+    # ResumenPeriodo ANTES de Detalle
+    t_neto  = sum(d["neto"]  for d in DOCUMENTOS)
+    t_iva   = sum(d["iva"]   for d in DOCUMENTOS)
+    t_total = sum(d["total"] for d in DOCUMENTOS)
+
+    resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
+    tot = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
+    etree.SubElement(tot, f"{{{NS}}}TpoDoc").text     = "52"
+    etree.SubElement(tot, f"{{{NS}}}TotDoc").text     = str(len(DOCUMENTOS))
+    etree.SubElement(tot, f"{{{NS}}}TotMntExe").text  = "0"
+    etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text = str(t_neto)
+    etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text  = str(t_iva)
+    etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(t_total)
+
+    # Detalle
+    for doc in DOCUMENTOS:
+        det = etree.SubElement(envio, f"{{{NS}}}Detalle")
+        etree.SubElement(det, f"{{{NS}}}TpoDoc").text  = "52"
+        etree.SubElement(det, f"{{{NS}}}NroDoc").text  = str(doc["folio"])
+        etree.SubElement(det, f"{{{NS}}}TasaImp").text = "19"
+        etree.SubElement(det, f"{{{NS}}}FchDoc").text  = doc["fecha"]
+        etree.SubElement(det, f"{{{NS}}}RUTDoc").text  = doc["rut_doc"]
+        etree.SubElement(det, f"{{{NS}}}RznSoc").text  = doc["razon"][:50]
+        etree.SubElement(det, f"{{{NS}}}MntNeto").text = str(doc["neto"])
+        etree.SubElement(det, f"{{{NS}}}MntIVA").text  = str(doc["iva"])
+        etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
+
+    etree.SubElement(envio, f"{{{NS}}}TmstFirma").text = tmst
+
+    xml_bytes = etree.tostring(root, encoding="ISO-8859-1",
+                               xml_declaration=True, pretty_print=True)
+    xml_str = xml_bytes.decode("ISO-8859-1").replace(
+        "<?xml version='1.0' encoding='ISO-8859-1'?>",
+        '<?xml version="1.0" encoding="ISO-8859-1"?>'
+    )
+    return xml_str.encode("ISO-8859-1")
+
+
+async def _get_emisor_y_cert(emisor_id: int, db: AsyncSession):
+    emisor = await db.get(Emisor, emisor_id)
+    if not emisor:
+        raise HTTPException(404, f"Emisor {emisor_id} no encontrado")
+    res = await db.execute(
+        select(Certificado).where(
+            Certificado.emisor_id == emisor_id,
+            Certificado.activo == True
+        ).limit(1))
+    cert = res.scalar_one_or_none()
+    if not cert or not cert.certificado_p12:
+        raise HTTPException(400, "Sin certificado .p12")
+    return emisor, cert
+
+
+@router.post("/generar-xml", summary="Genera Libro de Guías N° Atención 4841547")
+async def generar_libro_guias(
+    emisor_id: int,
+    periodo: Optional[str] = PERIODO,
+    db: AsyncSession = Depends(get_db),
+):
+    from datetime import datetime
+    emisor, cert = await _get_emisor_y_cert(emisor_id, db)
+    tmst = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+    try:
+        libro_xml = _construir_libro_xml(emisor, periodo, tmst)
+    except Exception as e:
+        raise HTTPException(500, f"Error construyendo libro: {e}")
+
+    firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
+    try:
+        libro_firmado = await firma.firmar_libro(libro_xml.decode("ISO-8859-1"))
+    except Exception as e:
+        logger.error(f"[LIBRO GUIAS] Error firmando: {e}", exc_info=True)
+        raise HTTPException(500, f"Error firmando: {e}")
+
+    libro_firmado = libro_firmado.replace(
+        "<?xml version='1.0' encoding='ISO-8859-1'?>",
+        '<?xml version="1.0" encoding="ISO-8859-1"?>'
+    )
+
+    rut_limpio = emisor.rut.replace(".", "").replace("-", "")
+    nombre = f"LibroGuias_{rut_limpio}_{periodo.replace('-','')}.xml"
+    return Response(
+        content=libro_firmado.encode("ISO-8859-1"),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
+    )
