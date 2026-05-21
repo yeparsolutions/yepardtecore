@@ -1,7 +1,7 @@
 # app/api/v1/endpoints/certificacion_libro_guias.py
 # ══════════════════════════════════════════════════════════════
 # LIBRO DE GUÍAS — NÚMERO DE ATENCIÓN: 4841547
-# Set Guía 4841546 (tipo 52, folios 54, 55, 56)
+# Schema: LibroGuia (distinto a LibroCompraVenta)
 # ══════════════════════════════════════════════════════════════
 
 import logging
@@ -26,70 +26,76 @@ PERIODO   = "2026-05"
 RUT_EMISOR = "78377021-0"
 
 DOCUMENTOS = [
-    # Caso 1: traslado interno, receptor = emisor, sin precios
     {"folio": 54, "fecha": "2026-05-21", "rut_doc": RUT_EMISOR,
      "razon": "YEPAR SOLUTIONS SPA",
-     "neto": 0, "iva": 0, "total": 0, "ind_traslado": 5},
-    # Caso 2: venta, despacha emisor
+     "ind_traslado": 5,
+     "neto": 0, "iva": 0, "total": 0},
     {"folio": 55, "fecha": "2026-05-21", "rut_doc": "77777777-7",
      "razon": "EMPRESA LTDA",
-     "neto": 3826814, "iva": 727095, "total": 4553909, "ind_traslado": 1},
-    # Caso 3: venta, retira cliente
+     "ind_traslado": 1,
+     "neto": 3826814, "iva": 727095, "total": 4553909},
     {"folio": 56, "fecha": "2026-05-21", "rut_doc": "77777777-7",
      "razon": "EMPRESA LTDA",
-     "neto": 2830303, "iva": 537758, "total": 3368061, "ind_traslado": 2},
+     "ind_traslado": 2,
+     "neto": 2830303, "iva": 537758, "total": 3368061},
 ]
 
 
 def _construir_libro_xml(emisor: Emisor, periodo: str, tmst: str) -> bytes:
-    root = etree.Element(f"{{{NS}}}LibroCompraVenta",
+    """
+    Libro de Guías de Despacho Electrónicas.
+    Schema raíz: LibroGuia (no LibroCompraVenta).
+    Ref: https://www.sii.cl/factura_electronica/formato_lgd.pdf
+    """
+    root = etree.Element(f"{{{NS}}}LibroGuia",
         nsmap={None: NS, "xsi": "http://www.w3.org/2001/XMLSchema-instance"},
         attrib={
             "version": "1.0",
             "{http://www.w3.org/2001/XMLSchema-instance}schemaLocation":
-                f"{NS} LibroCV_v10.xsd",
+                f"{NS} LibroGuia_v10.xsd",
         })
 
     envio = etree.SubElement(root, f"{{{NS}}}EnvioLibro")
     envio.set("ID", "LibroGuias")
 
+    # Caratula — TipoDespacho en vez de TipoOperacion
     car = etree.SubElement(envio, f"{{{NS}}}Caratula")
     etree.SubElement(car, f"{{{NS}}}RutEmisorLibro").text   = emisor.rut
     etree.SubElement(car, f"{{{NS}}}RutEnvia").text          = "25648612-1"
     etree.SubElement(car, f"{{{NS}}}PeriodoTributario").text = periodo
     etree.SubElement(car, f"{{{NS}}}FchResol").text          = "2026-04-19"
     etree.SubElement(car, f"{{{NS}}}NroResol").text          = "0"
-    etree.SubElement(car, f"{{{NS}}}TipoOperacion").text     = "VENTA"
+    etree.SubElement(car, f"{{{NS}}}TipoDespacho").text      = "VENTA"
     etree.SubElement(car, f"{{{NS}}}TipoLibro").text         = "ESPECIAL"
     etree.SubElement(car, f"{{{NS}}}TipoEnvio").text         = "TOTAL"
     etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = NATENCION
 
-    # ResumenPeriodo ANTES de Detalle
+    # ResumenPeriodo ANTES del Detalle
     t_neto  = sum(d["neto"]  for d in DOCUMENTOS)
     t_iva   = sum(d["iva"]   for d in DOCUMENTOS)
     t_total = sum(d["total"] for d in DOCUMENTOS)
 
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
-    tot = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
-    etree.SubElement(tot, f"{{{NS}}}TpoDoc").text     = "52"
-    etree.SubElement(tot, f"{{{NS}}}TotDoc").text     = str(len(DOCUMENTOS))
-    etree.SubElement(tot, f"{{{NS}}}TotMntExe").text  = "0"
-    etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text = str(t_neto)
-    etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text  = str(t_iva)
+    tot = etree.SubElement(resumen, f"{{{NS}}}TotalesDespacho")
+    etree.SubElement(tot, f"{{{NS}}}TpoDoc").text      = "52"
+    etree.SubElement(tot, f"{{{NS}}}TotDoc").text      = str(len(DOCUMENTOS))
+    etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text  = str(t_neto)
+    etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text   = str(t_iva)
     etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(t_total)
 
-    # Detalle
+    # Detalle — incluye IndTraslado
     for doc in DOCUMENTOS:
         det = etree.SubElement(envio, f"{{{NS}}}Detalle")
-        etree.SubElement(det, f"{{{NS}}}TpoDoc").text  = "52"
-        etree.SubElement(det, f"{{{NS}}}NroDoc").text  = str(doc["folio"])
-        etree.SubElement(det, f"{{{NS}}}TasaImp").text = "19"
-        etree.SubElement(det, f"{{{NS}}}FchDoc").text  = doc["fecha"]
-        etree.SubElement(det, f"{{{NS}}}RUTDoc").text  = doc["rut_doc"]
-        etree.SubElement(det, f"{{{NS}}}RznSoc").text  = doc["razon"][:50]
-        etree.SubElement(det, f"{{{NS}}}MntNeto").text = str(doc["neto"])
-        etree.SubElement(det, f"{{{NS}}}MntIVA").text  = str(doc["iva"])
-        etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
+        etree.SubElement(det, f"{{{NS}}}TpoDoc").text      = "52"
+        etree.SubElement(det, f"{{{NS}}}NroDoc").text      = str(doc["folio"])
+        etree.SubElement(det, f"{{{NS}}}TasaImp").text     = "19"
+        etree.SubElement(det, f"{{{NS}}}FchDoc").text      = doc["fecha"]
+        etree.SubElement(det, f"{{{NS}}}RUTDoc").text      = doc["rut_doc"]
+        etree.SubElement(det, f"{{{NS}}}RznSoc").text      = doc["razon"][:50]
+        etree.SubElement(det, f"{{{NS}}}IndTraslado").text = str(doc["ind_traslado"])
+        etree.SubElement(det, f"{{{NS}}}MntNeto").text     = str(doc["neto"])
+        etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
+        etree.SubElement(det, f"{{{NS}}}MntTotal").text    = str(doc["total"])
 
     etree.SubElement(envio, f"{{{NS}}}TmstFirma").text = tmst
 
