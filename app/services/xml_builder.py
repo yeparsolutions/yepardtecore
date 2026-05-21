@@ -171,8 +171,11 @@ class XMLBuilder:
 
         self._build_encabezado(doc_el)
 
-        for idx, item in enumerate(d.items, start=1):
-            self._build_detalle(doc_el, item, idx)
+        # Si forzar_monto_cero=True (NC CodRef=2), no emitir ítems
+        # El SII no acepta ítems con montos en NC de corrección de texto
+        if not d.forzar_monto_cero:
+            for idx, item in enumerate(d.items, start=1):
+                self._build_detalle(doc_el, item, idx)
 
         # DscRcgGlobal: DESPUES de Detalle, ANTES de Referencia (orden XSD)
         if self._desc_global_monto > 0:
@@ -279,11 +282,15 @@ class XMLBuilder:
                 etree.SubElement(totales, f"{{{NS}}}TasaIVA").text = "19"
                 etree.SubElement(totales, f"{{{NS}}}IVA").text     = str(self.monto_iva)
         else:
-            etree.SubElement(totales, f"{{{NS}}}MntNeto").text  = str(self.monto_neto)
-            if self.monto_exento > 0:
-                etree.SubElement(totales, f"{{{NS}}}MntExe").text = str(self.monto_exento)
-            etree.SubElement(totales, f"{{{NS}}}TasaIVA").text  = "19"
-            etree.SubElement(totales, f"{{{NS}}}IVA").text      = str(self.monto_iva)
+            if d.forzar_monto_cero:
+                # NC CodRef=2: solo MntTotal=0, sin otros campos de montos
+                pass
+            else:
+                etree.SubElement(totales, f"{{{NS}}}MntNeto").text  = str(self.monto_neto)
+                if self.monto_exento > 0:
+                    etree.SubElement(totales, f"{{{NS}}}MntExe").text = str(self.monto_exento)
+                etree.SubElement(totales, f"{{{NS}}}TasaIVA").text  = "19"
+                etree.SubElement(totales, f"{{{NS}}}IVA").text      = str(self.monto_iva)
 
         etree.SubElement(totales, f"{{{NS}}}MntTotal").text = str(self.monto_total)
 
