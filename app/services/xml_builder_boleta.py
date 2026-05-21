@@ -149,17 +149,22 @@ class XMLBuilderBoleta:
         monto_afecto_neto = subtotal_afecto - desc
 
         if tipo == 41:
-            # Boleta de Servicios Exenta (tipo 41): todo exento, sin IVA
+            # Boleta Exenta (tipo 41): todo exento, sin IVA
             self.monto_neto   = 0
             self.monto_iva    = 0
             self.monto_exento = round(subtotal_afecto + subtotal_exento)
             self.monto_total  = self.monto_exento
         else:
-            # Boleta Electrónica (tipo 39): afectos llevan IVA 19%
-            self.monto_neto   = monto_afecto_neto
-            self.monto_iva    = round(monto_afecto_neto * 0.19)
+            # Boleta Electrónica (tipo 39):
+            # Los MontoItem son BRUTOS (con IVA incluido).
+            # MntNeto = round(total_bruto / 1.19)
+            # IVA     = total_bruto - MntNeto
+            # MntTotal = total_bruto + exento
+            total_bruto       = monto_afecto_neto  # nombre histórico, ahora es bruto
+            self.monto_neto   = round(total_bruto / 1.19)
+            self.monto_iva    = total_bruto - self.monto_neto
             self.monto_exento = round(subtotal_exento)
-            self.monto_total  = self.monto_neto + self.monto_iva + self.monto_exento
+            self.monto_total  = total_bruto + self.monto_exento
 
     def _sanitizar(self, texto: str, largo: int = 80) -> str:
         """
