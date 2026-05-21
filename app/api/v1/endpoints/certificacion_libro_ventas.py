@@ -132,24 +132,8 @@ def _construir_libro_xml(emisor: Emisor, periodo: str, tmst: str) -> bytes:
     total_tot   = sum(d["total"] for d in DOCUMENTOS if d["tipo"] in (33,34))
     total_tot  -= sum(d["total"] for d in DOCUMENTOS if d["tipo"] in (61,56))
 
-    # ResumenPeriodo: obligatorio cuando hay Detalle — un bloque por tipo de documento
-    # Orden XSD TotalesPeriodo: TpoDoc → TotDoc → [TotMntExe] → TotMntNeto → [TotMntIVA] → TotMntTotal
-    resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
-    for tipo_doc in sorted(set(d["tipo"] for d in DOCUMENTOS)):
-        docs_tipo = [d for d in DOCUMENTOS if d["tipo"] == tipo_doc]
-        t_exe   = sum(d["exe"]   for d in docs_tipo)
-        t_neto  = sum(d["neto"]  for d in docs_tipo)
-        t_iva   = sum(d["iva"]   for d in docs_tipo)
-        t_total = sum(d["total"] for d in docs_tipo)
-        tot = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
-        etree.SubElement(tot, f"{{{NS}}}TpoDoc").text  = str(tipo_doc)
-        etree.SubElement(tot, f"{{{NS}}}TotDoc").text  = str(len(docs_tipo))
-        if t_exe != 0:
-            etree.SubElement(tot, f"{{{NS}}}TotMntExe").text  = str(t_exe)
-        etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text = str(t_neto)
-        if t_iva != 0:
-            etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text  = str(t_iva)
-        etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text    = str(t_total)
+    # ResumenPeriodo es OPCIONAL en LibroCV_v10 — omitido
+    # El XSD no lo acepta entre Detalle y TmstFirma
 
     etree.SubElement(envio, f"{{{NS}}}TmstFirma").text = tmst
 
