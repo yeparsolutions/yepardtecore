@@ -187,6 +187,7 @@ class FirmaDigital:
             root   = _etree.fromstring(libro_xml.encode("ISO-8859-1"), parser)
 
             envio = root.find(f"{{{NS_SII}}}EnvioLibro")
+            libro_id = envio.get('ID', 'LibroVentas')  # LibroVentas o LibroCompras
 
             # Digest del EnvioLibro (c14n) — calculado ANTES de agregar Signature
             envio_c14n = _etree.tostring(envio, method="c14n", exclusive=False)
@@ -198,7 +199,7 @@ class FirmaDigital:
                 f'<SignedInfo xmlns="{NS_DS}">'
                 f'<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>'
                 f'<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>'
-                f'<Reference URI="#LibroVentas">'
+                f'<Reference URI="#{libro_id}">'
                 f'<Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/></Transforms>'
                 f'<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>'
                 f'<DigestValue>{digest_val}</DigestValue>'
@@ -220,7 +221,7 @@ class FirmaDigital:
                 Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315")
             _etree.SubElement(si_el, f"{{{NS_DS}}}SignatureMethod",
                 Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1")
-            ref_el = _etree.SubElement(si_el, f"{{{NS_DS}}}Reference", URI="#LibroVentas")
+            ref_el = _etree.SubElement(si_el, f"{{{NS_DS}}}Reference", URI=f"#{libro_id}")
             tr_el  = _etree.SubElement(ref_el, f"{{{NS_DS}}}Transforms")
             _etree.SubElement(tr_el, f"{{{NS_DS}}}Transform",
                 Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature")
