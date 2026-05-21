@@ -172,11 +172,9 @@ class XMLBuilder:
 
         self._build_encabezado(doc_el)
 
-        # Si forzar_monto_cero=True (NC CodRef=2), no emitir ítems
-        # El SII no acepta ítems con montos en NC de corrección de texto
-        if not d.forzar_monto_cero:
-            for idx, item in enumerate(d.items, start=1):
-                self._build_detalle(doc_el, item, idx)
+        for idx, item in enumerate(d.items, start=1):
+            self._build_detalle(doc_el, item, idx,
+                                forzar_monto_cero=d.forzar_monto_cero)
 
         # DscRcgGlobal: DESPUES de Detalle, ANTES de Referencia (orden XSD)
         if self._desc_global_monto > 0:
@@ -295,7 +293,7 @@ class XMLBuilder:
 
         etree.SubElement(totales, f"{{{NS}}}MntTotal").text = str(self.monto_total)
 
-    def _build_detalle(self, parent, item, numero_linea: int):
+    def _build_detalle(self, parent, item, numero_linea: int, forzar_monto_cero: bool = False):
         # Orden XSD: NroLinDet, [CdgItem], [IndExe], ..., NmbItem, [DscItem],
         # ..., [QtyItem], ..., [UnmdItem], [PrcItem], [DescuentoPct],
         # [DescuentoMonto], ..., MontoItem
@@ -326,7 +324,7 @@ class XMLBuilder:
                 round(item.cantidad * item.precio_unitario * item.descuento_pct / 100)
             )
 
-        etree.SubElement(det, f"{{{NS}}}MontoItem").text = str(item.monto_item)
+        etree.SubElement(det, f"{{{NS}}}MontoItem").text = "0" if forzar_monto_cero else str(item.monto_item)
 
     def _build_referencia(self, parent, ref, numero: int):
         # Orden XSD: NroLinRef, TpoDocRef, [IndGlobal], FolioRef,
