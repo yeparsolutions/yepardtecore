@@ -75,22 +75,12 @@ def _construir_libro_xml(emisor: Emisor, periodo: str, tmst: str) -> bytes:
     t_total = sum(d["total"] for d in DOCUMENTOS)
 
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
-    ventas    = [d for d in DOCUMENTOS if d["ind_traslado"] in (1, 2)]
-    traslados = [d for d in DOCUMENTOS if d["ind_traslado"] not in (1, 2)]
-    etree.SubElement(resumen, f"{{{NS}}}TotFolAnulado").text  = "0"
-    etree.SubElement(resumen, f"{{{NS}}}TotGuiaAnulada").text = "0"
-    # TotGuiaVenta = entero (cantidad), TotMntGuiaVta = monto total ventas
-    etree.SubElement(resumen, f"{{{NS}}}TotGuiaVenta").text    = str(len(ventas))
-    etree.SubElement(resumen, f"{{{NS}}}TotMntGuiaVta").text   = str(sum(d["total"] for d in ventas))
+    # Con TipoDespacho=VENTA todas las guías son ventas → TotGuiaVenta=3, sin TotTraslado
+    etree.SubElement(resumen, f"{{{NS}}}TotFolAnulado").text   = "0"
+    etree.SubElement(resumen, f"{{{NS}}}TotGuiaAnulada").text  = "0"
+    etree.SubElement(resumen, f"{{{NS}}}TotGuiaVenta").text    = str(len(DOCUMENTOS))
+    etree.SubElement(resumen, f"{{{NS}}}TotMntGuiaVta").text   = str(sum(d["total"] for d in DOCUMENTOS))
     etree.SubElement(resumen, f"{{{NS}}}TotMntModificado").text = "0"
-    # TotTraslado es complejo: un elemento por tipo de traslado (IndTraslado)
-    # IndTraslado=5 = traslado interno
-    for ind, docs_ind in {5: [d for d in traslados if d["ind_traslado"]==5]}.items():
-        if docs_ind:
-            tt = etree.SubElement(resumen, f"{{{NS}}}TotTraslado")
-            etree.SubElement(tt, f"{{{NS}}}TpoTraslado").text = str(ind)
-            etree.SubElement(tt, f"{{{NS}}}CantGuia").text    = str(len(docs_ind))
-            etree.SubElement(tt, f"{{{NS}}}MntGuia").text     = str(sum(d["total"] for d in docs_ind))
 
     # Detalle — incluye IndTraslado
     for doc in DOCUMENTOS:
