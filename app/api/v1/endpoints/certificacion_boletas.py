@@ -37,12 +37,13 @@ def _neto(precio_con_iva: int) -> int:
 
 def _ref_caso(n: int, fecha: str) -> dict:
     """
-    Referencia del caso de prueba.
-    EnvioBOLETA_v11 exige TpoDocRef numérico — usar 801 (otros documentos).
+    Referencia del caso de prueba para boletas.
+    Según Formato Boletas v4.0 (2023), la referencia puede tener solo RazonRef.
+    TpoDocRef se omite para refs de set (no es un documento tributario real).
     RazonRef usa guion: CASO-1, CASO-2...
     """
     return {
-        "tipo_doc_ref": 801,
+        "tipo_doc_ref": "SET",   # → builder lo omite del XML (no es doc tributario)
         "folio_ref":    n,
         "fecha_ref":    fecha,
         "razon_ref":    f"CASO-{n}",
