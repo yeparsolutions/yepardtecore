@@ -67,8 +67,14 @@ class SIISender:
             tag         = "EnvioDTE"
             schema_name = "EnvioDTE_v10.xsd"
 
-        fch_resol = getattr(self, 'fch_resol', '2026-04-19')
-        nro_resol = getattr(self, 'nro_resol', '0')
+        # Boletas electrónicas usan Resolución Exenta SII Nº80 del 22/08/2014
+        # Facturas y otros DTEs usan la resolución del certificado digital
+        if es_boleta:
+            fch_resol = '2014-08-22'
+            nro_resol = '80'
+        else:
+            fch_resol = getattr(self, 'fch_resol', '2026-04-19')
+            nro_resol = getattr(self, 'nro_resol', '0')
         tmst      = (ahora + timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%S")
 
         # Construir SubTotDTE
