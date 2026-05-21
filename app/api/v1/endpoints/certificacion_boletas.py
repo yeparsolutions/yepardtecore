@@ -36,9 +36,13 @@ def _neto(precio_con_iva: int) -> int:
 
 
 def _ref_caso(n: int, fecha: str) -> dict:
-    """Referencia SET obligatoria. RazonRef usa guion: CASO-1, CASO-2..."""
+    """
+    Referencia del caso de prueba.
+    EnvioBOLETA_v11 exige TpoDocRef numérico — usar 801 (otros documentos).
+    RazonRef usa guion: CASO-1, CASO-2...
+    """
     return {
-        "tipo_doc_ref": "SET",
+        "tipo_doc_ref": 801,
         "folio_ref":    n,
         "fecha_ref":    fecha,
         "razon_ref":    f"CASO-{n}",
