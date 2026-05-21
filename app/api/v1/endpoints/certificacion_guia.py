@@ -1,14 +1,26 @@
-# app/api/v1/endpoints/certificacion_boletas.py
+# app/api/v1/endpoints/certificacion_guia.py
 # ══════════════════════════════════════════════════════════════
-# SET DE PRUEBA BOLETA ELECTRÓNICA
-# 5 casos exactos del Set_Prueba_BE.txt
+# SET GUÍA DE DESPACHO — NÚMERO DE ATENCIÓN: 4841546
+# 3 documentos: tipo 52
 #
-# PRECIOS: el SII da precios CON IVA → convertir a neto (÷1.19)
-# EXCEPTO ítems exentos → precio ya es final, sin dividir
+# CASO 1: Traslado interno (IndTraslado=5)
+#         - Receptor = mismo RUT emisor
+#         - Sin precios (operación no constituye venta)
+# CASO 2: Venta, despacha el emisor (IndTraslado=1)
+#         - Con precios, receptor cliente
+# CASO 3: Venta, retira el cliente (IndTraslado=2)
+#         - Con precios, receptor cliente
 #
-# CASO 4 mixto: afecto con IVA + exento sin IVA
-# CASO 5: requiere UnmdItem="Kg"
-# REFERENCIAS: RazonRef="CASO-1", "CASO-2" etc. (con guion)
+# IndTraslado valores SII:
+#   1 = Operación constituye venta (despacha vendedor)
+#   2 = Ventas por efectuar (retira comprador)
+#   3 = Consignaciones
+#   4 = Entrega gratuita
+#   5 = Traslados internos
+#   6 = Otros traslados no venta
+#   7 = Guía de devolución
+#   8 = Traslado para exportación
+#   9 = Venta para exportación
 # ══════════════════════════════════════════════════════════════
 
 import logging
@@ -26,36 +38,39 @@ from app.services.dte_service import DTEService
 from app.services.firma_digital import FirmaDigital
 from app.services.sii_sender import SIISender
 
-logger = logging.getLogger("yepardtecore.cert_boletas")
-router = APIRouter(prefix="/certificacion-boletas", tags=["Certificacion Boletas"])
+logger = logging.getLogger("yepardtecore.cert_guia")
+router = APIRouter(prefix="/certificacion-guia", tags=["Certificacion Guia Despacho"])
+
+NATENCION = "4841546"
+
+RECEPTOR_CLIENTE = {
+    "rut":          "77777777-7",
+    "razon_social": "EMPRESA LTDA",
+    "giro":         "COMPUTACION",
+    "direccion":    "SAN DIEGO 2222",
+    "comuna":       "LA FLORIDA",
+    "ciudad":       "SANTIAGO",
+}
 
 
-def _neto(precio_con_iva: int) -> int:
-    """Precio con IVA → neto. Ítems exentos NO deben pasar por aquí."""
-    return round(precio_con_iva / 1.19)
-
-
-def _ref_caso(n: int, fecha: str) -> dict:
-    """Referencia SET obligatoria. RazonRef usa guion: CASO-1, CASO-2..."""
+def _ref_set(n: int, fecha: str) -> dict:
     return {
         "tipo_doc_ref": "SET",
         "folio_ref":    n,
         "fecha_ref":    fecha,
-        "razon_ref":    f"CASO-{n}",
+        "razon_ref":    f"CASO {NATENCION}-{n}",
     }
 
 
-async def _emitir_set_boletas(fecha: str, service: DTEService, emisor_id: int):
+async def _emitir_set(fecha: str, service: DTEService, emisor_id: int,
+                      emisor_rut: str, emisor_razon: str, emisor_giro: str,
+                      emisor_dir: str, emisor_comuna: str, emisor_ciudad: str):
     """
-    Genera los 5 casos del set de prueba de boletas.
-    Fuente única de verdad para /generar-xml y /enviar.
+    3 casos del Set Guía de Despacho N° 4841546.
 
-    Reglas clave:
-    - Precios CON IVA del set → dividir por 1.19 para obtener neto
-    - Ítems exentos: el precio ya es final, NO dividir
-    - Caso 4: afecto (÷1.19) + exento (precio directo)
-    - Caso 5: requiere unidad="Kg"
-    - tipo_dte=39 para todos (boleta afecta)
+    Caso 1: Traslado interno — receptor = emisor, sin precios
+    Caso 2: Venta IndTraslado=1 — con precios
+    Caso 3: Venta IndTraslado=2 — con precios
     """
     xmls_firmados: list[str] = []
     folios: dict[int, int] = {}
@@ -70,66 +85,56 @@ async def _emitir_set_boletas(fecha: str, service: DTEService, emisor_id: int):
             )
             xmls_firmados.append(r["xml_firmado"])
             folios[caso_n] = r["folio"]
-            logger.info(f"[CERT BOL] Caso {caso_n} OK folio={r['folio']} total=${r['monto_total']:,.0f}")
+            logger.info(f"[CERT GUIA] Caso {caso_n} OK folio={r['folio']} total=${r['monto_total']:,.0f}")
         except Exception as e:
             errores.append(f"Caso {caso_n}: {e}")
-            logger.error(f"[CERT BOL] Error caso {caso_n}: {e}", exc_info=True)
+            logger.error(f"[CERT GUIA] Error caso {caso_n}: {e}", exc_info=True)
 
-    RECEPTOR = {"rut": "66666666-6", "razon_social": "Consumidor Final"}
-
-    # ── CASO 1 — Dos servicios afectos ────────────────────────
-    # Cambio aceite 1×19.900 + Alineacion 1×9.900 (con IVA)
+    # ── CASO 1 — Traslado interno entre bodegas (IndTraslado=5) ─
+    # Receptor = mismo emisor (exigido por SII para traslado interno)
+    # Sin precios — no es venta, no genera montos
+    receptor_interno = {
+        "rut":          emisor_rut,
+        "razon_social": emisor_razon,
+        "giro":         emisor_giro,
+        "direccion":    emisor_dir,
+        "comuna":       emisor_comuna,
+        "ciudad":       emisor_ciudad,
+    }
     await emitir(1, {
-        "tipo_dte": 39, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "tipo_dte": 52, "fecha_emision": fecha,
+        "receptor": receptor_interno,
+        "indicador_traslado": 5,
         "items": [
-            {"nombre": "Cambio de aceite",      "cantidad": 1, "precio_unitario": _neto(19900), "exento": False},
-            {"nombre": "Alineacion y balanceo", "cantidad": 1, "precio_unitario": _neto(9900),  "exento": False},
+            {"nombre": "ITEM 1", "cantidad":  80, "precio_unitario": 0, "exento": True},
+            {"nombre": "ITEM 2", "cantidad": 127, "precio_unitario": 0, "exento": True},
+            {"nombre": "ITEM 3", "cantidad":  87, "precio_unitario": 0, "exento": True},
         ],
-        "referencias": [_ref_caso(1, fecha)],
+        "referencias": [_ref_set(1, fecha)],
     })
 
-    # ── CASO 2 — Un ítem afecto ────────────────────────────────
-    # Papel de regalo 17×120 (con IVA)
+    # ── CASO 2 — Venta, despacha emisor (IndTraslado=1) ────────
     await emitir(2, {
-        "tipo_dte": 39, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "tipo_dte": 52, "fecha_emision": fecha,
+        "receptor": RECEPTOR_CLIENTE,
+        "indicador_traslado": 1,
         "items": [
-            {"nombre": "Papel de regalo", "cantidad": 17, "precio_unitario": _neto(120), "exento": False},
+            {"nombre": "ITEM 1", "cantidad": 361, "precio_unitario": 7374, "exento": False},
+            {"nombre": "ITEM 2", "cantidad": 700, "precio_unitario": 1664, "exento": False},
         ],
-        "referencias": [_ref_caso(2, fecha)],
+        "referencias": [_ref_set(2, fecha)],
     })
 
-    # ── CASO 3 — Dos ítems afectos ─────────────────────────────
-    # Sandwic 2×1.500 + Bebida 2×550 (con IVA)
+    # ── CASO 3 — Venta, retira cliente (IndTraslado=2) ─────────
     await emitir(3, {
-        "tipo_dte": 39, "fecha_emision": fecha, "receptor": RECEPTOR,
+        "tipo_dte": 52, "fecha_emision": fecha,
+        "receptor": RECEPTOR_CLIENTE,
+        "indicador_traslado": 2,
         "items": [
-            {"nombre": "Sandwic", "cantidad": 2, "precio_unitario": _neto(1500), "exento": False},
-            {"nombre": "Bebida",  "cantidad": 2, "precio_unitario": _neto(550),  "exento": False},
+            {"nombre": "ITEM 1", "cantidad": 174, "precio_unitario": 2001, "exento": False},
+            {"nombre": "ITEM 2", "cantidad": 431, "precio_unitario": 5759, "exento": False},
         ],
-        "referencias": [_ref_caso(3, fecha)],
-    })
-
-    # ── CASO 4 — Mixto: afecto + exento ───────────────────────
-    # item afecto 1: 8×1.590 con IVA → neto
-    # item exento 2: 2×1.000 SIN IVA → precio directo (no dividir)
-    await emitir(4, {
-        "tipo_dte": 39, "fecha_emision": fecha, "receptor": RECEPTOR,
-        "items": [
-            {"nombre": "item afecto 1", "cantidad": 8, "precio_unitario": _neto(1590), "exento": False},
-            {"nombre": "item exento 2", "cantidad": 2, "precio_unitario": 1000,        "exento": True},
-        ],
-        "referencias": [_ref_caso(4, fecha)],
-    })
-
-    # ── CASO 5 — Con unidad de medida ─────────────────────────
-    # Arroz 5×700 con IVA, unidad=Kg (obligatorio según set SII)
-    await emitir(5, {
-        "tipo_dte": 39, "fecha_emision": fecha, "receptor": RECEPTOR,
-        "items": [
-            {"nombre": "Arroz", "cantidad": 5, "precio_unitario": _neto(700),
-             "unidad": "Kg", "exento": False},
-        ],
-        "referencias": [_ref_caso(5, fecha)],
+        "referencias": [_ref_set(3, fecha)],
     })
 
     return xmls_firmados, folios, errores
@@ -151,19 +156,25 @@ async def _get_emisor_y_cert(emisor_id: int, db: AsyncSession):
     return emisor, cert
 
 
-@router.post("/generar-xml", summary="Genera EnvioBOLETA Set de Prueba (5 casos)")
-async def generar_xml_boletas(
+@router.post("/generar-xml", summary="Genera EnvioDTE SET GUIA DESPACHO N° 4841546")
+async def generar_xml_guia(
     emisor_id: int,
     fecha_override: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
     emisor, cert = await _get_emisor_y_cert(emisor_id, db)
-    logger.info(f"[CERT BOL] Certificado OK: {cert.rut_firmante}")
-
     fecha   = fecha_override or date.today().isoformat()
     service = DTEService(db)
 
-    xmls_firmados, folios, errores = await _emitir_set_boletas(fecha, service, emisor_id)
+    xmls_firmados, folios, errores = await _emitir_set(
+        fecha, service, emisor_id,
+        emisor_rut=emisor.rut,
+        emisor_razon=emisor.razon_social,
+        emisor_giro=emisor.giro,
+        emisor_dir=emisor.direccion,
+        emisor_comuna=emisor.comuna,
+        emisor_ciudad=emisor.ciudad,
+    )
 
     if not xmls_firmados:
         raise HTTPException(status_code=500,
@@ -182,12 +193,8 @@ async def generar_xml_boletas(
         raise HTTPException(status_code=500, detail=f"Error armando sobre: {e}")
 
     rut_limpio = emisor.rut.replace(".", "").replace("-", "")
-    nombre     = f"EnvioBOLETA_SetPrueba_{rut_limpio}_{fecha.replace('-','')}.xml"
-
-    logger.info(
-        f"[CERT BOL] Sobre listo {len(xmls_firmados)}/5 docs"
-        + (f" — errores: {errores}" if errores else " ✓")
-    )
+    nombre     = f"EnvioDTE_SetGuia_{rut_limpio}_{fecha.replace('-','')}.xml"
+    logger.info(f"[CERT GUIA] Sobre listo {len(xmls_firmados)}/3" + (f" errores: {errores}" if errores else " ✓"))
 
     return Response(
         content=sobre_xml.encode("ISO-8859-1"),
@@ -197,22 +204,30 @@ async def generar_xml_boletas(
             "X-Casos-Generados": str(len(xmls_firmados)),
             "X-Casos-Error":     str(len(errores)),
             "X-Errores-Detalle": " | ".join(errores) if errores else "",
+            "X-NroAtencion":     NATENCION,
         }
     )
 
 
-@router.post("/enviar", summary="Genera Y envía EnvioBOLETA directo al SII")
-async def enviar_boletas(
+@router.post("/enviar", summary="Genera Y envía directo al SII")
+async def enviar_guia(
     emisor_id: int,
     fecha_override: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
     emisor, cert = await _get_emisor_y_cert(emisor_id, db)
-
     fecha   = fecha_override or date.today().isoformat()
     service = DTEService(db)
 
-    xmls_firmados, folios, errores = await _emitir_set_boletas(fecha, service, emisor_id)
+    xmls_firmados, folios, errores = await _emitir_set(
+        fecha, service, emisor_id,
+        emisor_rut=emisor.rut,
+        emisor_razon=emisor.razon_social,
+        emisor_giro=emisor.giro,
+        emisor_dir=emisor.direccion,
+        emisor_comuna=emisor.comuna,
+        emisor_ciudad=emisor.ciudad,
+    )
 
     if not xmls_firmados:
         raise HTTPException(status_code=500,
@@ -240,7 +255,6 @@ async def enviar_boletas(
             auth_p12_bytes=cert.certificado_auth_p12 or None,
             auth_password=cert.certificado_auth_password or None,
         )
-        logger.info(f"[CERT BOL] SII resultado: {resultado}")
         return {
             "estado":         resultado.get("estado"),
             "track_id":       resultado.get("track_id"),
