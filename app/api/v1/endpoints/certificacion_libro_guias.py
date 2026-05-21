@@ -75,38 +75,35 @@ def _construir_libro_xml(emisor: Emisor, periodo: str, tmst: str) -> bytes:
     t_total = sum(d["total"] for d in DOCUMENTOS)
 
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
-    # TotGuiaVenta: guías de venta (IndTraslado=1,2)
-    ventas = [d for d in DOCUMENTOS if d["ind_traslado"] in (1, 2)]
+    ventas    = [d for d in DOCUMENTOS if d["ind_traslado"] in (1, 2)]
     traslados = [d for d in DOCUMENTOS if d["ind_traslado"] not in (1, 2)]
-    etree.SubElement(resumen, f"{{{NS}}}TotFolAnulado").text = "0"
+    etree.SubElement(resumen, f"{{{NS}}}TotFolAnulado").text  = "0"
     etree.SubElement(resumen, f"{{{NS}}}TotGuiaAnulada").text = "0"
-    if ventas:
-        gv = etree.SubElement(resumen, f"{{{NS}}}TotGuiaVenta")
-        etree.SubElement(gv, f"{{{NS}}}DocVenta").text     = str(len(ventas))
-        etree.SubElement(gv, f"{{{NS}}}TotMntNeto").text   = str(sum(d["neto"] for d in ventas))
-        etree.SubElement(gv, f"{{{NS}}}TotMntIVA").text    = str(sum(d["iva"] for d in ventas))
-        etree.SubElement(gv, f"{{{NS}}}TotMntTotal").text  = str(sum(d["total"] for d in ventas))
-    if traslados:
-        gt = etree.SubElement(resumen, f"{{{NS}}}TotGuiaTraslado")
-        etree.SubElement(gt, f"{{{NS}}}DocTraslado").text  = str(len(traslados))
-        etree.SubElement(gt, f"{{{NS}}}TotMntTotal").text  = str(sum(d["total"] for d in traslados))
+    # TotGuiaVenta = entero (cantidad), TotMntGuiaVta = monto total ventas
+    etree.SubElement(resumen, f"{{{NS}}}TotGuiaVenta").text   = str(len(ventas))
+    etree.SubElement(resumen, f"{{{NS}}}TotMntGuiaVta").text  = str(sum(d["total"] for d in ventas))
+    etree.SubElement(resumen, f"{{{NS}}}TotGuiaTraslado").text = str(len(traslados))
+    etree.SubElement(resumen, f"{{{NS}}}TotMntGuiaTras").text  = str(sum(d["total"] for d in traslados))
 
     # Detalle — incluye IndTraslado
     for doc in DOCUMENTOS:
         det = etree.SubElement(envio, f"{{{NS}}}Detalle")
         # Orden según LibroGuia_v10: Folio → FchDoc → RUTDoc → RznSoc
         #   → IndTraslado → MntNeto → TasaImp → IVA → MntTotal
-        etree.SubElement(det, f"{{{NS}}}Folio").text       = str(doc["folio"])
-        etree.SubElement(det, f"{{{NS}}}FchDoc").text      = doc["fecha"]
-        etree.SubElement(det, f"{{{NS}}}RUTDoc").text      = doc["rut_doc"]
-        etree.SubElement(det, f"{{{NS}}}RznSoc").text      = doc["razon"][:50]
-        etree.SubElement(det, f"{{{NS}}}IndTraslado").text = str(doc["ind_traslado"])
+        # Orden Detalle: Folio → FchDoc → RUTDoc → RznSoc
+        #   → [MntNeto] → [TasaImp] → [IVA] → MntTotal → [IndTraslado]
+        etree.SubElement(det, f"{{{NS}}}Folio").text    = str(doc["folio"])
+        etree.SubElement(det, f"{{{NS}}}FchDoc").text   = doc["fecha"]
+        etree.SubElement(det, f"{{{NS}}}RUTDoc").text   = doc["rut_doc"]
+        etree.SubElement(det, f"{{{NS}}}RznSoc").text   = doc["razon"][:50]
         if doc["neto"]:
             etree.SubElement(det, f"{{{NS}}}MntNeto").text = str(doc["neto"])
         if doc["iva"]:
             etree.SubElement(det, f"{{{NS}}}TasaImp").text = "19"
             etree.SubElement(det, f"{{{NS}}}IVA").text     = str(doc["iva"])
         etree.SubElement(det, f"{{{NS}}}MntTotal").text    = str(doc["total"])
+        # IndTraslado va después de MntTotal
+        etree.SubElement(det, f"{{{NS}}}IndTraslado").text = str(doc["ind_traslado"])
 
     etree.SubElement(envio, f"{{{NS}}}TmstFirma").text = tmst
 
