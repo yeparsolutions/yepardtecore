@@ -139,16 +139,14 @@ async def generar_xml_facturas(
         "referencias": [_ref_set(4, fecha)],
     })
 
-    # CASO 5 — NC corrige giro receptor (CodRef=2 = corrige texto, exento monto 0)
+    # CASO 5 — NC corrige giro receptor (CodRef=2 = corrige texto, sin montos)
     if 1 in folios:
         await emitir(5, {
             "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
-            "items": [
-                {"nombre": "CORRIGE GIRO DEL RECEPTOR", "cantidad": 1, "precio_unitario": 1, "exento": True},
-            ],
+            "items": [],
             "referencias": [
-                _ref_set(5, fecha),                                          # línea 1: SET (obligatorio)
-                _ref_doc(33, folios[1], fecha, 2, "CORRIGE GIRO DEL RECEPTOR"),  # línea 2: doc referenciado
+                _ref_set(5, fecha),
+                _ref_doc(33, folios[1], fecha, 2, "CORRIGE GIRO DEL RECEPTOR"),
             ],
         })
 
@@ -166,28 +164,28 @@ async def generar_xml_facturas(
             ],
         })
 
-    # CASO 7 — NC anula factura (mismos ítems CASO 3)
+    # CASO 7 — NC anula factura caso 3 (mismos ítems EXACTOS del CASO 3)
     if 3 in folios:
         await emitir(7, {
             "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
             "items": [
-                {"nombre": "Pintura B&W AFECTO",    "cantidad":  28, "precio_unitario":  3118, "exento": False},
-                {"nombre": "ITEM 2 AFECTO",          "cantidad": 168, "precio_unitario":  3137, "exento": False},
-                {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   1, "precio_unitario": 34834, "exento": True},
+                {"nombre": "Pintura B y W AFECTO",   "cantidad":  64, "precio_unitario":  6892, "exento": False},
+                {"nombre": "ITEM 2 AFECTO",           "cantidad": 237, "precio_unitario":  4027, "exento": False},
+                {"nombre": "ITEM 3 SERVICIO EXENTO",  "cantidad":   1, "precio_unitario": 35295, "exento": True},
             ],
             "referencias": [
-                _ref_set(7, fecha),                              # línea 1: SET (obligatorio)
-                _ref_doc(33, folios[3], fecha, 1, "ANULA FACTURA"),  # línea 2: doc referenciado
+                _ref_set(7, fecha),
+                _ref_doc(33, folios[3], fecha, 1, "ANULA FACTURA"),
             ],
         })
 
-    # CASO 8 — ND anula NC caso 5 (mismos ítems CASO 5 = CASO 1)
+    # CASO 8 — ND anula NC caso 5 (mismos ítems EXACTOS del CASO 1 del nuevo set)
     if 5 in folios:
         await emitir(8, {
             "tipo_dte": 56, "fecha_emision": fecha, "receptor": RECEPTOR,
             "items": [
-                {"nombre": "Cajón AFECTO",   "cantidad": 133, "precio_unitario": 1489, "exento": False},
-                {"nombre": "Relleno AFECTO", "cantidad":  57, "precio_unitario": 2430, "exento": False},
+                {"nombre": "Cajón AFECTO",   "cantidad": 168, "precio_unitario": 3504, "exento": False},
+                {"nombre": "Relleno AFECTO", "cantidad":  71, "precio_unitario": 5837, "exento": False},
             ],
             "referencias": [
                 _ref_set(8, fecha),                                                    # línea 1: SET (obligatorio)
