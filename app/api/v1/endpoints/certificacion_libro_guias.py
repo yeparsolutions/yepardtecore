@@ -109,8 +109,8 @@ def _construir_libro_xml(emisor: Emisor, periodo: str, tmst: str) -> bytes:
             etree.SubElement(det, f"{{{NS}}}TasaImp").text = "19"
             etree.SubElement(det, f"{{{NS}}}IVA").text     = str(doc["iva"])
         etree.SubElement(det, f"{{{NS}}}MntTotal").text    = str(doc["total"])
-        # IndTraslado va al final (después de montos y refs opcionales)
-        etree.SubElement(det, f"{{{NS}}}IndTraslado").text = str(doc["ind_traslado"])
+        # IndTraslado NO va en el Detalle según LibroGuia schema
+        # El cuadre se hace con TotGuiaVenta y TotTraslado en ResumenPeriodo
 
     etree.SubElement(envio, f"{{{NS}}}TmstFirma").text = tmst
 
