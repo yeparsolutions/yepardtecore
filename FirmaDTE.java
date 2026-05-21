@@ -214,8 +214,14 @@ public class FirmaDTE {
             throws Exception {
         XMLSignatureFactory fac = XMLSignatureFactory.getInstance("DOM");
 
+        // Obtener el ID real del EnvioLibro (puede ser LibroVentas o LibroCompras)
+        NodeList libroNodesRef = doc.getElementsByTagNameNS(NS_SII, "EnvioLibro");
+        if (libroNodesRef.getLength() == 0) libroNodesRef = doc.getElementsByTagName("EnvioLibro");
+        String libroId = ((Element) libroNodesRef.item(0)).getAttribute("ID");
+        if (libroId == null || libroId.isEmpty()) libroId = "LibroVentas";
+
         Reference ref = fac.newReference(
-                "#LibroVentas",
+                "#" + libroId,
                 fac.newDigestMethod(DigestMethod.SHA1, null),
                 Collections.singletonList(
                         fac.newTransform(Transform.ENVELOPED, (TransformParameterSpec) null)),
