@@ -146,11 +146,16 @@ class DTEService:
             for r in refs_data
         ]
 
+        # Si no hay ítems en NC/ND, forzar montos a cero automáticamente
+        es_nota = datos["tipo_dte"] in (56, 61)
+        sin_items = len(datos.get("items", [])) == 0
+        forzar_cero = bool(datos.get("forzar_monto_cero", False)) or (es_nota and sin_items)
+
         return InputDTE(
             tipo_dte             = datos["tipo_dte"],
             folio                = folio,
             fecha_emision        = date.fromisoformat(datos.get("fecha_emision", date.today().isoformat())),
-            forzar_monto_cero    = bool(datos.get("forzar_monto_cero", False)),
+            forzar_monto_cero    = forzar_cero,
             emisor               = EmisorDTE(
                 rut          = emisor.rut,
                 razon_social = emisor.razon_social,
