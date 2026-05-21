@@ -90,7 +90,7 @@ def _construir_libro_xml(emisor: Emisor, periodo: str, tmst: str) -> bytes:
             tt = etree.SubElement(resumen, f"{{{NS}}}TotTraslado")
             etree.SubElement(tt, f"{{{NS}}}TpoTraslado").text = str(ind)
             etree.SubElement(tt, f"{{{NS}}}CantGuia").text    = str(len(docs_ind))
-            etree.SubElement(tt, f"{{{NS}}}TotMntTraslado").text = str(sum(d["total"] for d in docs_ind))
+            etree.SubElement(tt, f"{{{NS}}}MntGuia").text     = str(sum(d["total"] for d in docs_ind))
 
     # Detalle — incluye IndTraslado
     for doc in DOCUMENTOS:
