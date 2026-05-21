@@ -186,11 +186,29 @@ class FirmaDigital:
             _etree.SubElement(ref_el, f"{{{NS_DS}}}DigestValue").text = digest_val
             _etree.SubElement(sig_el, f"{{{NS_DS}}}SignatureValue").text = sig_b64
             ki_el  = _etree.SubElement(sig_el, f"{{{NS_DS}}}KeyInfo")
+            # KeyValue debe ir ANTES de X509Data (orden XSD xmldsignature_v10)
+            kv_el  = _etree.SubElement(ki_el, f"{{{NS_DS}}}KeyValue")
+            pub_key = cert_obj.public_key()
+            from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey as _RSAKey
+            if isinstance(pub_key, _RSAKey):
+                rsa_el = _etree.SubElement(kv_el, f"{{{NS_DS}}}RSAKeyValue")
+                pub_nums = pub_key.public_key().public_numbers() if hasattr(pub_key, 'public_key') else pub_key.public_numbers()
+                import math as _math
+                n_bytes = pub_nums.n.to_bytes((pub_nums.n.bit_length() + 7) // 8, 'big')
+                e_bytes = pub_nums.e.to_bytes((pub_nums.e.bit_length() + 7) // 8, 'big')
+                _etree.SubElement(rsa_el, f"{{{NS_DS}}}Modulus").text = __import__("base64").b64encode(n_bytes).decode()
+                _etree.SubElement(rsa_el, f"{{{NS_DS}}}Exponent").text = __import__("base64").b64encode(e_bytes).decode()
             x5_el  = _etree.SubElement(ki_el, f"{{{NS_DS}}}X509Data")
             _etree.SubElement(x5_el, f"{{{NS_DS}}}X509Certificate").text = cert_b64
 
-            return _etree.tostring(root, encoding="ISO-8859-1",
-                                   xml_declaration=True).decode("ISO-8859-1")
+            xml_bytes = _etree.tostring(root, encoding="ISO-8859-1", xml_declaration=True)
+            xml_str = xml_bytes.decode("ISO-8859-1")
+            # SII exige comillas dobles en la declaración XML
+            xml_str = xml_str.replace(
+                "<?xml version='1.0' encoding='ISO-8859-1'?>",
+                '<?xml version="1.0" encoding="ISO-8859-1"?>'
+            )
+            return xml_str
 
         loop = __import__("asyncio").get_event_loop()
         return await loop.run_in_executor(None, _firmar)
