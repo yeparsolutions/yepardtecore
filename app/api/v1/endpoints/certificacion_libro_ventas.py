@@ -186,10 +186,11 @@ async def generar_libro_ventas(
     # Firmar el libro
     firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
     try:
-        libro_firmado = await firma.firmar_sobre(libro_xml.decode("ISO-8859-1"))
+        libro_firmado = await firma.firmar_libro(libro_xml.decode("ISO-8859-1"))
+        logger.info("[LIBRO VENTAS] Firma OK")
     except Exception as e:
-        logger.warning(f"[LIBRO VENTAS] Error firmando: {e} — devolviendo sin firma")
-        libro_firmado = libro_xml.decode("ISO-8859-1")
+        logger.error(f"[LIBRO VENTAS] Error firmando: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error firmando libro: {e}")
 
     rut_limpio = emisor.rut.replace(".", "").replace("-", "")
     nombre = f"LibroVentas_{rut_limpio}_{periodo.replace('-','')}.xml"
