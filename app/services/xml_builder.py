@@ -1,3 +1,4 @@
+# v3-fix-forzar-monto-cero
 # app/services/xml_builder.py
 # Validado contra DTE_v10.xsd oficial SII
 # FIXES: orden de elementos segun XSD, DscRcgGlobal en posicion correcta,
