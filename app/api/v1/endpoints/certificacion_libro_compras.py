@@ -92,7 +92,7 @@ DOCUMENTOS = [
         "neto": 10019, "exe": 0,
         "iva": _iva(10019),
         "iva_ret_total": _iva(10019),
-        "total": 10019,     # Total = Neto (IVA retenido descontado)
+        "total": 10019 + _iva(10019),  # Total = Neto + IVA (valor doc, no del pago)
         "tipo_especial": "iva_ret_total",
     },
     # NC-E 211: descuento sobre FAC-E 32 (exento)
@@ -191,8 +191,8 @@ def _construir_libro_xml(emisor: Emisor, periodo: str, tmst: str) -> bytes:
             etree.SubElement(det, f"{{{NS}}}MntIVA").text       = str(doc["iva"])
             etree.SubElement(det, f"{{{NS}}}IVARetTotal").text  = str(doc["iva_ret_total"])
         else:
-            if doc["iva"]:
-                etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
+            # Siempre emitir MntIVA (SII lo exige aunque sea 0)
+            etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
 
         etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
 
