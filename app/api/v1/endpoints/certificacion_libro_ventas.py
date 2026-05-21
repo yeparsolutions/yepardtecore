@@ -103,6 +103,23 @@ def _construir_libro_xml(emisor: Emisor, periodo: str, tmst: str) -> bytes:
     etree.SubElement(car, f"{{{NS}}}TipoEnvio").text         = "TOTAL"
     etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = NATENCION
 
+    # ResumenPeriodo va ANTES de Detalle (orden XSD)
+    # TotalesPeriodo: TpoDoc → TotDoc → TotMntExe(req) → TotMntNeto(req) → TotMntIVA(req) → TotMntTotal(req)
+    resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
+    for tipo_doc in sorted(set(d["tipo"] for d in DOCUMENTOS)):
+        docs_tipo = [d for d in DOCUMENTOS if d["tipo"] == tipo_doc]
+        t_exe   = sum(d["exe"]   for d in docs_tipo)
+        t_neto  = sum(d["neto"]  for d in docs_tipo)
+        t_iva   = sum(d["iva"]   for d in docs_tipo)
+        t_total = sum(d["total"] for d in docs_tipo)
+        tot = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
+        etree.SubElement(tot, f"{{{NS}}}TpoDoc").text      = str(tipo_doc)
+        etree.SubElement(tot, f"{{{NS}}}TotDoc").text      = str(len(docs_tipo))
+        etree.SubElement(tot, f"{{{NS}}}TotMntExe").text   = str(t_exe)   # obligatorio
+        etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text  = str(t_neto)  # obligatorio
+        etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text   = str(t_iva)   # obligatorio
+        etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(t_total) # obligatorio
+
     # Detalle de documentos
     for i, doc in enumerate(DOCUMENTOS, 1):
         det = etree.SubElement(envio, f"{{{NS}}}Detalle")
@@ -131,9 +148,6 @@ def _construir_libro_xml(emisor: Emisor, periodo: str, tmst: str) -> bytes:
     total_iva  -= sum(d["iva"]   for d in DOCUMENTOS if d["tipo"] in (61,56))
     total_tot   = sum(d["total"] for d in DOCUMENTOS if d["tipo"] in (33,34))
     total_tot  -= sum(d["total"] for d in DOCUMENTOS if d["tipo"] in (61,56))
-
-    # ResumenPeriodo es OPCIONAL en LibroCV_v10 — omitido
-    # El XSD no lo acepta entre Detalle y TmstFirma
 
     etree.SubElement(envio, f"{{{NS}}}TmstFirma").text = tmst
 
