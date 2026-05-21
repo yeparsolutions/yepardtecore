@@ -139,13 +139,13 @@ class FirmaDigital:
                            fromlist=["Encoding"]).Encoding.DER)
             cert_b64 = __import__("base64").b64encode(cert_der).decode()
 
-            # Parsear libro
-            parser = _etree.XMLParser(remove_blank_text=True)
+            # Parsear libro (sin remove_blank_text para preservar espacios del pretty_print)
+            parser = _etree.XMLParser()
             root   = _etree.fromstring(libro_xml.encode("ISO-8859-1"), parser)
 
             envio = root.find(f"{{{NS_SII}}}EnvioLibro")
 
-            # Digest del EnvioLibro (c14n)
+            # Digest del EnvioLibro (c14n) — calculado ANTES de agregar Signature
             envio_c14n = _etree.tostring(envio, method="c14n", exclusive=False)
             digest_val = __import__("base64").b64encode(
                 _hashlib.sha1(envio_c14n).digest()).decode()
@@ -198,7 +198,7 @@ class FirmaDigital:
             x5_el  = _etree.SubElement(ki_el, f"{{{NS_DS}}}X509Data")
             _etree.SubElement(x5_el, f"{{{NS_DS}}}X509Certificate").text = cert_b64
 
-            xml_bytes = _etree.tostring(root, encoding="ISO-8859-1", xml_declaration=True, pretty_print=True)
+            xml_bytes = _etree.tostring(root, encoding="ISO-8859-1", xml_declaration=True)
             xml_str = xml_bytes.decode("ISO-8859-1")
             # SII exige comillas dobles en la declaración XML
             xml_str = xml_str.replace(
