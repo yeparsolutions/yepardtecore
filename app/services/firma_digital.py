@@ -1,6 +1,6 @@
 # app/services/firma_digital.py
 # ══════════════════════════════════════════════════════════════
-# Firma digital para SII Chile — v12.0 Híbrido.
+# Firma digital para SII Chile — v12.0 Híbrido
 #
 # Flujo:
 #   1. Python genera el DTE y lo timbra (TED con CAF)
@@ -198,7 +198,7 @@ class FirmaDigital:
             x5_el  = _etree.SubElement(ki_el, f"{{{NS_DS}}}X509Data")
             _etree.SubElement(x5_el, f"{{{NS_DS}}}X509Certificate").text = cert_b64
 
-            xml_bytes = _etree.tostring(root, encoding="ISO-8859-1", xml_declaration=True)
+            xml_bytes = _etree.tostring(root, encoding="ISO-8859-1", xml_declaration=True, pretty_print=True)
             xml_str = xml_bytes.decode("ISO-8859-1")
             # SII exige comillas dobles en la declaración XML
             xml_str = xml_str.replace(
