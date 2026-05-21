@@ -316,7 +316,9 @@ class XMLBuilder:
         if item.unidad:
             etree.SubElement(det, f"{{{NS}}}UnmdItem").text = item.unidad
 
-        etree.SubElement(det, f"{{{NS}}}PrcItem").text = str(round(item.precio_unitario))
+        # PrcItem: omitir cuando es 0 (NC CodRef=2 ítem ficticio) — MontoItem=0 es suficiente
+        if round(item.precio_unitario) != 0:
+            etree.SubElement(det, f"{{{NS}}}PrcItem").text = str(round(item.precio_unitario))
 
         if item.descuento_pct > 0:
             etree.SubElement(det, f"{{{NS}}}DescuentoPct").text   = f"{item.descuento_pct:.2f}"
