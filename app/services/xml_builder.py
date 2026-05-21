@@ -285,11 +285,15 @@ class XMLBuilder:
                 # NC CodRef=2: solo MntTotal=0, sin otros campos de montos
                 pass
             else:
-                etree.SubElement(totales, f"{{{NS}}}MntNeto").text  = str(self.monto_neto)
+                # Solo emitir MntNeto si hay monto afecto
+                if self.monto_neto > 0:
+                    etree.SubElement(totales, f"{{{NS}}}MntNeto").text  = str(self.monto_neto)
                 if self.monto_exento > 0:
                     etree.SubElement(totales, f"{{{NS}}}MntExe").text = str(self.monto_exento)
-                etree.SubElement(totales, f"{{{NS}}}TasaIVA").text  = "19"
-                etree.SubElement(totales, f"{{{NS}}}IVA").text      = str(self.monto_iva)
+                # Solo emitir TasaIVA/IVA si hay monto afecto (no en NC/ND sobre exentas)
+                if self.monto_iva > 0:
+                    etree.SubElement(totales, f"{{{NS}}}TasaIVA").text  = "19"
+                    etree.SubElement(totales, f"{{{NS}}}IVA").text      = str(self.monto_iva)
 
         etree.SubElement(totales, f"{{{NS}}}MntTotal").text = str(self.monto_total)
 
@@ -316,9 +320,7 @@ class XMLBuilder:
         if item.unidad:
             etree.SubElement(det, f"{{{NS}}}UnmdItem").text = item.unidad
 
-        # PrcItem: omitir cuando es 0 (NC CodRef=2 ítem ficticio) — MontoItem=0 es suficiente
-        if round(item.precio_unitario) != 0:
-            etree.SubElement(det, f"{{{NS}}}PrcItem").text = str(round(item.precio_unitario))
+        etree.SubElement(det, f"{{{NS}}}PrcItem").text = str(round(item.precio_unitario))
 
         if item.descuento_pct > 0:
             etree.SubElement(det, f"{{{NS}}}DescuentoPct").text   = f"{item.descuento_pct:.2f}"
