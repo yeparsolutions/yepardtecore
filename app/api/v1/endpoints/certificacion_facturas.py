@@ -195,7 +195,7 @@ async def generar_xml_facturas(
             ],
             "referencias": [
                 _ref_set(8, fecha),                                                    # línea 1: SET (obligatorio)
-                _ref_doc(61, folios[5], fecha, 1, "ANULA NOTA DE CREDITO ELECTRONICA"),  # línea 2: CodRef=1 (anula)
+                _ref_doc(61, folios[5], fecha, 3, "CORRIGE MONTOS NOTA DE CREDITO ELECTRONICA"),  # línea 2: CodRef=3 (corrige montos — NC tenía MntTotal=0, ND restaura monto real)
             ],
         })
 
@@ -372,7 +372,7 @@ async def enviar_xml_facturas(
             ],
             "referencias": [
                 _ref_set(8, fecha),
-                _ref_doc(61, folios[5], fecha, 1, "ANULA NOTA DE CREDITO ELECTRONICA"),
+                _ref_doc(61, folios[5], fecha, 3, "CORRIGE MONTOS NOTA DE CREDITO ELECTRONICA"),
             ],
         })
 
@@ -587,7 +587,7 @@ async def enviar_xml_appdte(
                 {"nombre": "Cajón AFECTO", "cantidad": 133, "precio_unitario": 1489, "exento": False},
                 {"nombre": "Relleno AFECTO", "cantidad": 57, "precio_unitario": 2430, "exento": False},
             ],
-            "referencias": [_ref_set(8, fecha), _ref_doc(61, folios[5], fecha, 1, "ANULA NOTA DE CREDITO ELECTRONICA")],
+            "referencias": [_ref_set(8, fecha), _ref_doc(61, folios[5], fecha, 3, "CORRIGE MONTOS NOTA DE CREDITO ELECTRONICA")],
         })
 
     if not xmls_firmados:
