@@ -2,7 +2,7 @@
 # ══════════════════════════════════════════════════════════════
 # SET BASICO FACTURAS — NÚMERO DE ATENCIÓN: 4841543
 # 8 documentos: 4 Facturas (33), 3 NC (61), 1 ND (56)
-# Mismo patrón que certificacion_facturas.py, nuevos valores
+# Mismo patrón que certificacion_facturas.py, nuevos valores.
 # ══════════════════════════════════════════════════════════════
 
 import logging
