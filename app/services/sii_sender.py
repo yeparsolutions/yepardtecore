@@ -17,6 +17,16 @@ logger = logging.getLogger("yepardtecore.dte")
 
 SII_UPLOAD_CERT = "https://maullin.sii.cl/cgi_dte/UPL/DTEUpload"
 SII_UPLOAD_PROD = "https://palena.sii.cl/cgi_dte/UPL/DTEUpload"
+
+# Boletas electrónicas usan servidor REST distinto (Instructivo Técnico Boleta 2021)
+SII_BOLETA_UPLOAD_CERT = "https://maullin2.sii.cl/boleta.electronica.DTE/ws/ingresarEnvioBOLETA"
+SII_BOLETA_UPLOAD_PROD = "https://rahue.sii.cl/boleta.electronica.DTE/ws/ingresarEnvioBOLETA"
+
+# Token semilla para boletas (endpoint REST distinto)
+SII_BOLETA_SEMILLA_CERT = "https://maullin2.sii.cl/boleta.electronica.DTE/ws/getEstadoEnvio"
+SII_BOLETA_TOKEN_CERT   = "https://maullin2.sii.cl/boleta.electronica.DTE/ws/getToken"
+SII_BOLETA_SEMILLA_PROD = "https://rahue.sii.cl/boleta.electronica.DTE/ws/getEstadoEnvio"
+SII_BOLETA_TOKEN_PROD   = "https://rahue.sii.cl/boleta.electronica.DTE/ws/getToken"
 SII_NS          = "http://www.sii.cl/SiiDte"
 XSI_NS          = "http://www.w3.org/2001/XMLSchema-instance"
 XMLDSIG_NS      = "http://www.w3.org/2000/09/xmldsig#"
@@ -27,7 +37,10 @@ class SIISender:
 
     def __init__(self, ambiente: str = "certificacion"):
         self.ambiente   = ambiente
-        self.url_upload = SII_UPLOAD_CERT if ambiente == "certificacion" else SII_UPLOAD_PROD
+        self.url_upload      = SII_UPLOAD_CERT if ambiente == "certificacion" else SII_UPLOAD_PROD
+        self.url_upload_bol  = SII_BOLETA_UPLOAD_CERT if ambiente == "certificacion" else SII_BOLETA_UPLOAD_PROD
+        self.url_token_bol   = SII_BOLETA_TOKEN_CERT  if ambiente == "certificacion" else SII_BOLETA_TOKEN_PROD
+        self.url_semilla_bol = SII_BOLETA_SEMILLA_CERT if ambiente == "certificacion" else SII_BOLETA_SEMILLA_PROD
 
     @staticmethod
     def limpiar_rut(rut: str) -> str:
@@ -117,10 +130,19 @@ class SIISender:
                            password: str = None,
                            auth_p12_bytes: bytes = None,
                            auth_password: str = None) -> dict:
-        # Si hay certificado de auth separado (E-Sign), usarlo para el token
+        # Determinar si es envío de boletas (URL y token distintos)
+        es_envio_boleta = sobre_xml.strip().find("EnvioBOLETA") > 0 or "EnvioBOLETA" in sobre_xml[:500]
+
         token_p12 = auth_p12_bytes or p12_bytes
         token_pwd = auth_password or password
-        token      = await self._obtener_token(token_p12, token_pwd)
+
+        if es_envio_boleta:
+            token = await self._obtener_token_boleta(token_p12, token_pwd)
+            url_envio = self.url_upload_bol
+        else:
+            token = await self._obtener_token(token_p12, token_pwd)
+            url_envio = self.url_upload
+
         rut_limpio = self.limpiar_rut(rut_emisor)
         env_limpio = self.limpiar_rut(rut_enviador)
         timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -137,13 +159,13 @@ class SIISender:
             "archivo":    (nombre, sobre_bytes, "text/xml;charset=ISO-8859-1"),
         }
 
-        logger.info(f"[SII ENVIO] rutSender={env_limpio} rutCompany={rut_limpio} token={token[:8]}...")
-        logger.info(f"[SII ENVIO] url={self.url_upload}")
+        logger.info(f"[SII ENVIO] {'BOLETA' if es_envio_boleta else 'DTE'} rutSender={env_limpio} rutCompany={rut_limpio} token={token[:8]}...")
+        logger.info(f"[SII ENVIO] url={url_envio}")
         logger.info(f"[SII ENVIO] sobre_bytes_len={len(sobre_bytes)}")
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(self.url_upload, headers=headers, files=files)
+                response = await client.post(url_envio, headers=headers, files=files)
 
             logger.info(f"[SII RAW] HTTP={response.status_code} body={response.text[:2000]}")
 
@@ -247,4 +269,22 @@ class SIISender:
             from app.services.sii_auth import obtener_token_cached
             return await obtener_token_cached(p12_bytes, password, self.ambiente)
         logger.warning("[SII AUTH] Usando token 'prueba' — sin certificado")
+        return "prueba"
+
+    async def _obtener_token_boleta(self, p12_bytes: bytes = None,
+                                    password: str = None) -> str:
+        """
+        Token para boletas electrónicas — usa endpoints REST distintos.
+        Flujo: GET semilla → firmar → POST token (URLs maullin2/rahue).
+        Si falla, cae de vuelta al token DTE normal.
+        """
+        if p12_bytes and password:
+            from app.services.sii_auth import obtener_token_boleta_cached
+            try:
+                return await obtener_token_boleta_cached(p12_bytes, password, self.ambiente)
+            except Exception as e:
+                logger.warning(f"[SII AUTH BOLETA] falló ({e}) — usando token DTE como fallback")
+                from app.services.sii_auth import obtener_token_cached
+                return await obtener_token_cached(p12_bytes, password, self.ambiente)
+        logger.warning("[SII AUTH BOLETA] Usando token 'prueba' — sin certificado")
         return "prueba"
