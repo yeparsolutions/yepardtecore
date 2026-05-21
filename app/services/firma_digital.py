@@ -112,21 +112,88 @@ class FirmaDigital:
 
     async def firmar_libro(self, libro_xml: str) -> str:
         """
-        Firma el LibroCompraVenta con XMLDSig sobre EnvioLibro ID="LibroVentas".
-        Usa FirmaDTE.java en modo firmar-libro.
+        Firma el LibroCompraVenta con XMLDSig (Python puro).
+        Firma el elemento EnvioLibro con ID="LibroVentas".
+        Mismo esquema que la firma de DTEs individuales.
         """
         import asyncio
-        p12  = self._p12_bytes
-        pwd  = self._password
+        p12_bytes = self._p12_bytes
+        password  = self._password
 
         def _firmar():
-            return _firmar_sobre_con_java(
-                libro_xml.encode("ISO-8859-1"), p12, pwd,
-                modo="firmar-libro"
+            from lxml import etree as _etree
+            from cryptography.hazmat.primitives import hashes as _hashes
+            from cryptography.hazmat.primitives.asymmetric import padding as _padding
+            from cryptography.hazmat.primitives.serialization import pkcs12 as _pkcs12
+            from cryptography.x509 import load_der_x509_certificate
+            import hashlib as _hashlib
+
+            NS_SII = "http://www.sii.cl/SiiDte"
+            NS_DS  = "http://www.w3.org/2000/09/xmldsig#"
+
+            # Cargar certificado
+            priv_key, cert_obj, _ = _pkcs12.load_key_and_certificates(
+                p12_bytes, password.encode() if password else None)
+            cert_der = cert_obj.public_bytes(
+                __import__("cryptography.hazmat.primitives.serialization",
+                           fromlist=["Encoding"]).Encoding.DER)
+            cert_b64 = __import__("base64").b64encode(cert_der).decode()
+
+            # Parsear libro
+            parser = _etree.XMLParser(remove_blank_text=True)
+            root   = _etree.fromstring(libro_xml.encode("ISO-8859-1"), parser)
+
+            envio = root.find(f"{{{NS_SII}}}EnvioLibro")
+
+            # Digest del EnvioLibro (c14n)
+            envio_c14n = _etree.tostring(envio, method="c14n", exclusive=False)
+            digest_val = __import__("base64").b64encode(
+                _hashlib.sha1(envio_c14n).digest()).decode()
+
+            # Construir SignedInfo
+            signed_info_xml = (
+                f'<SignedInfo xmlns="{NS_DS}">'
+                f'<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>'
+                f'<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>'
+                f'<Reference URI="#LibroVentas">'
+                f'<Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/></Transforms>'
+                f'<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>'
+                f'<DigestValue>{digest_val}</DigestValue>'
+                f'</Reference>'
+                f'</SignedInfo>'
             )
-        loop   = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, _firmar)
-        return result.decode("ISO-8859-1")
+            si_c14n = _etree.tostring(
+                _etree.fromstring(signed_info_xml.encode()),
+                method="c14n", exclusive=False)
+
+            # Firmar SignedInfo
+            sig_val = priv_key.sign(si_c14n, _padding.PKCS1v15(), _hashes.SHA1())
+            sig_b64 = __import__("base64").b64encode(sig_val).decode()
+
+            # Construir Signature element
+            sig_el = _etree.SubElement(root, f"{{{NS_DS}}}Signature")
+            si_el  = _etree.SubElement(sig_el, f"{{{NS_DS}}}SignedInfo")
+            _etree.SubElement(si_el, f"{{{NS_DS}}}CanonicalizationMethod",
+                Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315")
+            _etree.SubElement(si_el, f"{{{NS_DS}}}SignatureMethod",
+                Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1")
+            ref_el = _etree.SubElement(si_el, f"{{{NS_DS}}}Reference", URI="#LibroVentas")
+            tr_el  = _etree.SubElement(ref_el, f"{{{NS_DS}}}Transforms")
+            _etree.SubElement(tr_el, f"{{{NS_DS}}}Transform",
+                Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature")
+            _etree.SubElement(ref_el, f"{{{NS_DS}}}DigestMethod",
+                Algorithm="http://www.w3.org/2000/09/xmldsig#sha1")
+            _etree.SubElement(ref_el, f"{{{NS_DS}}}DigestValue").text = digest_val
+            _etree.SubElement(sig_el, f"{{{NS_DS}}}SignatureValue").text = sig_b64
+            ki_el  = _etree.SubElement(sig_el, f"{{{NS_DS}}}KeyInfo")
+            x5_el  = _etree.SubElement(ki_el, f"{{{NS_DS}}}X509Data")
+            _etree.SubElement(x5_el, f"{{{NS_DS}}}X509Certificate").text = cert_b64
+
+            return _etree.tostring(root, encoding="ISO-8859-1",
+                                   xml_declaration=True).decode("ISO-8859-1")
+
+        loop = __import__("asyncio").get_event_loop()
+        return await loop.run_in_executor(None, _firmar)
 
     async def firmar_sobre(self, sobre_xml: str) -> str:
         """
