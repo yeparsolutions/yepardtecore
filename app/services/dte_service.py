@@ -7,9 +7,15 @@ from datetime import date
 from app.models.dte    import DTE, ItemDTE as ItemDTEModel
 from app.models.emisor import Emisor
 
-from app.services.xml_builder   import XMLBuilder, InputDTE, EmisorDTE, ReceptorDTE, ItemDTE, ReferenciaDTE
+from app.services.xml_builder        import XMLBuilder, InputDTE, EmisorDTE, ReceptorDTE, ItemDTE, ReferenciaDTE
+from app.services.xml_builder_boleta import (
+    XMLBuilderBoleta, InputBoleta, EmisorBoleta, ReceptorBoleta,
+    ItemBoleta, ReferenciaBoleta,
+)
 from app.services.firma_digital import FirmaDigital
 from app.services.caf_service   import CAFService
+
+TIPOS_BOLETA = {39, 41}
 
 logger = logging.getLogger("yepardtecore.dte")
 
@@ -39,9 +45,13 @@ class DTEService:
             emisor_id, tipo_dte, emisor.ambiente
         )
 
-        # 3. Construir XML base
-        input_dte = self._construir_input(datos, folio, emisor)
-        builder   = XMLBuilder(input_dte)
+        # 3. Construir XML base — boletas usan builder y dataclasses distintos
+        if tipo_dte in TIPOS_BOLETA:
+            input_dte = self._construir_input_boleta(datos, folio, emisor)
+            builder   = XMLBuilderBoleta(input_dte)
+        else:
+            input_dte = self._construir_input(datos, folio, emisor)
+            builder   = XMLBuilder(input_dte)
         xml_sin_firma = builder.construir()
 
         # 4. Firma digital — usa AppDTE para timbre + firma XMLDSig
@@ -180,5 +190,61 @@ class DTEService:
             referencias          = referencias,
             ambiente             = emisor.ambiente,
             forma_pago           = int(datos.get("forma_pago", 1)),
+            descuento_global_pct = float(datos.get("descuento_global_pct", 0)),
+        )
+
+    def _construir_input_boleta(self, datos: dict, folio: int, emisor: Emisor) -> InputBoleta:
+        """
+        Construye el InputBoleta para XMLBuilderBoleta (tipos 39 y 41).
+        Los precios en datos["items"] ya deben venir en NETO (sin IVA).
+        La conversión precio_con_iva → neto se hace en certificacion_boletas.py.
+        """
+        r_data = datos.get("receptor", {})
+
+        items_input = [
+            ItemBoleta(
+                nombre          = i["nombre"],
+                cantidad        = float(i.get("cantidad", 1)),
+                precio_unitario = float(i["precio_unitario"]),
+                descuento_pct   = float(i.get("descuento_pct", 0)),
+                codigo          = i.get("codigo", ""),
+                unidad          = i.get("unidad", ""),
+                exento          = bool(i.get("exento", False)),
+            )
+            for i in datos.get("items", [])
+        ]
+
+        referencias = [
+            ReferenciaBoleta(
+                tipo_doc_ref = r["tipo_doc_ref"] if str(r["tipo_doc_ref"]).upper() == "SET" else int(r["tipo_doc_ref"]),
+                folio_ref    = int(r["folio_ref"]),
+                fecha_ref    = date.fromisoformat(r["fecha_ref"]) if isinstance(r.get("fecha_ref"), str) else date.today(),
+                razon_ref    = r.get("razon_ref", ""),
+            )
+            for r in datos.get("referencias", [])
+        ]
+
+        return InputBoleta(
+            tipo_dte         = datos["tipo_dte"],
+            folio            = folio,
+            fecha_emision    = date.fromisoformat(datos.get("fecha_emision", date.today().isoformat())),
+            emisor           = EmisorBoleta(
+                rut          = emisor.rut,
+                razon_social = emisor.razon_social,
+                giro         = emisor.giro,
+                direccion    = emisor.direccion,
+                comuna       = emisor.comuna,
+                ciudad       = emisor.ciudad,
+                acteco       = getattr(emisor, "acteco", "") or "",
+                telefono     = getattr(emisor, "telefono", "") or "",
+                correo       = getattr(emisor, "correo", "") or "",
+            ),
+            receptor         = ReceptorBoleta(
+                rut          = r_data.get("rut", "66666666-6"),
+                razon_social = r_data.get("razon_social", "Consumidor Final"),
+                correo       = r_data.get("correo", ""),
+            ),
+            items            = items_input,
+            referencias      = referencias,
             descuento_global_pct = float(datos.get("descuento_global_pct", 0)),
         )
