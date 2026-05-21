@@ -23,6 +23,31 @@ logger = logging.getLogger("yepardtecore.firma")
 
 _JAVA_CLASS_DIR = os.environ.get("FIRMA_JAVA_DIR", "/app")
 
+def _asegurar_firma_dte_compilado():
+    """Recompila FirmaDTE.java si el .class no existe o el .java es más nuevo."""
+    import subprocess, os
+    java_src = os.path.join(_JAVA_CLASS_DIR, "FirmaDTE.java")
+    java_cls = os.path.join(_JAVA_CLASS_DIR, "FirmaDTE.class")
+    if not os.path.exists(java_src):
+        return
+    if (not os.path.exists(java_cls) or
+            os.path.getmtime(java_src) > os.path.getmtime(java_cls)):
+        try:
+            result = subprocess.run(
+                ["javac", "-cp", _JAVA_CLASS_DIR, java_src],
+                capture_output=True, text=True, timeout=30
+            )
+            if result.returncode == 0:
+                import logging as _l
+                _l.getLogger("yepardtecore.dte").info("[JAVA] FirmaDTE.class recompilado OK")
+            else:
+                import logging as _l
+                _l.getLogger("yepardtecore.dte").warning(f"[JAVA] Recompilación falló: {result.stderr[:200]}")
+        except Exception as e:
+            pass
+
+_asegurar_firma_dte_compilado()
+
 
 def _java_disponible() -> bool:
     try:
@@ -112,13 +137,31 @@ class FirmaDigital:
 
     async def firmar_libro(self, libro_xml: str) -> str:
         """
-        Firma el LibroCompraVenta con XMLDSig (Python puro).
-        Firma el elemento EnvioLibro con ID="LibroVentas".
-        Mismo esquema que la firma de DTEs individuales.
+        Firma el LibroCompraVenta con XMLDSig.
+        Intenta primero con Java (firmar-libro), luego Python puro como fallback.
         """
         import asyncio
         p12_bytes = self._p12_bytes
         password  = self._password
+
+        # Intentar con Java primero (mismo mecanismo que firmar_sobre)
+        try:
+            def _firmar_java():
+                return _firmar_sobre_con_java(
+                    libro_xml.encode("ISO-8859-1"), p12_bytes, password,
+                    modo="firmar-libro"
+                )
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, _firmar_java)
+            xml_str = result.decode("ISO-8859-1")
+            xml_str = xml_str.replace(
+                "<?xml version='1.0' encoding='ISO-8859-1'?>",
+                '<?xml version="1.0" encoding="ISO-8859-1"?>'
+            )
+            logger.info("[FIRMA LIBRO] Firmado con Java OK")
+            return xml_str
+        except Exception as e:
+            logger.warning(f"[FIRMA LIBRO] Java falló ({e}), usando Python puro")
 
         def _firmar():
             from lxml import etree as _etree
