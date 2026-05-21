@@ -273,14 +273,16 @@ class XMLBuilderBoleta:
         etree.SubElement(emisor, f"{{{NS}}}RznSocEmisor").text = self._sanitizar(em.razon_social)
         etree.SubElement(emisor, f"{{{NS}}}GiroEmisor").text   = self._sanitizar(em.giro, 80)
 
+        # Acteco ANTES de Telefono/Correo (orden XSD EnvioBOLETA_v11)
+        etree.SubElement(emisor, f"{{{NS}}}Acteco").text      = em.acteco or "620200"
+
         # Teléfono y correo son opcionales
         if em.telefono:
             etree.SubElement(emisor, f"{{{NS}}}Telefono").text     = em.telefono
         if em.correo:
             etree.SubElement(emisor, f"{{{NS}}}CorreoEmisor").text = em.correo
 
-        # Acteco y dirección del emisor son requeridos
-        etree.SubElement(emisor, f"{{{NS}}}Acteco").text      = em.acteco or "620200"
+        # Dirección del emisor
         etree.SubElement(emisor, f"{{{NS}}}DirOrigen").text   = self._sanitizar(em.direccion)
         etree.SubElement(emisor, f"{{{NS}}}CmnaOrigen").text  = self._sanitizar(em.comuna)
         etree.SubElement(emisor, f"{{{NS}}}CiudadOrigen").text = self._sanitizar(em.ciudad)
@@ -312,8 +314,8 @@ class XMLBuilderBoleta:
                 # Caso mixto: algunos ítems afectos, otros exentos
                 etree.SubElement(totales, f"{{{NS}}}MntExe").text  = str(self.monto_exento)
             if self.monto_iva > 0:
-                etree.SubElement(totales, f"{{{NS}}}TasaIVA").text = "19"
-                etree.SubElement(totales, f"{{{NS}}}IVA").text     = str(self.monto_iva)
+                # Boletas NO llevan TasaIVA — solo IVA (orden XSD EnvioBOLETA_v11)
+                etree.SubElement(totales, f"{{{NS}}}IVA").text = str(self.monto_iva)
 
         # MntTotal siempre al final — OBLIGATORIO
         etree.SubElement(totales, f"{{{NS}}}MntTotal").text = str(self.monto_total)
@@ -389,14 +391,7 @@ class XMLBuilderBoleta:
         # FolioRef
         etree.SubElement(r, f"{{{NS}}}FolioRef").text = str(ref.folio_ref)
 
-        # FchRef — obligatorio antes de CodRef según XSD
-        fecha_str = (
-            ref.fecha_ref.strftime("%Y-%m-%d")
-            if hasattr(ref.fecha_ref, "strftime")
-            else str(ref.fecha_ref)
-        )
-        etree.SubElement(r, f"{{{NS}}}FchRef").text = fecha_str
-
-        # RazonRef (texto libre)
+        # EnvioBOLETA_v11 NO lleva FchRef en Referencia
+        # Orden: NroLinRef → TpoDocRef → FolioRef → [CodRef] → [RazonRef]
         if ref.razon_ref:
             etree.SubElement(r, f"{{{NS}}}RazonRef").text = ref.razon_ref[:90]
