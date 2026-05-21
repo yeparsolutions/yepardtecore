@@ -31,7 +31,7 @@ router = APIRouter(prefix="/certificacion-libro-ventas", tags=["Certificacion Li
 NATENCION   = "4841544"
 NS          = "http://www.sii.cl/SiiDte"
 RUT_EMISOR  = "78377021-0"
-PERIODO     = "202605"  # Mayo 2026
+PERIODO     = "2026-05"  # Mayo 2026 — formato gYearMonth (AAAA-MM)
 
 # ── Documentos del período (extraídos de los XMLs aprobados) ──────────────────
 DOCUMENTOS = [
@@ -69,13 +69,8 @@ DOCUMENTOS = [
      "neto": 0,        "exe": 159439,"iva": 0,      "total": 159439},
     {"tipo": 56, "folio":  79, "fecha": "2026-05-21", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
      "neto": 0,        "exe": 42385, "iva": 0,      "total": 42385},
-    # Set Guía 4841546
-    {"tipo": 52, "folio":  54, "fecha": "2026-05-21", "rut_doc": RUT_EMISOR,   "razon": "YEPAR SOLUTIONS SPA",
-     "neto": 0,        "exe": 0,     "iva": 0,      "total": 0},
-    {"tipo": 52, "folio":  55, "fecha": "2026-05-21", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
-     "neto": 3826814,  "exe": 0,     "iva": 727095, "total": 4553909},
-    {"tipo": 52, "folio":  56, "fecha": "2026-05-21", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
-     "neto": 2830303,  "exe": 0,     "iva": 537758, "total": 3368061},
+    # Nota: Guías de Despacho (tipo 52) NO van en Libro de Ventas (no en enumeración XSD)
+    # Las guías tienen su propio Libro de Guías
 ]
 
 
@@ -118,38 +113,37 @@ def _construir_libro_xml(emisor: Emisor, periodo: str, tmst: str) -> bytes:
         etree.SubElement(det, f"{{{NS}}}RUTDoc").text   = doc["rut_doc"]
         etree.SubElement(det, f"{{{NS}}}RznSoc").text   = doc["razon"][:50]
 
-        if doc["neto"] != 0:
-            etree.SubElement(det, f"{{{NS}}}MntNeto").text  = str(doc["neto"])
+        # Orden XSD Detalle: MntExe → MntNeto → MntIVA → MntTotal
         if doc["exe"] != 0:
             etree.SubElement(det, f"{{{NS}}}MntExe").text   = str(doc["exe"])
+        if doc["neto"] != 0:
+            etree.SubElement(det, f"{{{NS}}}MntNeto").text  = str(doc["neto"])
         if doc["iva"] != 0:
-            etree.SubElement(det, f"{{{NS}}}IVADoc").text   = str(doc["iva"])
+            etree.SubElement(det, f"{{{NS}}}MntIVA").text   = str(doc["iva"])
         etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
 
-    # Resumen del período
-    total_neto  = sum(d["neto"]  for d in DOCUMENTOS if d["tipo"] in (33,34,52))
+    # Resumen del período (guías tipo 52 excluidas — no están en enumeración XSD)
+    total_neto  = sum(d["neto"]  for d in DOCUMENTOS if d["tipo"] in (33,34))
     total_neto -= sum(d["neto"]  for d in DOCUMENTOS if d["tipo"] in (61,56))
-    total_exe   = sum(d["exe"]   for d in DOCUMENTOS if d["tipo"] in (33,34,52))
+    total_exe   = sum(d["exe"]   for d in DOCUMENTOS if d["tipo"] in (33,34))
     total_exe  -= sum(d["exe"]   for d in DOCUMENTOS if d["tipo"] in (61,56))
-    total_iva   = sum(d["iva"]   for d in DOCUMENTOS if d["tipo"] in (33,34,52))
+    total_iva   = sum(d["iva"]   for d in DOCUMENTOS if d["tipo"] in (33,34))
     total_iva  -= sum(d["iva"]   for d in DOCUMENTOS if d["tipo"] in (61,56))
-    total_tot   = sum(d["total"] for d in DOCUMENTOS if d["tipo"] in (33,34,52))
+    total_tot   = sum(d["total"] for d in DOCUMENTOS if d["tipo"] in (33,34))
     total_tot  -= sum(d["total"] for d in DOCUMENTOS if d["tipo"] in (61,56))
 
-    res = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
-    etree.SubElement(res, f"{{{NS}}}TotalesDoc").text = str(len(DOCUMENTOS))
-
-    if total_neto != 0:
-        etree.SubElement(res, f"{{{NS}}}TotMntNeto").text  = str(total_neto)
-    if total_exe != 0:
-        etree.SubElement(res, f"{{{NS}}}TotMntExe").text   = str(total_exe)
-    if total_iva != 0:
-        etree.SubElement(res, f"{{{NS}}}TotIVADoc").text   = str(total_iva)
-    etree.SubElement(res, f"{{{NS}}}TotMntTotal").text = str(total_tot)
+    # ResumenPeriodo es opcional en LibroCV_v10 — omitido para simplicidad
+    # La Signature se agrega fuera de EnvioLibro (hijo de LibroCompraVenta) en firmar_libro
 
     etree.SubElement(envio, f"{{{NS}}}TmstFirma").text = tmst
 
-    return etree.tostring(root, encoding="ISO-8859-1", xml_declaration=True)
+    xml_bytes = etree.tostring(root, encoding="ISO-8859-1", xml_declaration=True)
+    xml_str   = xml_bytes.decode("ISO-8859-1")
+    xml_str   = xml_str.replace(
+        "<?xml version='1.0' encoding='ISO-8859-1'?>",
+        '<?xml version="1.0" encoding="ISO-8859-1"?>'
+    )
+    return xml_str.encode("ISO-8859-1")
 
 
 async def _get_emisor_y_cert(emisor_id: int, db: AsyncSession):
@@ -191,6 +185,12 @@ async def generar_libro_ventas(
     except Exception as e:
         logger.error(f"[LIBRO VENTAS] Error firmando: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error firmando libro: {e}")
+
+    # Garantizar comillas dobles en declaración XML (SII rechaza comillas simples)
+    libro_firmado = libro_firmado.replace(
+        "<?xml version='1.0' encoding='ISO-8859-1'?>",
+        '<?xml version="1.0" encoding="ISO-8859-1"?>'
+    )
 
     rut_limpio = emisor.rut.replace(".", "").replace("-", "")
     nombre = f"LibroVentas_{rut_limpio}_{periodo.replace('-','')}.xml"
