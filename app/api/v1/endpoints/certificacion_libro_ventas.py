@@ -114,10 +114,10 @@ def _construir_libro_xml(emisor: Emisor, periodo: str, tmst: str) -> bytes:
         etree.SubElement(det, f"{{{NS}}}RznSoc").text   = doc["razon"][:50]
 
         # Orden XSD Detalle: MntExe → MntNeto → MntIVA → MntTotal
+        # El SII exige al menos uno de estos campos aunque sea 0
         if doc["exe"] != 0:
             etree.SubElement(det, f"{{{NS}}}MntExe").text   = str(doc["exe"])
-        if doc["neto"] != 0:
-            etree.SubElement(det, f"{{{NS}}}MntNeto").text  = str(doc["neto"])
+        etree.SubElement(det, f"{{{NS}}}MntNeto").text  = str(doc["neto"])
         if doc["iva"] != 0:
             etree.SubElement(det, f"{{{NS}}}MntIVA").text   = str(doc["iva"])
         etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
