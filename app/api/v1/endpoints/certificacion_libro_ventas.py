@@ -137,7 +137,7 @@ def _construir_libro_xml(emisor: Emisor, periodo: str, tmst: str) -> bytes:
 
     etree.SubElement(envio, f"{{{NS}}}TmstFirma").text = tmst
 
-    xml_bytes = etree.tostring(root, encoding="ISO-8859-1", xml_declaration=True)
+    xml_bytes = etree.tostring(root, encoding="ISO-8859-1", xml_declaration=True, pretty_print=True)
     xml_str   = xml_bytes.decode("ISO-8859-1")
     xml_str   = xml_str.replace(
         "<?xml version='1.0' encoding='ISO-8859-1'?>",
