@@ -32,14 +32,15 @@ def _java_disponible() -> bool:
         return False
 
 
-def _firmar_sobre_con_java(sobre_xml_bytes: bytes, pfx_bytes: bytes, password: str) -> bytes:
-    """Usa Java para firmar el SetDTE del sobre."""
+def _firmar_sobre_con_java(sobre_xml_bytes: bytes, pfx_bytes: bytes, password: str,
+                           modo: str = "firmar-sobre") -> bytes:
+    """Usa Java para firmar el SetDTE del sobre o el EnvioLibro del libro."""
     import tempfile
     xml_b64 = base64.b64encode(sobre_xml_bytes).decode()
     pfx_b64 = base64.b64encode(pfx_bytes).decode()
 
     cmd = ["java", "-cp", _JAVA_CLASS_DIR, "FirmaDTE",
-           "firmar-sobre", xml_b64, pfx_b64, password]
+           modo, xml_b64, pfx_b64, password]
 
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
@@ -108,6 +109,24 @@ class FirmaDigital:
             it1_nombre    = it1_nombre,
         )
         return xml_timbrado
+
+    async def firmar_libro(self, libro_xml: str) -> str:
+        """
+        Firma el LibroCompraVenta con XMLDSig sobre EnvioLibro ID="LibroVentas".
+        Usa FirmaDTE.java en modo firmar-libro.
+        """
+        import asyncio
+        p12  = self._p12_bytes
+        pwd  = self._password
+
+        def _firmar():
+            return _firmar_sobre_con_java(
+                libro_xml.encode("ISO-8859-1"), p12, pwd,
+                modo="firmar-libro"
+            )
+        loop   = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _firmar)
+        return result.decode("ISO-8859-1")
 
     async def firmar_sobre(self, sobre_xml: str) -> str:
         """
