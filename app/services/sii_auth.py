@@ -330,3 +330,57 @@ async def obtener_token_cached(p12_bytes: bytes, password: str,
     }
 
     return token
+
+
+# ── Autenticación específica para Boletas Electrónicas ────────────────────────
+SII_BOLETA_SEMILLA_CERT = "https://maullin2.sii.cl/boleta.electronica.DTE/ws/getSeed"
+SII_BOLETA_TOKEN_CERT   = "https://maullin2.sii.cl/boleta.electronica.DTE/ws/getToken"
+SII_BOLETA_SEMILLA_PROD = "https://rahue.sii.cl/boleta.electronica.DTE/ws/getSeed"
+SII_BOLETA_TOKEN_PROD   = "https://rahue.sii.cl/boleta.electronica.DTE/ws/getToken"
+
+_token_cache_boleta: dict = {}
+
+
+class SIIAuthBoleta(SIIAuth):
+    """
+    Autenticación para boletas electrónicas.
+    Mismo flujo que DTE (semilla → firmar → token) pero con URLs REST distintas.
+    """
+
+    def __init__(self, p12_bytes: bytes, password: str, ambiente: str = "certificacion"):
+        super().__init__(p12_bytes, password, ambiente)
+        self.url_semilla = SII_BOLETA_SEMILLA_CERT if ambiente == "certificacion" else SII_BOLETA_SEMILLA_PROD
+        self.url_token   = SII_BOLETA_TOKEN_CERT   if ambiente == "certificacion" else SII_BOLETA_TOKEN_PROD
+
+
+async def obtener_token_boleta_cached(
+    p12_bytes: bytes,
+    password: str,
+    ambiente: str = "certificacion",
+) -> str:
+    """
+    Token para boletas electrónicas con cache en memoria.
+    Usa SIIAuthBoleta que apunta a los endpoints maullin2/rahue.
+    """
+    cache_key = f"boleta_{ambiente}_{hash(p12_bytes)}"
+    ahora     = datetime.now(timezone.utc)
+
+    if cache_key in _token_cache_boleta:
+        cached = _token_cache_boleta[cache_key]
+        if (cached["expira"] - ahora).total_seconds() > 60:
+            return cached["token"]
+
+    import logging as _logging
+    _logger = _logging.getLogger("yepardtecore.dte")
+    _logger.info(f"[SII AUTH BOLETA] Obteniendo token para boletas ({ambiente})")
+
+    auth  = SIIAuthBoleta(p12_bytes, password, ambiente)
+    token = await auth.obtener_token()
+    _logger.info(f"[SII AUTH BOLETA] Token obtenido: {token[:10]}...")
+
+    _token_cache_boleta[cache_key] = {
+        "token":  token,
+        "expira": ahora + timedelta(minutes=55),
+    }
+
+    return token
