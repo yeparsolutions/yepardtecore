@@ -80,7 +80,7 @@ DOCUMENTOS = [
 
 
 def _construir_libro_xml(emisor: Emisor, periodo: str, tmst: str) -> bytes:
-    """Construye el XML del Libro de Ventas según schema LibroVentas_v10.xsd"""
+    """Construye el XML del Libro de Ventas según schema LibroCV_v10.xsd"""
 
     root = etree.Element(f"{{{NS}}}LibroCompraVenta",
         nsmap={None: NS,
@@ -88,7 +88,7 @@ def _construir_libro_xml(emisor: Emisor, periodo: str, tmst: str) -> bytes:
         attrib={
             "version": "1.0",
             "{http://www.w3.org/2001/XMLSchema-instance}schemaLocation":
-                f"{NS} LibroVentas_v10.xsd",
+                f"{NS} LibroCV_v10.xsd",
         }
     )
 
