@@ -191,6 +191,7 @@ class DTEService:
             ambiente             = emisor.ambiente,
             forma_pago           = int(datos.get("forma_pago", 1)),
             descuento_global_pct = float(datos.get("descuento_global_pct", 0)),
+            indicador_traslado   = int(datos.get("indicador_traslado", 0)),
         )
 
     def _construir_input_boleta(self, datos: dict, folio: int, emisor: Emisor) -> InputBoleta:
