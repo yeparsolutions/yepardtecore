@@ -88,9 +88,9 @@ class ReferenciaBoleta:
     Referencia de una boleta. El SII exige que cada boleta del
     set de certificación incluya TpoDocRef=SET y RazonRef=CASO-N.
     """
-    tipo_doc_ref: int           # 801 para "otros documentos de referencia"
-    folio_ref: int
-    fecha_ref: date
+    tipo_doc_ref: str = ""      # Alfanumérico: 39,41,801,802... o "SET" para omitir
+    folio_ref: int = 0
+    fecha_ref: date = None
     razon_ref: str = ""
     cod_ref: str = "SET"        # "SET" para sets de prueba SII
 
@@ -278,13 +278,7 @@ class XMLBuilderBoleta:
         etree.SubElement(emisor, f"{{{NS}}}RznSocEmisor").text = self._sanitizar(em.razon_social)
         etree.SubElement(emisor, f"{{{NS}}}GiroEmisor").text   = self._sanitizar(em.giro, 80)
 
-        # Acteco va DESPUÉS de GiroEmisor y ANTES de Telefono
-        # Orden XSD: RUTEmisor → RznSocEmisor → GiroEmisor → [Acteco]
-        #            → [CdgSIISucur] → [Telefono] → [CorreoEmisor]
-        #            → DirOrigen → CmnaOrigen → CiudadOrigen
-        if em.acteco:
-            etree.SubElement(emisor, f"{{{NS}}}Acteco").text = em.acteco
-
+        # Acteco NO existe en EnvioBOLETA_v11 XSD — omitir completamente
         # Teléfono y correo son opcionales
         if em.telefono:
             etree.SubElement(emisor, f"{{{NS}}}Telefono").text     = em.telefono
@@ -380,27 +374,22 @@ class XMLBuilderBoleta:
 
     def _build_referencia(self, parent, ref: ReferenciaBoleta, numero: int):
         """
-        Construye la referencia de la boleta.
+        Referencia de boleta según Formato Boletas Electrónicas v4.0 (2023):
+            NroLinRef → [TpoDocRef] → [FolioRef] → [CodRef] → [RazonRef]
 
-        Para el set de certificación, el SII exige:
-        - TpoDocRef: tipo de documento referenciado (801 para "set")
-        - FolioRef: número del caso (1, 2, 3...)
-        - FchRef: fecha del caso
-        - RazonRef: texto "CASO-N"
-
-        NOTA: cod_ref="SET" es el código especial que identifica que
-        este documento pertenece a un set de prueba. Es un string, no
-        un integer, por eso lo manejamos por separado del XSD general.
+        TpoDocRef es ALFA (string), valores: 39,41,50,52,801,802...813
+        Para el set de prueba usar RazonRef=CASO-N sin TpoDocRef/FolioRef.
         """
         NS = self.NAMESPACE
         r  = etree.SubElement(parent, f"{{{NS}}}Referencia")
         etree.SubElement(r, f"{{{NS}}}NroLinRef").text = str(numero)
-        etree.SubElement(r, f"{{{NS}}}TpoDocRef").text = str(ref.tipo_doc_ref)
 
-        # FolioRef
-        etree.SubElement(r, f"{{{NS}}}FolioRef").text = str(ref.folio_ref)
+        # TpoDocRef: string alfanumérico, solo si se referencia un documento
+        if ref.tipo_doc_ref and str(ref.tipo_doc_ref).upper() != "SET":
+            etree.SubElement(r, f"{{{NS}}}TpoDocRef").text = str(ref.tipo_doc_ref)
+            # FolioRef: obligatorio si hay TpoDocRef
+            if ref.folio_ref:
+                etree.SubElement(r, f"{{{NS}}}FolioRef").text = str(ref.folio_ref)
 
-        # EnvioBOLETA_v11 NO lleva FchRef en Referencia
-        # Orden: NroLinRef → TpoDocRef → FolioRef → [CodRef] → [RazonRef]
         if ref.razon_ref:
             etree.SubElement(r, f"{{{NS}}}RazonRef").text = ref.razon_ref[:90]
