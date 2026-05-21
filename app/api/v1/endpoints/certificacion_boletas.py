@@ -82,8 +82,8 @@ async def _emitir_set_boletas(fecha: str, service: DTEService, emisor_id: int):
     await emitir(1, {
         "tipo_dte": 39, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "Cambio de aceite",      "cantidad": 1, "precio_unitario": _neto(19900), "exento": False},
-            {"nombre": "Alineacion y balanceo", "cantidad": 1, "precio_unitario": _neto(9900),  "exento": False},
+            {"nombre": "Cambio de aceite",      "cantidad": 1, "precio_unitario": 19900, "exento": False},
+            {"nombre": "Alineacion y balanceo", "cantidad": 1, "precio_unitario": 9900,  "exento": False},
         ],
         "referencias": [_ref_caso(1, fecha)],
     })
@@ -93,7 +93,7 @@ async def _emitir_set_boletas(fecha: str, service: DTEService, emisor_id: int):
     await emitir(2, {
         "tipo_dte": 39, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "Papel de regalo", "cantidad": 17, "precio_unitario": _neto(120), "exento": False},
+            {"nombre": "Papel de regalo", "cantidad": 17, "precio_unitario": 120, "exento": False},
         ],
         "referencias": [_ref_caso(2, fecha)],
     })
@@ -103,8 +103,8 @@ async def _emitir_set_boletas(fecha: str, service: DTEService, emisor_id: int):
     await emitir(3, {
         "tipo_dte": 39, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "Sandwic", "cantidad": 2, "precio_unitario": _neto(1500), "exento": False},
-            {"nombre": "Bebida",  "cantidad": 2, "precio_unitario": _neto(550),  "exento": False},
+            {"nombre": "Sandwic", "cantidad": 2, "precio_unitario": 1500, "exento": False},
+            {"nombre": "Bebida",  "cantidad": 2, "precio_unitario": 550,  "exento": False},
         ],
         "referencias": [_ref_caso(3, fecha)],
     })
@@ -115,7 +115,7 @@ async def _emitir_set_boletas(fecha: str, service: DTEService, emisor_id: int):
     await emitir(4, {
         "tipo_dte": 39, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "item afecto 1", "cantidad": 8, "precio_unitario": _neto(1590), "exento": False},
+            {"nombre": "item afecto 1", "cantidad": 8, "precio_unitario": 1590, "exento": False},
             {"nombre": "item exento 2", "cantidad": 2, "precio_unitario": 1000,        "exento": True},
         ],
         "referencias": [_ref_caso(4, fecha)],
@@ -126,7 +126,7 @@ async def _emitir_set_boletas(fecha: str, service: DTEService, emisor_id: int):
     await emitir(5, {
         "tipo_dte": 39, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "Arroz", "cantidad": 5, "precio_unitario": _neto(700),
+            {"nombre": "Arroz", "cantidad": 5, "precio_unitario": 700,
              "unidad": "Kg", "exento": False},
         ],
         "referencias": [_ref_caso(5, fecha)],
