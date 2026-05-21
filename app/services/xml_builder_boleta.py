@@ -273,15 +273,15 @@ class XMLBuilderBoleta:
         etree.SubElement(emisor, f"{{{NS}}}RznSocEmisor").text = self._sanitizar(em.razon_social)
         etree.SubElement(emisor, f"{{{NS}}}GiroEmisor").text   = self._sanitizar(em.giro, 80)
 
-        # Acteco ANTES de Telefono/Correo (orden XSD EnvioBOLETA_v11)
-        etree.SubElement(emisor, f"{{{NS}}}Acteco").text      = em.acteco or "620200"
-
         # Teléfono y correo son opcionales
         if em.telefono:
             etree.SubElement(emisor, f"{{{NS}}}Telefono").text     = em.telefono
         if em.correo:
             etree.SubElement(emisor, f"{{{NS}}}CorreoEmisor").text = em.correo
 
+        # Acteco NO existe en EnvioBOLETA_v11 — el XSD solo acepta:
+        # RUTEmisor → RznSocEmisor → GiroEmisor → [Telefono] → [CorreoEmisor]
+        # → [CdgSIISucur] → DirOrigen → CmnaOrigen → CiudadOrigen
         # Dirección del emisor
         etree.SubElement(emisor, f"{{{NS}}}DirOrigen").text   = self._sanitizar(em.direccion)
         etree.SubElement(emisor, f"{{{NS}}}CmnaOrigen").text  = self._sanitizar(em.comuna)
