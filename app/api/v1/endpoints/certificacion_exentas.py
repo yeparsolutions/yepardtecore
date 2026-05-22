@@ -137,8 +137,7 @@ async def _emitir_set(fecha: str, service: DTEService, emisor_id: int):
         await emitir(4, {
             "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
             "items": [
-                {"nombre": "SERV CONSULTORIA FACT ELECTRONICA",   "cantidad": 1, "precio_unitario": 0, "exento": True},
-                {"nombre": "SERV CONSULTORIA GUIA DESPACHO ELECT", "cantidad": 1, "precio_unitario": 0, "exento": True},
+                {"nombre": "CORRIGE GIRO", "cantidad": 1, "precio_unitario": 0, "exento": True},
             ],
             "forzar_monto_cero": True,
             "referencias": [
@@ -153,8 +152,7 @@ async def _emitir_set(fecha: str, service: DTEService, emisor_id: int):
         await emitir(5, {
             "tipo_dte": 56, "fecha_emision": fecha, "receptor": RECEPTOR,
             "items": [
-                {"nombre": "SERV CONSULTORIA FACT ELECTRONICA",   "cantidad": 1, "precio_unitario": 0, "exento": True},
-                {"nombre": "SERV CONSULTORIA GUIA DESPACHO ELECT", "cantidad": 1, "precio_unitario": 0, "exento": True},
+                {"nombre": "ANULA NOTA DE CREDITO ELECTRONICA", "cantidad": 1, "precio_unitario": 0, "exento": True},
             ],
             "forzar_monto_cero": True,
             "referencias": [
