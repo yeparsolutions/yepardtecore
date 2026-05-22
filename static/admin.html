@@ -229,6 +229,55 @@ nav{position:sticky;top:0;z-index:100;background:var(--nav-bg);backdrop-filter:b
 .ref-codref-null{background:rgba(100,116,139,.1);color:#64748b;border:1px solid rgba(100,116,139,.2)}
 
 
+
+/* ── Previsualizador XML ── */
+.xml-modal-overlay{position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.7);
+  backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;
+  opacity:0;pointer-events:none;transition:opacity .2s}
+.xml-modal-overlay.open{opacity:1;pointer-events:all}
+.xml-modal{background:var(--bg3);border:1px solid var(--border2);border-radius:18px;
+  width:min(820px,96vw);max-height:90vh;display:flex;flex-direction:column;
+  transform:translateY(12px) scale(.98);transition:transform .2s;overflow:hidden;
+  box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.xml-modal-overlay.open .xml-modal{transform:none}
+.xml-mh{display:flex;align-items:center;gap:12px;padding:16px 20px;
+  border-bottom:1px solid var(--border);flex-shrink:0}
+.xml-mh-title{font-size:14px;font-weight:500;color:var(--text);flex:1}
+.xml-tabs{display:flex;gap:3px;padding:10px 16px 0;border-bottom:1px solid var(--border);
+  flex-shrink:0;overflow-x:auto}
+.xml-tab{padding:6px 14px;border-radius:7px 7px 0 0;cursor:pointer;font-size:12px;
+  color:var(--text3);font-family:'JetBrains Mono',monospace;border:1px solid transparent;
+  border-bottom:none;white-space:nowrap;transition:all .15s}
+.xml-tab:hover{color:var(--text)}
+.xml-tab.active{background:var(--bg2);border-color:var(--border2);color:var(--accent);
+  font-weight:500}
+.xml-body{flex:1;overflow-y:auto;padding:0}
+.xml-pre{font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.6;
+  padding:16px 20px;color:var(--text2);white-space:pre;overflow-x:auto;
+  background:var(--bg2);margin:0;min-height:200px}
+/* Syntax highlight */
+.xml-pre .xt{color:#60a5fa}   /* tags */
+.xml-pre .xa{color:#f59e0b}   /* atributos */
+.xml-pre .xv{color:#10b981}   /* valores */
+.xml-pre .xc{color:var(--text4)} /* comentarios */
+.xml-mf{display:flex;align-items:center;gap:10px;padding:14px 20px;
+  border-top:1px solid var(--border);flex-shrink:0;background:var(--bg2)}
+
+/* ── Cuadros de folios por tipo ── */
+.folio-type-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
+  gap:8px;margin:10px 0}
+.folio-type-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;
+  padding:10px 12px}
+.folio-type-titulo{font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;
+  color:var(--accent)}
+.folio-type-nombre{font-size:10px;color:var(--text3);margin-bottom:6px}
+.folio-type-rango{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text4);
+  margin-top:4px}
+.folio-asig-row{display:flex;justify-content:space-between;font-size:11px;
+  margin-bottom:2px}
+.folio-asig-lbl{color:var(--text3)}
+.folio-asig-val{font-family:'JetBrains Mono',monospace;font-weight:600}
+
 /* ── Config endpoints ── */
 .ep-config{margin-top:12px;border:1px solid var(--border);border-radius:10px;overflow:hidden}
 .ep-config-hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;cursor:pointer;user-select:none;background:var(--bg2)}
@@ -570,9 +619,11 @@ html.light .caso-warn-txt{color:#92400e}
     </div>
     <div class="cb">
       <div class="ibox show" id="set_resumen">
-        <div class="ibox-t">Set configurado</div>
+        <div class="ibox-t">Sets configurados</div>
         <div class="ibox-b" id="set_resumen_b">No se ha cargado un set de prueba aún.</div>
       </div>
+      <!-- Panel de folios por tipo — se llena al confirmar -->
+      <div id="folio_tipo_panel" style="margin-bottom:10px"></div>
 
       <!-- Tarjetas de sets detectados — se renderizan dinámicamente en confirmarSet() -->
       <div id="gen_tabs" style="display:none"></div>
@@ -941,6 +992,12 @@ function asignarFolios(){
   });
 
   log('Folios asignados desde folio_actual de cada tipo','ok');
+  // Actualizar panel de folios en paso 5 si está visible
+  const fp = document.getElementById('folio_tipo_panel');
+  if(fp && S.setsDetectados.length){
+    const firstSet = S.setsDetectados.findIndex(s=>!s.esLibro&&s.casos.length>0);
+    if(firstSet>=0) renderFoliosPorTipo(fp, firstSet);
+  }
   // Actualizar display del modal si está abierto
   if(document.getElementById('modalOverlay').classList.contains('open')){
     renderModalCaso(S.setActivo, S.casoActual);
@@ -1737,12 +1794,12 @@ function nextCaso(){
     closeModal();
     if(set.casoValidado.every(v=>v)){
       log(`✓ Set "${set.label}" N° ${set.natencion} completo`,'ok');
-      // Preguntar si generar XML ahora
-      const ep=getEndpointMap()[set.key];
-      if(ep&&S.id){
-        const generar=confirm(`✓ Set N° ${set.natencion} validado.\n\n¿Generar el XML ahora?\n(También puedes hacerlo desde el Paso 5)`);
-        if(generar) generarXML(set.key, set.natencion);
-      }
+      // Abrir previsualizador XML
+      setTimeout(()=>abrirXmlPreview(si), 200);
+    }else{
+      // Algunos casos sin validar — mostrar cuántos
+      const pendientes = set.casoValidado.filter(v=>!v).length;
+      log(`Set N° ${set.natencion}: ${pendientes} caso(s) sin validar`,'warn');
     }
   }else{S.casoActual=idx+1;renderModalCaso(si,S.casoActual);}
 }
@@ -1761,6 +1818,12 @@ function confirmarSet(){
   renderGenSelector(sets);
   done(3,'✓ '+sets.length+' set(s)');
   log('Sets confirmados','ok');
+  // Renderizar panel de folios por tipo para el primer set con casos
+  const primerSetConCasos = sets.findIndex(s=>!s.esLibro&&s.casos.length>0);
+  if(primerSetConCasos>=0){
+    const folioPanel = document.getElementById('folio_tipo_panel');
+    if(folioPanel) renderFoliosPorTipo(folioPanel, primerSetConCasos);
+  }
   const c5=document.getElementById('c5');
   if(c5.classList.contains('locked'))unlock(5);
   else c5.scrollIntoView({behavior:'smooth',block:'nearest'});
@@ -1904,6 +1967,247 @@ function resetEpConfig(){
   log('Endpoints restaurados a defaults','ok');
 }
 
+
+/* ══════════════════════════════════════════════════════
+   PREVISUALIZADOR XML
+   Genera un ejemplo de cómo quedaría el XML del DTE
+   sin enviar nada al SII. Útil para revisar antes de generar.
+══════════════════════════════════════════════════════ */
+
+let _xmlPreviewSet = null;  // set activo en el preview
+
+function abrirXmlPreview(si){
+  const set = S.setsDetectados[si];
+  if(!set || set.esLibro) return;
+  _xmlPreviewSet = si;
+
+  document.getElementById('xmlModalTitle').textContent = set.label;
+  document.getElementById('xmlModalNat').textContent   = 'N° ' + set.natencion;
+  document.getElementById('xmlBtnGenerar').setAttribute('data-key', set.key);
+  document.getElementById('xmlBtnGenerar').setAttribute('data-nat', set.natencion);
+
+  // Renderizar tabs (uno por caso)
+  const tabs = document.getElementById('xmlTabs');
+  tabs.innerHTML = set.casoData.map((cd, ci)=>{
+    const caso   = set.casos[ci];
+    const folio  = cd.folio_asignado || '?';
+    const valido = set.casoValidado[ci];
+    return `<div class="xml-tab ${ci===0?'active':''}" id="xmlTab_${ci}"
+      onclick="selXmlTab(${ci})"
+      title="${valido?'✓ Validado':'Sin validar'}">
+      C${ci+1} T${caso.tipo_doc||'?'} F${folio}
+    </div>`;
+  }).join('');
+
+  selXmlTab(0);
+  document.getElementById('xmlModalOverlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function selXmlTab(ci){
+  // Quitar active de todos los tabs
+  document.querySelectorAll('.xml-tab').forEach((t,i)=>{
+    t.classList.toggle('active', i===ci);
+  });
+  const si  = _xmlPreviewSet;
+  const set = S.setsDetectados[si];
+  const cd  = set.casoData[ci];
+  const caso= set.casos[ci];
+
+  const xml = generarXMLEjemplo(set, cd, caso, ci);
+  const pre = document.getElementById('xmlPre');
+  pre.innerHTML = highlightXML(xml);
+
+  const valido = set.casoValidado[ci];
+  const folio  = cd.folio_asignado;
+  document.getElementById('xmlFooterInfo').innerHTML =
+    `Caso ${ci+1} de ${set.casos.length} · ` +
+    (folio ? `Folio <strong style="color:var(--accent)">${folio}</strong> · ` : '<span style="color:#f59e0b">Sin folio asignado · </span>') +
+    (valido ? '<span style="color:var(--accent)">✓ Validado</span>' : '<span style="color:var(--text4)">Sin validar</span>');
+}
+
+function closeXmlModal(){
+  document.getElementById('xmlModalOverlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+function handleXmlOverlayClick(e){
+  if(e.target === document.getElementById('xmlModalOverlay')) closeXmlModal();
+}
+function generarDesdePreview(){
+  const btn = document.getElementById('xmlBtnGenerar');
+  closeXmlModal();
+  generarXML(btn.getAttribute('data-key'), btn.getAttribute('data-nat'));
+}
+
+/* ── Generador de XML de ejemplo ─────────────────────────────────
+   Genera un XML DTE válido de ejemplo con los datos del casoData.
+   No firma ni envía — solo para previsualización.
+────────────────────────────────────────────────────────────────── */
+function generarXMLEjemplo(set, cd, caso, ci){
+  const folio   = cd.folio_asignado || 'PENDIENTE';
+  const tipo    = caso.tipo_doc || '?';
+  const fechaHoy= new Date().toISOString().split('T')[0];
+  const emisor  = S.id ? document.getElementById('eb_rut')?.textContent||'RUT-EMISOR' : 'RUT-EMISOR';
+  const rs      = document.getElementById('eb_name')?.textContent||'RAZON SOCIAL EMISOR';
+
+  // Calcular totales
+  let mntNeto=0, mntExento=0, mntIVA=0, mntTotal=0, mntDesc=0;
+  cd.items.forEach(it=>{
+    const base = (it.cantidad||0)*(it.precio_unitario||0);
+    const desc = Math.round(base*(it.descuento_pct||0)/100);
+    const neto = base - desc;
+    mntDesc += desc;
+    if(it.exento||tipo===34) mntExento += neto;
+    else mntNeto += neto;
+  });
+  mntNeto    = Math.round(mntNeto);
+  mntExento  = Math.round(mntExento);
+  mntIVA     = tipo!==34 ? Math.round(mntNeto*0.19) : 0;
+  mntTotal   = mntNeto + mntIVA + mntExento;
+
+  // Construir XML
+  let xml = `<?xml version="1.0" encoding="ISO-8859-1"?>\n`;
+  xml += `<DTE version="1.0">\n`;
+  xml += `  <Documento ID="F${folio}T${tipo}">\n`;
+  xml += `    <Encabezado>\n`;
+  xml += `      <IdDoc>\n`;
+  xml += `        <TipoDTE>${tipo}</TipoDTE>\n`;
+  xml += `        <Folio>${folio}</Folio>\n`;
+  xml += `        <FchEmis>${fechaHoy}</FchEmis>\n`;
+  xml += `        <IndServicio>3</IndServicio>\n`;
+  if(tipo===52){
+    if(cd.ind_traslado) xml += `        <IndTraslado>${cd.ind_traslado}</IndTraslado>\n`;
+    if(cd.ind_despacho) xml += `        <TipoDespacho>${cd.ind_despacho}</TipoDespacho>\n`;
+  }
+  xml += `      </IdDoc>\n`;
+  xml += `      <Emisor>\n`;
+  xml += `        <RUTEmisor>${emisor}</RUTEmisor>\n`;
+  xml += `        <RznSoc>${rs}</RznSoc>\n`;
+  xml += `        <!-- Giro, dirección, etc. viene de la BD -->\n`;
+  xml += `      </Emisor>\n`;
+  xml += `      <Receptor>\n`;
+  xml += `        <RUTRecep><!-- RUT receptor del caso ${caso.caso} --></RUTRecep>\n`;
+  xml += `        <RznSocRecep><!-- Razón social receptor --></RznSocRecep>\n`;
+  xml += `      </Receptor>\n`;
+  xml += `      <Totales>\n`;
+  if(tipo!==34&&mntNeto)   xml += `        <MntNeto>${mntNeto}</MntNeto>\n`;
+  if(tipo!==34)            xml += `        <TasaIVA>19</TasaIVA>\n`;
+  if(mntIVA)               xml += `        <IVA>${mntIVA}</IVA>\n`;
+  if(mntExento)            xml += `        <MntExe>${mntExento}</MntExe>\n`;
+  if(mntDesc)              xml += `        <DescuentoMonto>${mntDesc}</DescuentoMonto>\n`;
+  xml += `        <MntTotal>${mntTotal}</MntTotal>\n`;
+  xml += `      </Totales>\n`;
+  xml += `    </Encabezado>\n`;
+
+  // Detalle (ítems)
+  cd.items.forEach((it, ii)=>{
+    const linea = Math.round((it.cantidad||0)*(it.precio_unitario||0)*(1-(it.descuento_pct||0)/100));
+    xml += `    <Detalle>\n`;
+    xml += `      <NroLinDet>${ii+1}</NroLinDet>\n`;
+    xml += `      <NmbItem>${it.nombre}</NmbItem>\n`;
+    xml += `      <QtyItem>${it.cantidad}</QtyItem>\n`;
+    xml += `      <PrcItem>${it.precio_unitario}</PrcItem>\n`;
+    if(it.descuento_pct) xml += `      <DescuentoPct>${it.descuento_pct}</DescuentoPct>\n`;
+    if(it.exento||tipo===34) xml += `      <IndExe>1</IndExe>\n`;
+    xml += `      <MontoItem>${linea}</MontoItem>\n`;
+    xml += `    </Detalle>\n`;
+  });
+
+  // Referencias
+  (cd.referencias||[]).forEach((ref, ri)=>{
+    if(ref.tipo_doc_ref==='SET'){
+      xml += `    <Referencia>\n`;
+      xml += `      <NroLinRef>${ri+1}</NroLinRef>\n`;
+      xml += `      <TpoDocRef>SET</TpoDocRef>\n`;
+      xml += `      <FolioRef>${ref.folio_ref||ci+1}</FolioRef>\n`;
+      xml += `      <FchRef>${ref.fecha_ref||fechaHoy}</FchRef>\n`;
+      xml += `      <RazonRef>${ref.razon_ref||'CASO '+set.natencion+'-'+(ci+1)}</RazonRef>\n`;
+      xml += `    </Referencia>\n`;
+    } else {
+      xml += `    <Referencia>\n`;
+      xml += `      <NroLinRef>${ri+1}</NroLinRef>\n`;
+      xml += `      <TpoDocRef>${ref.tipo_doc_ref||'?'}</TpoDocRef>\n`;
+      xml += `      <FolioRef>${ref.folio_ref||'PENDIENTE'}</FolioRef>\n`;
+      xml += `      <FchRef>${ref.fecha_ref||fechaHoy}</FchRef>\n`;
+      if(ref.cod_ref) xml += `      <CodRef>${ref.cod_ref}</CodRef>\n`;
+      xml += `      <RazonRef>${ref.razon_ref||''}</RazonRef>\n`;
+      xml += `    </Referencia>\n`;
+    }
+  });
+
+  xml += `    <TmstFirmaEnv>${new Date().toISOString()}</TmstFirmaEnv>\n`;
+  xml += `    <!-- Firma digital va aquí (generada por el servidor) -->\n`;
+  xml += `  </Documento>\n`;
+  xml += `</DTE>`;
+  return xml;
+}
+
+/* ── Syntax highlight básico para XML ─────────────────────────── */
+function highlightXML(xml){
+  return xml
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/&lt;(\/?)([\w:]+)([^&]*?)(\/?&gt;)/g,
+      (_, slash, tag, attrs, close)=>{
+        const attrHL = attrs.replace(/([\w:]+)="([^"]*)"/g,
+          `<span class="xa">$1</span>="<span class="xv">$2</span>"`);
+        return `<span class="xt">&lt;${slash}${tag}${attrHL}${close}</span>`;
+      })
+    .replace(/(&lt;!--.*?--&gt;)/gs, '<span class="xc">$1</span>');
+}
+
+/* ── Panel de folios por tipo ────────────────────────────────────
+   Muestra cuadros separados por tipo DTE con los folios asignados
+   en el set actual. Se llama al confirmar el set o desde la vista.
+────────────────────────────────────────────────────────────────── */
+function renderFoliosPorTipo(containerEl, si){
+  const set = S.setsDetectados[si];
+  if(!set || set.esLibro){ containerEl.innerHTML=''; return; }
+
+  // Agrupar casos por tipo DTE
+  const porTipo = {};
+  set.casoData.forEach((cd, ci)=>{
+    const tipo = set.casos[ci]?.tipo_doc;
+    if(!tipo) return;
+    if(!porTipo[tipo]) porTipo[tipo] = [];
+    porTipo[tipo].push({ci, cd, caso: set.casos[ci]});
+  });
+
+  let html = `<div style="font-size:11px;font-weight:500;color:var(--text3);
+    text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
+    Folios asignados por tipo
+  </div><div class="folio-type-grid">`;
+
+  Object.entries(porTipo).sort(([a],[b])=>a-b).forEach(([tipo, items])=>{
+    const t    = parseInt(tipo);
+    const disp = S.cafsDisponibles[t];
+    const folios= items.map(({cd})=>cd.folio_asignado).filter(Boolean);
+    const min  = folios.length ? Math.min(...folios) : null;
+    const max  = folios.length ? Math.max(...folios) : null;
+    const usados= folios.length;
+    const hayCAF= !!disp;
+    const color = !hayCAF?'#ef4444': folios.length<items.length?'#f59e0b':'var(--accent)';
+
+    html += `<div class="folio-type-card" style="border-color:${color}30">
+      <div class="folio-type-titulo" style="color:${color}">T${tipo}</div>
+      <div class="folio-type-nombre">${TN[t]||'Tipo '+t}</div>
+      <div class="folio-asig-row">
+        <span class="folio-asig-lbl">Casos</span>
+        <span class="folio-asig-val" style="color:${color}">${usados}/${items.length}</span>
+      </div>
+      ${min&&max ? `
+      <div class="folio-asig-row">
+        <span class="folio-asig-lbl">Rango</span>
+        <span class="folio-asig-val" style="color:${color}">${min===max?min:min+'–'+max}</span>
+      </div>` : `
+      <div style="font-size:10px;color:#ef4444;margin-top:4px">Sin folio asignado</div>`}
+      ${disp ? `<div class="folio-type-rango">Hasta folio ${disp.folio_hasta}</div>` : ''}
+    </div>`;
+  });
+
+  html += '</div>';
+  containerEl.innerHTML = html;
+}
+
 /* ══════════════════════════════════════════════════════
    UI HELPERS
 ══════════════════════════════════════════════════════ */
@@ -1923,5 +2227,33 @@ window.onload=function(){
   setTimeout(autoCargar,400);
 };
 </script>
+
+<!-- MODAL PREVISUALIZADOR XML -->
+<div class="xml-modal-overlay" id="xmlModalOverlay" onclick="handleXmlOverlayClick(event)">
+  <div class="xml-modal">
+    <div class="xml-mh">
+      <div class="xml-mh-title">
+        <span id="xmlModalTitle">Vista previa XML</span>
+        <span id="xmlModalNat" style="font-family:'JetBrains Mono',monospace;font-size:11px;
+          color:var(--accent);margin-left:8px"></span>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-right:8px">
+        Ejemplo generado localmente — no se envía nada al SII
+      </div>
+      <button class="mh-close" onclick="closeXmlModal()">✕</button>
+    </div>
+    <div class="xml-tabs" id="xmlTabs"></div>
+    <div class="xml-body">
+      <pre class="xml-pre" id="xmlPre"></pre>
+    </div>
+    <div class="xml-mf">
+      <div style="flex:1;font-size:11px;color:var(--text3)" id="xmlFooterInfo"></div>
+      <button class="mbtn mbtn-sec" onclick="closeXmlModal()">Cerrar</button>
+      <button class="mbtn mbtn-pri" id="xmlBtnGenerar" onclick="generarDesdePreview()">
+        ⚙️ Generar XML real
+      </button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
