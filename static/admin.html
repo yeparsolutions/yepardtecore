@@ -278,6 +278,32 @@ nav{position:sticky;top:0;z-index:100;background:var(--nav-bg);backdrop-filter:b
 .folio-asig-lbl{color:var(--text3)}
 .folio-asig-val{font-family:'JetBrains Mono',monospace;font-weight:600}
 
+
+/* ── Receptor en modal ── */
+.recep-section{margin-top:16px;padding-top:14px;border-top:1px solid var(--border)}
+.recep-title{font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;
+  letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.recep-badge{font-family:'JetBrains Mono',monospace;font-size:10px;padding:2px 7px;
+  border-radius:4px;background:rgba(59,130,246,.12);color:#60a5fa;
+  border:1px solid rgba(59,130,246,.2)}
+.recep-form{background:var(--bg2);border:1px solid var(--border);border-radius:9px;
+  padding:12px 14px}
+.recep-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.recep-field{display:flex;flex-direction:column;gap:4px}
+.recep-field label{font-size:10px;color:var(--text3);text-transform:uppercase;
+  letter-spacing:.4px;font-weight:500}
+.recep-field input,.recep-field select{background:var(--bg);border:1px solid var(--border2);
+  border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;outline:none;
+  transition:border-color .15s;width:100%;font-family:'Outfit',sans-serif}
+.recep-field input:focus,.recep-field select:focus{border-color:var(--accent)}
+.recep-field input.rut-ok{border-color:var(--accent)}
+.recep-field input.rut-err{border-color:#ef4444}
+.recep-saved{display:flex;align-items:center;gap:8px;padding:8px 12px;
+  background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.2);
+  border-radius:8px;font-size:12px;margin-bottom:8px}
+.recep-saved-rut{font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--accent)}
+.recep-actions{display:flex;gap:6px;margin-top:8px}
+
 /* ── Config endpoints ── */
 .ep-config{margin-top:12px;border:1px solid var(--border);border-radius:10px;overflow:hidden}
 .ep-config-hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;cursor:pointer;user-select:none;background:var(--bg2)}
@@ -686,7 +712,14 @@ const S = {
   setData: null,
   casoData: [], casoValidado: [], casoActual: 0, genTab: null,
   setsDetectados: [], setActivo: 0,
-  cafsDisponibles: {},   // {tipo: {disponibles, folio_actual, folio_hasta}}
+  cafsDisponibles: {},
+  // Datos completos del emisor (se llenan al cargar emisor)
+  emisor: {
+    rut:'', razon_social:'', giro:'', telefono:'',
+    acteco:'', direccion:'', comuna:'', ciudad:''
+  },
+  // Receptores guardados en BD, indexados por RUT
+  receptores: {},
 };
 
 const TN = {33:'Factura Afecta',34:'Fact. Exenta',39:'Boleta',41:'Boleta Exenta',52:'Guía Despacho',56:'N. Débito',61:'N. Crédito'};
@@ -779,6 +812,17 @@ async function autoCargar(){
 }
 async function cargarEmisor(e){
   S.id=e.id;
+  // Guardar datos completos del emisor en estado
+  S.emisor={
+    rut: e.rut||'',
+    razon_social: e.razon_social||'',
+    giro: e.giro||'',
+    telefono: e.telefono||'',
+    acteco: e.acteco||'',
+    direccion: e.direccion||'',
+    comuna: e.comuna||'',
+    ciudad: e.ciudad||'',
+  };
   document.getElementById('eb_name').textContent=e.razon_social;
   document.getElementById('eb_rut').textContent=e.rut;
   document.getElementById('eb_amb').textContent='Ambiente: '+e.ambiente+(e.activo?' · Activo':' · Inactivo');
@@ -833,7 +877,7 @@ async function buscarEmisor(){
   }catch(e){res(1,false,e.data?.detail||JSON.stringify(e.data));}
 }
 function cambiarEmisor(){
-  S.id=null;S.cert=false;S.cafs=[];S.xmlBlob=null;S.setData=null;S.casoData=[];S.casoValidado=[];S.setsDetectados=[];S.setActivo=0;S.cafsDisponibles={};
+  S.id=null;S.cert=false;S.cafs=[];S.xmlBlob=null;S.setData=null;S.casoData=[];S.casoValidado=[];S.setsDetectados=[];S.setActivo=0;S.cafsDisponibles={};S.emisor={rut:'',razon_social:'',giro:'',telefono:'',acteco:'',direccion:'',comuna:'',ciudad:''};S.receptores={};
   document.getElementById('ebanner').classList.remove('show');
   document.getElementById('cert_info').classList.remove('show');
   document.getElementById('cafs_info').classList.remove('show');
@@ -874,6 +918,11 @@ async function crearEmisor(){
   try{
     const d=await api('/v1/emisores/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     S.id=d.id;
+    S.emisor={
+      rut:d.rut||'', razon_social:d.razon_social||'', giro:d.giro||'',
+      telefono:d.telefono||'', acteco:d.acteco||acteco_principal||'',
+      direccion:d.direccion||'', comuna:d.comuna||'', ciudad:d.ciudad||'',
+    };
     document.getElementById('eb_name').textContent=d.razon_social;
     document.getElementById('eb_rut').textContent=d.rut;
     document.getElementById('eb_amb').textContent='Ambiente: '+d.ambiente+' · Activo';
@@ -1162,6 +1211,7 @@ function cargarSet(file){
         referencias: (c.referencias||[]).map(r=>({...r})),
         ind_traslado: c.ind_traslado||null,
         ind_despacho: c.ind_despacho||null,
+        receptor: null,  // se llena en el modal por el usuario
       }));
       set.casoValidado = new Array(set.casos.length).fill(false);
     });
@@ -1601,7 +1651,33 @@ function renderModalCaso(si,idx){
         </div>
       </div>
     </div>`:'';
-  const itemsHtml=`<table class="items-table"><thead><tr><th style="width:34%">Nombre ítem</th><th style="width:11%;text-align:right">Cant.</th><th style="width:14%;text-align:right">Precio</th><th style="width:9%;text-align:right">Desc%</th><th style="width:7%;text-align:center" title="¿Línea exenta de IVA?">Exento</th><th style="width:12%;text-align:right">Línea</th><th style="width:3%"></th></tr></thead><tbody>${cd.items.map((it,ii)=>{const linea=Math.round((it.cantidad||0)*(it.precio_unitario||0)*(1-(it.descuento_pct||0)/100));const dis=isFixed?'disabled':'';return `<tr><td><input class="item-nombre-input" value="${it.nombre}" ${dis} onchange="updateItemNombre(${si},${idx},${ii},this.value)"></td><td><input class="item-input" type="number" value="${it.cantidad}" ${dis} min="0" onchange="updateItem(${si},${idx},${ii},'cantidad',this.value)"></td><td><input class="item-input" type="number" value="${it.precio_unitario}" ${dis} min="0" onchange="updateItem(${si},${idx},${ii},'precio_unitario',this.value)"></td><td><input class="item-input" type="number" value="${it.descuento_pct||''}" ${dis} min="0" max="100" placeholder="0" onchange="updateItem(${si},${idx},${ii},'descuento_pct',this.value)"></td><td style="text-align:center"><input type="checkbox" title="Marcar como exento (sin IVA)" ${it.exento?'checked':''} style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)" onchange="updateItemExento(${si},${idx},${ii},this.checked)"></td><td class="item-linea" id="linea_${si}_${idx}_${ii}">${Math.round(linea).toLocaleString('es-CL')}</td><td>${isFixed?'':'<button class="del-item-btn" onclick="delItem('+si+','+idx+','+ii+')">×</button>'}</td></tr>`;}).join('')}</tbody></table>${isFixed?'':`<button class="add-item-btn" onclick="addItem(${si},${idx})">+ Agregar ítem</button>`}`;
+  const itemsHtml=`<table class="items-table"><thead><tr>
+  <th style="width:38%">Nombre ítem <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text4);font-weight:400">NmbItem</span></th>
+  <th style="width:11%;text-align:right">Cant. <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text4);font-weight:400">QtyItem</span></th>
+  <th style="width:13%;text-align:right">Precio <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text4);font-weight:400">PrcItem</span></th>
+  <th style="width:9%;text-align:right">Desc% <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text4);font-weight:400">DscPct</span></th>
+  <th style="width:5%;text-align:center" title="IndExe=1 — Línea exenta de IVA">Exe</th>
+  <th style="width:11%;text-align:right">Línea <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text4);font-weight:400">MntItem</span></th>
+  <th style="width:3%"></th>
+</tr></thead><tbody>${cd.items.map((it,ii)=>{const linea=Math.round((it.cantidad||0)*(it.precio_unitario||0)*(1-(it.descuento_pct||0)/100));const dis=isFixed?'disabled':'';return `<tr>
+  <td><input class="item-nombre-input" value="${it.nombre}" ${dis}
+    title="NmbItem en el XML"
+    onchange="updateItemNombre(${si},${idx},${ii},this.value)"></td>
+  <td><input class="item-input" type="number" value="${it.cantidad}" ${dis} min="0"
+    onchange="updateItem(${si},${idx},${ii},'cantidad',this.value)"></td>
+  <td><input class="item-input" type="number" value="${it.precio_unitario}" ${dis} min="0"
+    onchange="updateItem(${si},${idx},${ii},'precio_unitario',this.value)"></td>
+  <td><input class="item-input" type="number" value="${it.descuento_pct||''}" ${dis}
+    min="0" max="100" placeholder="0"
+    onchange="updateItem(${si},${idx},${ii},'descuento_pct',this.value)"></td>
+  <td style="text-align:center">
+    <input type="checkbox" title="IndExe=1 — Exento de IVA"
+      ${it.exento?'checked':''} style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)"
+      onchange="updateItemExento(${si},${idx},${ii},this.checked)">
+  </td>
+  <td class="item-linea" id="linea_${si}_${idx}_${ii}">${Math.round(linea).toLocaleString('es-CL')}</td>
+  <td>${isFixed?'':'<button class="del-item-btn" onclick="delItem('+si+','+idx+','+ii+')">×</button>'}</td>
+</tr>`;}).join('')}</tbody></table>${isFixed?'':`<button class="add-item-btn" onclick="addItem(${si},${idx})">+ Agregar ítem</button>`}`;
   const tots=calcTots(cd.items,caso.tipo_doc);
   const totHtml=`<div class="totales-row"><div class="tot"><div class="tot-l">Neto</div><div class="tot-v" id="tot_neto_${si}_${idx}">$${tots.neto.toLocaleString('es-CL')}</div></div><div class="tot"><div class="tot-l">Exento</div><div class="tot-v" id="tot_exento_${si}_${idx}">$${tots.exento.toLocaleString('es-CL')}</div></div><div class="tot"><div class="tot-l">IVA 19%</div><div class="tot-v" id="tot_iva_${si}_${idx}">$${tots.iva.toLocaleString('es-CL')}</div></div><div class="tot"><div class="tot-l">Total</div><div class="tot-v highlight" id="tot_total_${si}_${idx}">$${tots.total.toLocaleString('es-CL')}</div></div></div>`;
 
@@ -1713,11 +1789,22 @@ function renderModalCaso(si,idx){
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;font-weight:500">Ítems del caso</div>
     ${itemsHtml}${totHtml}
     ${refsHtml}
-    <div style="font-size:11px;color:var(--text4);margin-top:8px">${isFixed?'⚠ Ítems fijos — no modificar.':'Modifica ítems y referencias según el set del SII.'}</div>`;
+    <div style="font-size:11px;color:var(--text4);margin-top:8px">${isFixed?'⚠ Ítems fijos — no modificar.':'Modifica ítems y referencias según el set del SII.'}</div>
+    ${buildReceptorSection(si,idx,cd)}`;
 }
 
 function updateItem(si,ci,ii,field,val){const it=S.setsDetectados[si].casoData[ci].items[ii];it[field]=parseFloat(val)||0;const linea=Math.round((it.cantidad||0)*(it.precio_unitario||0)*(1-(it.descuento_pct||0)/100));const el=document.getElementById(`linea_${si}_${ci}_${ii}`);if(el)el.textContent=linea.toLocaleString('es-CL');refreshTotales(si,ci);}
-function updateItemNombre(si,ci,ii,val){S.setsDetectados[si].casoData[ci].items[ii].nombre=val;}
+function updateItemNombre(si,ci,ii,val){
+  const it=S.setsDetectados[si].casoData[ci].items[ii];
+  it.nombre=val;
+  // Sincronizar descripcion con nombre si estaban iguales
+  if(!it._desc_manual) it.descripcion=val;
+}
+function updateItemField(si,ci,ii,field,val){
+  const it=S.setsDetectados[si].casoData[ci].items[ii];
+  it[field]=val;
+  if(field==='descripcion') it._desc_manual=true;
+}
 function updateItemExento(si,ci,ii,val){
   S.setsDetectados[si].casoData[ci].items[ii].exento=val;
   refreshTotales(si,ci);
@@ -1729,7 +1816,7 @@ function addItemDesdeRef(si,ci){
   const ref=cd.referencias.find(r=>r.tipo_doc_ref!=='SET');
   // Nombre viene de la razón del .txt, no hardcodeado
   const nombre=ref?.razon_ref||'ÍTEM REFERENCIADO';
-  cd.items.push({nombre,cantidad:1,precio_unitario:0,exento:false,descuento_pct:null});
+  cd.items.push({nombre,descripcion:nombre,codigo_tipo:'INT',codigo_val:'',unidad:'UN',cantidad:1,precio_unitario:0,exento:false,descuento_pct:null});
   renderModalCaso(si,ci);
 }
 
@@ -1906,6 +1993,170 @@ function descargarXML(){
 }
 
 
+
+/* ══════════════════════════════════════════════════════
+   GESTIÓN DE RECEPTORES
+   Cada caso tiene su propio receptor.
+   Se busca en BD por RUT o se crea nuevo.
+══════════════════════════════════════════════════════ */
+
+
+function buildReceptorSection(si, ci, cd){
+  const r = cd.receptor || {};
+  const guardado = r._guardado && r.rut;
+  const tieneRut = r.rut && r.rut.length >= 7;
+
+  return `<div class="recep-section">
+    <div class="recep-title">
+      <span>Receptor del documento</span>
+      <span class="recep-badge">RUTRecep · RznSocRecep</span>
+      ${ci>0?`<button class="add-item-btn" style="margin:0;font-size:10px;padding:3px 9px"
+        onclick="copiarReceptorAnterior(${si},${ci})">↑ Copiar del caso anterior</button>`:''}
+    </div>
+
+    ${guardado?`<div class="recep-saved">
+      <span style="font-size:14px">✓</span>
+      <span class="recep-saved-rut">${r.rut}</span>
+      <span style="flex:1;color:var(--text2)">${r.razon_social||''}</span>
+      <button class="add-item-btn" style="margin:0;font-size:10px;padding:3px 9px"
+        onclick="updateReceptorField(${si},${ci},'_guardado',false);renderModalCaso(${si},${ci})">
+        Editar
+      </button>
+    </div>`:''}
+
+    ${!guardado?`<div class="recep-form">
+      <div style="display:flex;gap:8px;margin-bottom:8px;align-items:flex-end">
+        <div class="recep-field" style="flex:1">
+          <label>RUT Receptor *</label>
+          <input type="text" id="recep_rut_${si}_${ci}"
+            value="${r.rut||''}"
+            placeholder="12345678-9"
+            class="${r.rut?(vRut(r.rut)?'rut-ok':'rut-err'):''}"
+            onchange="onReceptorRutChange(${si},${ci},this.value)">
+        </div>
+        <button class="add-item-btn" style="margin:0;padding:5px 12px;font-size:11px"
+          onclick="onReceptorRutChange(${si},${ci},document.getElementById('recep_rut_${si}_${ci}').value)">
+          🔍 Buscar en BD
+        </button>
+      </div>
+      <div class="recep-grid">
+        <div class="recep-field" style="grid-column:1/-1">
+          <label>Razón Social</label>
+          <input type="text" value="${r.razon_social||''}" placeholder="Nombre empresa receptora"
+            onchange="updateReceptorField(${si},${ci},'razon_social',this.value)">
+        </div>
+        <div class="recep-field">
+          <label>Giro Receptor</label>
+          <input type="text" value="${r.giro||''}" placeholder="Actividad económica"
+            onchange="updateReceptorField(${si},${ci},'giro',this.value)">
+        </div>
+        <div class="recep-field">
+          <label>Dirección</label>
+          <input type="text" value="${r.direccion||''}" placeholder="Calle y número"
+            onchange="updateReceptorField(${si},${ci},'direccion',this.value)">
+        </div>
+        <div class="recep-field">
+          <label>Comuna</label>
+          <input type="text" value="${r.comuna||''}" placeholder="Santiago"
+            onchange="updateReceptorField(${si},${ci},'comuna',this.value)">
+        </div>
+        <div class="recep-field">
+          <label>Ciudad</label>
+          <input type="text" value="${r.ciudad||''}" placeholder="Santiago"
+            onchange="updateReceptorField(${si},${ci},'ciudad',this.value)">
+        </div>
+      </div>
+      <div class="recep-actions">
+        <button class="mbtn mbtn-pri" onclick="guardarReceptor(${si},${ci})"
+          style="font-size:12px;padding:7px 16px">
+          💾 Guardar receptor en BD
+        </button>
+        <div style="font-size:11px;color:var(--text4);align-self:center">
+          Se guardará vinculado a este emisor
+        </div>
+      </div>
+    </div>`:''}
+  </div>`;
+}
+
+async function buscarReceptor(si, ci, rut){
+  if(!rut||!S.id) return null;
+  const rutFmt = rutSII(rut);
+  // Ver si ya lo tenemos cacheado
+  if(S.receptores[rutFmt]) return S.receptores[rutFmt];
+  try{
+    const data = await api(`/v1/receptores/?rut=${encodeURIComponent(rutFmt)}`);
+    if(data && data.length > 0){
+      S.receptores[rutFmt] = data[0];
+      return data[0];
+    }
+  }catch(e){ log('Receptor no encontrado: '+rutFmt,'warn'); }
+  return null;
+}
+
+async function guardarReceptor(si, ci){
+  const cd = S.setsDetectados[si].casoData[ci];
+  const r  = cd.receptor||{};
+  if(!r.rut){ log('Ingresa el RUT del receptor','warn'); return; }
+  if(!vRut(r.rut)){ log('RUT del receptor inválido','warn'); return; }
+  const body = {
+    rut:        rutSII(r.rut),
+    razon_social: r.razon_social||'',
+    giro:       r.giro||'',
+    direccion:  r.direccion||'',
+    comuna:     r.comuna||'',
+    ciudad:     r.ciudad||'',
+    emisor_id:  S.id,
+  };
+  try{
+    const data = await api('/v1/receptores/', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    cd.receptor = {...cd.receptor, ...data, _guardado:true};
+    S.receptores[rutSII(r.rut)] = data;
+    log(`Receptor ${data.rut} guardado en BD ✓`,'ok');
+    renderModalCaso(si, ci);  // refrescar para mostrar badge guardado
+  }catch(e){
+    log('Error guardando receptor: '+(e.data?.detail||JSON.stringify(e.data)),'err');
+  }
+}
+
+async function onReceptorRutChange(si, ci, val){
+  const cd = S.setsDetectados[si].casoData[ci];
+  if(!cd.receptor) cd.receptor = {};
+  cd.receptor.rut = val;
+  cd.receptor._guardado = false;
+  // Autocompletar si existe en BD o cache
+  if(val.length >= 7){
+    const found = await buscarReceptor(si, ci, val);
+    if(found){
+      cd.receptor = {...found, _guardado:true};
+      renderModalCaso(si, ci);
+      log(`Receptor ${found.rut} cargado desde BD`,'ok');
+    }
+  }
+}
+
+function updateReceptorField(si, ci, field, val){
+  const cd = S.setsDetectados[si].casoData[ci];
+  if(!cd.receptor) cd.receptor = {};
+  cd.receptor[field] = val;
+  cd.receptor._guardado = false;
+}
+
+// Copiar receptor del caso anterior al actual
+function copiarReceptorAnterior(si, ci){
+  if(ci === 0) return;
+  const cd     = S.setsDetectados[si].casoData[ci];
+  const cdPrev = S.setsDetectados[si].casoData[ci-1];
+  if(cdPrev.receptor){
+    cd.receptor = {...cdPrev.receptor, _guardado:false};
+    renderModalCaso(si, ci);
+  }
+}
+
 /* ══════════════════════════════════════════════════════
    CONFIGURACIÓN DE ENDPOINTS
 ══════════════════════════════════════════════════════ */
@@ -2047,8 +2298,8 @@ function generarXMLEjemplo(set, cd, caso, ci){
   const folio   = cd.folio_asignado || 'PENDIENTE';
   const tipo    = caso.tipo_doc || '?';
   const fechaHoy= new Date().toISOString().split('T')[0];
-  const emisor  = S.id ? document.getElementById('eb_rut')?.textContent||'RUT-EMISOR' : 'RUT-EMISOR';
-  const rs      = document.getElementById('eb_name')?.textContent||'RAZON SOCIAL EMISOR';
+  const E       = S.emisor;  // datos completos del emisor
+  const recep   = cd.receptor || {};  // datos del receptor del caso
 
   // Calcular totales
   let mntNeto=0, mntExento=0, mntIVA=0, mntTotal=0, mntDesc=0;
@@ -2080,14 +2331,26 @@ function generarXMLEjemplo(set, cd, caso, ci){
     if(cd.ind_despacho) xml += `        <TipoDespacho>${cd.ind_despacho}</TipoDespacho>\n`;
   }
   xml += `      </IdDoc>\n`;
+  // ── Emisor (datos completos desde BD) ───────────────────────
   xml += `      <Emisor>\n`;
-  xml += `        <RUTEmisor>${emisor}</RUTEmisor>\n`;
-  xml += `        <RznSoc>${rs}</RznSoc>\n`;
-  xml += `        <!-- Giro, dirección, etc. viene de la BD -->\n`;
+  xml += `        <RUTEmisor>${E.rut||'RUT-EMISOR'}</RUTEmisor>\n`;
+  xml += `        <RznSoc>${E.razon_social||''}</RznSoc>\n`;
+  if(E.giro)     xml += `        <GiroEmis>${E.giro}</GiroEmis>\n`;
+  if(E.telefono) xml += `        <Telefono>${E.telefono}</Telefono>\n`;
+  if(E.acteco)   xml += `        <Acteco>${E.acteco}</Acteco>\n`;
+  if(E.direccion)xml += `        <DirOrigen>${E.direccion}</DirOrigen>\n`;
+  if(E.comuna)   xml += `        <CmnaOrigen>${E.comuna}</CmnaOrigen>\n`;
+  if(E.ciudad)   xml += `        <CiudadOrigen>${E.ciudad}</CiudadOrigen>\n`;
   xml += `      </Emisor>\n`;
+
+  // ── Receptor (ingresado por el usuario) ───────────────────────
   xml += `      <Receptor>\n`;
-  xml += `        <RUTRecep><!-- RUT receptor del caso ${caso.caso} --></RUTRecep>\n`;
-  xml += `        <RznSocRecep><!-- Razón social receptor --></RznSocRecep>\n`;
+  xml += `        <RUTRecep>${recep.rut||'<!-- Ingresa RUT receptor -->'}</RUTRecep>\n`;
+  if(recep.razon_social) xml += `        <RznSocRecep>${recep.razon_social}</RznSocRecep>\n`;
+  if(recep.giro)         xml += `        <GiroRecep>${recep.giro}</GiroRecep>\n`;
+  if(recep.direccion)    xml += `        <DirRecep>${recep.direccion}</DirRecep>\n`;
+  if(recep.comuna)       xml += `        <CmnaRecep>${recep.comuna}</CmnaRecep>\n`;
+  if(recep.ciudad)       xml += `        <CiudadRecep>${recep.ciudad}</CiudadRecep>\n`;
   xml += `      </Receptor>\n`;
   xml += `      <Totales>\n`;
   if(tipo!==34&&mntNeto)   xml += `        <MntNeto>${mntNeto}</MntNeto>\n`;
@@ -2099,15 +2362,24 @@ function generarXMLEjemplo(set, cd, caso, ci){
   xml += `      </Totales>\n`;
   xml += `    </Encabezado>\n`;
 
-  // Detalle (ítems)
+  // Detalle — fiel al formato XML real del SII
   cd.items.forEach((it, ii)=>{
-    const linea = Math.round((it.cantidad||0)*(it.precio_unitario||0)*(1-(it.descuento_pct||0)/100));
+    const qty     = parseFloat(it.cantidad)||0;
+    const prc     = parseFloat(it.precio_unitario)||0;
+    const base    = qty * prc;
+    const descPct = parseFloat(it.descuento_pct)||0;
+    const descMnt = descPct ? Math.round(base*(descPct/100)) : 0;
+    const linea   = Math.round(base - descMnt);
+
     xml += `    <Detalle>\n`;
     xml += `      <NroLinDet>${ii+1}</NroLinDet>\n`;
     xml += `      <NmbItem>${it.nombre}</NmbItem>\n`;
-    xml += `      <QtyItem>${it.cantidad}</QtyItem>\n`;
-    xml += `      <PrcItem>${it.precio_unitario}</PrcItem>\n`;
-    if(it.descuento_pct) xml += `      <DescuentoPct>${it.descuento_pct}</DescuentoPct>\n`;
+    xml += `      <QtyItem>${Math.round(qty)}</QtyItem>\n`;
+    xml += `      <PrcItem>${Math.round(prc)}</PrcItem>\n`;
+    if(descPct){
+      xml += `      <DescuentoPct>${Math.round(descPct)}</DescuentoPct>\n`;
+      xml += `      <DescuentoMonto>${descMnt}</DescuentoMonto>\n`;
+    }
     if(it.exento||tipo===34) xml += `      <IndExe>1</IndExe>\n`;
     xml += `      <MontoItem>${linea}</MontoItem>\n`;
     xml += `    </Detalle>\n`;
@@ -2248,6 +2520,11 @@ window.onload=function(){
     </div>
     <div class="xml-mf">
       <div style="flex:1;font-size:11px;color:var(--text3)" id="xmlFooterInfo"></div>
+      <div style="font-size:10px;color:var(--text4);margin-right:8px;text-align:right;line-height:1.4">
+        Vista en UTF-8 · El XML real sale en<br>
+        <span style="font-family:'JetBrains Mono',monospace;color:var(--accent)">ISO-8859-1</span>
+        (ñ→<code style="font-family:'JetBrains Mono',monospace">&#38;#241;</code>, etc.)
+      </div>
       <button class="mbtn mbtn-sec" onclick="closeXmlModal()">Cerrar</button>
       <button class="mbtn mbtn-pri" id="xmlBtnGenerar" onclick="generarDesdePreview()">
         ⚙️ Generar XML real
