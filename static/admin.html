@@ -1085,6 +1085,47 @@ function parsearTxtMultiSet(txt){
 }
 
 
+
+// ── Mapa tipo texto → tipo DTE para referencias ─────────────────
+const DOC_TEXT_TIPO = [
+  {re:/FACTURA\s+NO\s+AFECTA\s+O\s+EXENTA\s+ELECTR/i, tipo:34},
+  {re:/FACTURA\s+DE\s+COMPRA\s+ELECTR/i,              tipo:46},
+  {re:/FACTURA\s+ELECTR/i,                            tipo:33},
+  {re:/NOTA\s+DE\s+CREDITO\s+ELECTR/i,               tipo:61},
+  {re:/NOTA\s+DE\s+DEBITO\s+ELECTR/i,                tipo:56},
+  {re:/GUIA\s+DE\s+DESPACHO/i,                       tipo:52},
+  {re:/FACTURA\b/i,                                  tipo:33},
+  {re:/NOTA\s+DE\s+CREDITO\b/i,                      tipo:61},
+  {re:/NOTA\s+DE\s+DEBITO\b/i,                       tipo:56},
+];
+
+// ── Deducir CodRef desde la razón de referencia ──────────────────
+const RAZON_CODREF = [
+  {re:/ANULA/i,            cod:1, label:'Anula documento'},
+  {re:/CORRIGE\s+GIRO/i,  cod:2, label:'Corrige giro del receptor'},
+  {re:/CORRIGE/i,          cod:2, label:'Corrige dato'},
+  {re:/DEVOLUCI.N/i,       cod:3, label:'Devolución de mercaderías'},
+  {re:/MODIFICA/i,         cod:3, label:'Modifica monto'},
+];
+
+function deducirCodRef(razon){
+  for(const{re,cod,label} of RAZON_CODREF){
+    if(re.test(razon)) return {cod,label};
+  }
+  return {cod:null,label:'Sin código'};
+}
+
+function parsearRefLine(refText){
+  let tipo=null;
+  for(const{re,tipo:t} of DOC_TEXT_TIPO){if(re.test(refText)){tipo=t;break;}}
+  const mCaso=refText.match(/CASO\s+(\d+)-(\d+)/i);
+  return {
+    tipo_doc_ref: tipo,
+    natencion_ref: mCaso?mCaso[1]:null,
+    num_caso_ref:  mCaso?parseInt(mCaso[2]):null,
+  };
+}
+
 function parsearCasos(bloqueTxt, natencion){
   const casos=[];
   // Split por "CASO NNAT-N\r\n====" — manejar \r\n del archivo SII
@@ -1204,214 +1245,18 @@ function parsearCasos(bloqueTxt, natencion){
 }
 
 
-function detectarTipoSet(bloque){
-  for(const{re,key,label} of SET_TITLE_MAP){
-    if(re.test(bloque)) return {key,label};
-  }
-  return {key:'desconocido', label:'Set desconocido'};
-}
+
 
 function dpSet(e){e.preventDefault();dLv('z4');const f=e.dataTransfer.files[0];if(f)cargarSet(f);}
 
-function cargarSet(file){
-  if(!file)return;
-  const rd=new FileReader();
-  rd.onload=function(e){
-    const txt=e.target.result;
-    const sets=parsearTxtMultiSet(txt);
-    if(!sets||sets.length===0){
-      res(4,false,'No se pudo parsear el archivo.\nVerifica que sea el .txt del SII con el formato correcto.');
-      return;
-    }
-    S.setsDetectados = sets;   // array de {key, label, natencion, casos}
-    S.setActivo = 0;           // índice del set seleccionado para el wizard
-    // Inicializar casoData y validado para cada set
-    sets.forEach(set=>{
-      set.casoData = set.casos.map(c=>({
-        ...c,
-        items: c.items.map(it=>({...it})),
-        referencias: (c.referencias||[]).map(r=>({...r})),
-        ind_traslado: c.ind_traslado||null,
-        ind_despacho: c.ind_despacho||null,
-      }));
-      set.casoValidado = new Array(set.casos.length).fill(false);
-    });
-    renderMultiSetOverview(sets);
-    const resumen = sets.map(s=>`• ${s.label} — N° ${s.natencion} (${s.casos.length} casos)`).join('\n');
-    log(`${sets.length} set(s) detectado(s) en el archivo`,'ok');
-    res(3,true,`${sets.length} set(s) encontrado(s):\n${resumen}\n\nRevisa cada set y haz clic en "Confirmar" cuando estés listo.`);
-    document.getElementById('btnConfSet').style.display='block';
-    // Analizar CAFs necesarios vs disponibles y desbloquear paso 4
-    analizarCAFs();
-    unlock(4);
-  };
-  rd.readAsText(file,'ISO-8859-1');
-}
-
-function parsearTxtMultiSet(txt){
-  const sets = [];
-  // Buscar cada header de set: "SET XXXX - NUMERO DE ATENCIÓN: NNNNN"
-  // El .txt real usa tanto ATENCION como ATENCIÓN (con tilde)
-  const headerRe = /(SET\s+[^\n\r]+?NUMERO\s+DE\s+ATENCI[OÓ]N\s*:\s*(\d+))/gi;
-  const headerMatches = [...txt.matchAll(headerRe)];
-  if(!headerMatches.length) return null;
-
-  headerMatches.forEach((match, mi) => {
-    const headerLine = match[1].trim();
-    const natencion  = match[2];
-    const start      = match.index;
-    const end        = mi + 1 < headerMatches.length
-                       ? headerMatches[mi+1].index
-                       : txt.length;
-    const bloque     = txt.slice(start, end);
-
-    // detectarTipoSet lee el propio headerLine — garantiza match correcto
-    const {key, label} = detectarTipoSet(headerLine);
-    const esLibro = ['ventas','compras','libro_guias'].includes(key);
-    const casos   = esLibro ? [] : parsearCasos(bloque, natencion);
-    sets.push({key, label, natencion, casos, esLibro});
-  });
-
-  return sets.length ? sets : null;
-}
 
 
-function parsearCasos(bloqueTxt, natencion){
-  const casos=[];
-  const casoBlocks=bloqueTxt.split(/CASO\s+\d+-\d+\s*\n=+/);
-  const casoHeaders=bloqueTxt.match(/CASO\s+(\d+-\d+)/g)||[];
-  casoBlocks.slice(1).forEach((block,idx)=>{
-    const casoN=casoHeaders[idx]?casoHeaders[idx].replace('CASO ','').trim():String(idx+1);
-    const numCaso=parseInt(casoN.split('-').pop())||idx+1;
 
-    // Tipo documento
-    let tipoDoc=null;
-    for(const[nombre,cod]of Object.entries(DOC_MAP)){if(block.toUpperCase().includes(nombre)){tipoDoc=cod;break;}}
 
-    // Items — separados por tabs en el .txt real
-    const items=[];
-    const lines=block.split('\n');
-    let enItems=false;
-    for(const linea of lines){
-      const l=linea.replace(/\r/,'').trim();
-      if(!l) continue;
-      // Detectar cabecera de items
-      if(/^ITEM\b.*CANTIDAD/i.test(l)){enItems=true;continue;}
-      // Parar en líneas que no son items
-      if(/^(DESCUENTO|REFERENCIA|RAZON|INDICADOR|MOTIVO|TRASLADO|DOCUMENTO|OBSERVAC)/i.test(l)){enItems=false;continue;}
-      if(enItems){
-        // Split por tabs
-        const parts=l.split(/\t+/).map(p=>p.trim()).filter(Boolean);
-        if(parts.length>=2){
-          const nombre=parts[0];
-          // Números: limpiar puntos de miles y %
-          const nums=parts.slice(1).map(p=>parseFloat(p.replace(/[^0-9.,]/g,'').replace(',','.'))||0);
-          const cantidad=nums[0]||0;
-          const precio=nums[1]||0;
-          const descPct=parts.find(p=>/^\d+%$/.test(p.trim()))?parseFloat(parts.find(p=>/\d+%/.test(p))):null;
-          if(cantidad>0){
-            items.push({
-              nombre,cantidad,precio_unitario:precio,
-              exento: tipoDoc===34 || /EXENTO|EXENTA/i.test(nombre),
-              descuento_pct:descPct
-            });
-          }
-        }
-      }
-    }
 
-    // Referencia al documento original (línea REFERENCIA)
-    const refLine=lines.find(l=>/^REFERENCIA\b/i.test(l.trim()));
-    const razonLine=lines.find(l=>/^RAZON\s+REFERENCIA\b/i.test(l.trim()));
-    const razonTexto=razonLine?razonLine.split(/\t+/).pop().trim():'';
 
-    // Construir array de referencias
-    const referencias=[];
 
-    // 1. Referencia al SET (siempre va primero)
-    referencias.push({
-      tipo_doc_ref: 'SET',
-      folio_ref:    numCaso,
-      fecha_ref:    null,   // se llena al validar
-      cod_ref:      null,
-      razon_ref:    'CASO '+natencion+'-'+numCaso,
-    });
 
-    // 2. Referencia al documento original (si viene REFERENCIA en el bloque)
-    if(refLine){
-      const refTexto=refLine.split(/\t+/).slice(1).join(' ').trim();
-      const parsed=parsearRefLine(refTexto);
-      const {cod,label}=deducirCodRef(razonTexto);
-      referencias.push({
-        tipo_doc_ref:   parsed.tipo_doc_ref,   // tipo DTE del doc referenciado
-        natencion_ref:  parsed.natencion_ref,   // N° atención del set referenciado
-        num_caso_ref:   parsed.num_caso_ref,    // N° del caso dentro del set
-        folio_ref:      null,  // se resuelve al generar XML (folio del caso referenciado)
-        fecha_ref:      null,  // se llena al validar
-        cod_ref:        cod,
-        razon_ref:      razonTexto,
-        _ref_texto_original: refTexto,         // para mostrar al usuario
-        _cod_label:     label,
-      });
-    }
-
-    // Indicadores guía
-    const mInd=block.match(/IND(?:ICADOR)?\s+TRASLADO\s*[:=]?\s*(\d+)/i);
-    const mDesp=block.match(/(?:IND(?:ICADOR)?\s+)?DESPACHO\s*[:=]?\s*(\d+)/i);
-    // Detectar tipo de traslado desde MOTIVO en guías
-    let indTraslado=mInd?parseInt(mInd[1]):null;
-    const motivoLine=lines.find(l=>/^MOTIVO/i.test(l.trim()));
-    if(!indTraslado&&motivoLine){
-      const m=motivoLine.toUpperCase();
-      if(/TRASLADO.*BODEGA|INTERNO/i.test(m)) indTraslado=5;
-      else if(/VENTA/i.test(m)) indTraslado=1;
-    }
-    const despachoLine=lines.find(l=>/^TRASLADO\s+POR/i.test(l.trim()));
-    let indDespacho=mDesp?parseInt(mDesp[1]):null;
-    if(!indDespacho&&despachoLine){
-      const d=despachoLine.toUpperCase();
-      if(/EMISOR/i.test(d)) indDespacho=2;
-      else if(/CLIENTE/i.test(d)) indDespacho=3;
-    }
-
-    const mDG=block.match(/DESCUENTO\s+GLOBAL\s+ITEMES\s+AFECTOS\s+([\d.]+)%/i);
-
-    casos.push({
-      caso:casoN, tipo_doc:tipoDoc, items, referencias,
-      desc_global:mDG?parseFloat(mDG[1]):null,
-      ind_traslado:indTraslado,
-      ind_despacho:indDespacho,
-    });
-  });
-  return casos;
-}
-
-function parsearTxtMultiSet(txt){
-  // Dividir el .txt en bloques por cada sección SET / LIBRO
-  // El SII separa sets con líneas como "========== SET BASICO... =========="
-  // o simplemente con el encabezado "NUMERO DE ATENCION : XXXXXXX"
-  const sets = [];
-
-  // Estrategia: buscar cada ocurrencia de "NUMERO DE ATENCION"
-  const natRegex = /NUMERO\s+DE\s+ATENCION\s*:\s*(\d+)/gi;
-  const natMatches = [...txt.matchAll(natRegex)];
-
-  if(natMatches.length===0) return null;
-
-  natMatches.forEach((match, mi)=>{
-    const start = match.index;
-    const end = mi+1 < natMatches.length ? natMatches[mi+1].index : txt.length;
-    const bloque = txt.slice(start, end);
-    const natencion = match[1];
-    const {key, label} = detectarTipoSet(bloque);
-    const casos = parsearCasos(bloque, natencion);
-    // Los libros (ventas, compras, libro_guias) son sets informativos sin casos editables
-    const esLibro = ['ventas','compras','libro_guias'].includes(key);
-    sets.push({key, label, natencion, casos, esLibro});
-  });
-
-  return sets;
-}
 
 /* ── Parser de referencias del .txt SII ─────────────────────────
    El .txt trae bloques como:
@@ -1449,62 +1294,7 @@ function parsearReferencias(block){
   return refs;
 }
 
-function parsearCasos(bloqueTxt, natencion){
-  const casos=[];
-  const casoBlocks=bloqueTxt.split(/CASO\s+\d+-\d+\s*\n={2,}/);
-  const casoHeaders=bloqueTxt.match(/CASO\s+(\d+-\d+)/g)||[];
-  casoBlocks.slice(1).forEach((block,idx)=>{
-    const casoN=casoHeaders[idx]?casoHeaders[idx].replace('CASO ','').trim():String(idx+1);
-    let tipoDoc=null;
-    for(const[nombre,cod]of Object.entries(DOC_MAP)){if(block.toUpperCase().includes(nombre)){tipoDoc=cod;break;}}
-    const items=[];
-    const lineaItems=block.split('\n');
-    let enItems=false;
-    for(const linea of lineaItems){
-      const l=linea.trim();
-      if(l.startsWith('ITEM')&&l.includes('CANTIDAD')){enItems=true;continue;}
-      if(enItems&&l&&!l.startsWith('DESCUENTO')&&!l.startsWith('REFERENCIA')&&!l.startsWith('RAZON')&&!l.startsWith('INDICADOR')){
-        const partes=l.split(/\s{2,}/).map(p=>p.trim()).filter(Boolean);
-        if(partes.length>=2){
-          const nombre=partes[0];
-          const nums=partes.slice(1).map(p=>parseFloat(p.replace(/[^0-9.]/g,''))||0);
-          const cantidad=nums[0]||0,precio=nums[1]||0;
-          const descPct=nums.length>2&&nums[2]>0?nums[2]:null;
-          if(cantidad>0){items.push({nombre,cantidad,precio_unitario:precio,exento:nombre.toLowerCase().includes('exento'),descuento_pct:descPct});}
-        }
-      }
-    }
-    const mInd=block.match(/IND(?:ICADOR)?\s+TRASLADO\s*[:=]?\s*(\d+)/i);
-    const mDesp=block.match(/(?:IND(?:ICADOR)?\s+)?DESPACHO\s*[:=]?\s*(\d+)/i);
-    const mDG=block.match(/DESCUENTO\s+GLOBAL\s+ITEMES\s+AFECTOS\s+([\d.]+)%/i);
 
-    // ── Referencias: parsear todas las que aparezcan en el bloque
-    const referencias = parsearReferencias(block);
-
-    // Si no vino ninguna referencia pero hay "RAZON REFERENCIA" suelto (formato viejo)
-    if(referencias.length===0){
-      const mRef=block.match(/RAZON\s+REFERENCIA\s+(.+)/i);
-      if(mRef) referencias.push({tipo_doc_ref:'SET',folio_ref:idx+1,fecha_ref:null,cod_ref:null,razon_ref:mRef[1].trim()});
-    }
-
-    // Calcular número de caso para la ref al SET
-    const numCaso=parseInt(casoN.split('-').pop())||idx+1;
-
-    // Asegurar siempre la referencia al SET como primera (si no viene explícita)
-    const tieneRefSet=referencias.some(r=>r.tipo_doc_ref==='SET');
-    if(!tieneRefSet){
-      referencias.unshift({tipo_doc_ref:'SET',folio_ref:numCaso,fecha_ref:null,cod_ref:null,razon_ref:'CASO '+natencion+'-'+numCaso});
-    }
-
-    casos.push({
-      caso:casoN,tipo_doc:tipoDoc,items,referencias,
-      desc_global:mDG?parseFloat(mDG[1]):null,
-      ind_traslado:mInd?parseInt(mInd[1]):null,
-      ind_despacho:mDesp?parseInt(mDesp[1]):null,
-    });
-  });
-  return casos;
-}
 
 const SET_COLORS_PALETTE = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ec4899','#06b6d4','#f43f5e','#84cc16'];
 const SET_COLORS_NAMED = {basico2:'#3b82f6',exentas:'#8b5cf6',guias:'#f59e0b',compras:'#10b981',ventas:'#ec4899',boletas:'#06b6d4',libro_guias:'#14b8a6',desconocido:'#64748b'};
@@ -1874,7 +1664,15 @@ function nextCaso(){
   log(`[${set.label}] Caso ${idx+1} validado ✓`,'ok');
   if(idx===set.casos.length-1){
     closeModal();
-    if(set.casoValidado.every(v=>v))log(`✓ Set "${set.label}" completo`,'ok');
+    if(set.casoValidado.every(v=>v)){
+      log(`✓ Set "${set.label}" N° ${set.natencion} completo`,'ok');
+      // Preguntar si generar XML ahora
+      const ep=getEndpointMap()[set.key];
+      if(ep&&S.id){
+        const generar=confirm(`✓ Set N° ${set.natencion} validado.\n\n¿Generar el XML ahora?\n(También puedes hacerlo desde el Paso 5)`);
+        if(generar) generarXML(set.key, set.natencion);
+      }
+    }
   }else{S.casoActual=idx+1;renderModalCaso(si,S.casoActual);}
 }
 function prevCaso(){if(S.casoActual===0)return;guardarIndicadores(S.setActivo,S.casoActual);S.casoActual--;renderModalCaso(S.setActivo,S.casoActual);}
