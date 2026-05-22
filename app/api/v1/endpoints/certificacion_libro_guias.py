@@ -26,18 +26,15 @@ PERIODO   = "2026-05"
 RUT_EMISOR = "78377021-0"
 
 DOCUMENTOS = [
-    # Set Guías 4841546 — Track ID 249266884 — fecha 2026-05-22
-    {"folio": 63, "fecha": "2026-05-22", "rut_doc": RUT_EMISOR,
-     "razon": "YEPAR SOLUTIONS SPA",
-     "ind_traslado": 5,
+    # Set Guías — Track ID 249267292
+    {"folio": 66, "fecha": "2026-05-22", "rut_doc": "78377021-0",
+     "razon": "YEPAR SOLUTIONS SPA", "ind_traslado": 5,
      "neto": 0, "iva": 0, "total": 0},
-    {"folio": 64, "fecha": "2026-05-22", "rut_doc": "77777777-7",
-     "razon": "EMPRESA LTDA",
-     "ind_traslado": 1,
+    {"folio": 67, "fecha": "2026-05-22", "rut_doc": "77777777-7",
+     "razon": "EMPRESA LTDA", "ind_traslado": 1,
      "neto": 3826814, "iva": 727095, "total": 4553909},
-    {"folio": 65, "fecha": "2026-05-22", "rut_doc": "77777777-7",
-     "razon": "EMPRESA LTDA",
-     "ind_traslado": 2,
+    {"folio": 68, "fecha": "2026-05-22", "rut_doc": "77777777-7",
+     "razon": "EMPRESA LTDA", "ind_traslado": 2,
      "neto": 2830303, "iva": 537758, "total": 3368061},
 ]
 
