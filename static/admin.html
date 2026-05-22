@@ -999,22 +999,23 @@ function analizarCAFs(){
 ══════════════════════════════════════════════════════ */
 
 // Mapa de título SII → clave interna del set
-// Basado en los headers EXACTOS del .txt del SII:
+// Basado en headers EXACTOS del .txt SII (encoding ISO-8859-1):
 //   SET BASICO - NUMERO DE ATENCION: XXXXXX
 //   SET LIBRO DE VENTAS - NUMERO DE ATENCION: XXXXXX
 //   SET LIBRO DE COMPRAS - NUMERO DE ATENCION: XXXXXX
-//   SET GUIA DE DESPACHO - NUMERO DE ATENCIÓN: XXXXXX
+//   SET GUIA DE DESPACHO - NUMERO DE ATENCIÓN: XXXXXX  (con tilde)
 //   SET LIBRO DE GUIAS - NUMERO DE ATENCION: XXXXXX
-//   SET FACTURA EXENTA - NUMERO DE ATENCIÓN: XXXXXX
-// IMPORTANTE: Más específico primero para evitar falsos positivos
+//   SET FACTURA EXENTA - NUMERO DE ATENCIÓN: XXXXXX   (con tilde)
+// Orden: más específico primero para evitar falsos positivos.
+// Usamos \S+ para el char ACIÓN/ACION independiente de encoding.
 const SET_TITLE_MAP = [
-  {re:/SET\s+LIBRO\s+DE\s+COMPRAS/i,        key:'compras',  label:'Libro de Compras'},
+  {re:/SET\s+LIBRO\s+DE\s+COMPRAS/i,        key:'compras',     label:'Libro de Compras'},
   {re:/SET\s+LIBRO\s+DE\s+GUIAS/i,          key:'libro_guias', label:'Libro de Guías'},
-  {re:/SET\s+LIBRO\s+DE\s+VENTAS/i,         key:'ventas',   label:'Libro de Ventas'},
-  {re:/SET\s+B[AÁ]SICO/i,                   key:'basico2',  label:'Set Básico Facturas'},
-  {re:/SET\s+FACTURA\s+EXENTA/i,            key:'exentas',  label:'Set Facturas Exentas'},
-  {re:/SET\s+GU[IÍ]A\s+DE\s+DESPACHO/i,    key:'guias',    label:'Set Guías de Despacho'},
-  {re:/SET\s+BOLETA/i,                      key:'boletas',  label:'Set Boletas'},
+  {re:/SET\s+LIBRO\s+DE\s+VENTAS/i,         key:'ventas',      label:'Libro de Ventas'},
+  {re:/SET\s+B.SICO/i,                      key:'basico2',     label:'Set Básico Facturas'},
+  {re:/SET\s+FACTURA\s+EXENTA/i,            key:'exentas',     label:'Set Facturas Exentas'},
+  {re:/SET\s+GU.A\s+DE\s+DESPACHO/i,        key:'guias',       label:'Set Guías de Despacho'},
+  {re:/SET\s+BOLETA/i,                      key:'boletas',     label:'Set Boletas'},
 ];
 
 function detectarTipoSet(bloque){
@@ -1058,7 +1059,7 @@ function cargarSet(file){
     analizarCAFs();
     unlock(4);
   };
-  rd.readAsText(file,'UTF-8');
+  rd.readAsText(file,'ISO-8859-1');
 }
 
 function parsearTxtMultiSet(txt){
@@ -1498,6 +1499,7 @@ function renderModalCaso(si,idx){
       </div>
     </div>`:'';
   const itemsHtml=`<table class="items-table"><thead><tr><th style="width:34%">Nombre ítem</th><th style="width:11%;text-align:right">Cant.</th><th style="width:14%;text-align:right">Precio</th><th style="width:9%;text-align:right">Desc%</th><th style="width:7%;text-align:center" title="¿Línea exenta de IVA?">Exento</th><th style="width:12%;text-align:right">Línea</th><th style="width:3%"></th></tr></thead><tbody>${cd.items.map((it,ii)=>{const linea=Math.round((it.cantidad||0)*(it.precio_unitario||0)*(1-(it.descuento_pct||0)/100));const dis=isFixed?'disabled':'';return `<tr><td><input class="item-nombre-input" value="${it.nombre}" ${dis} onchange="updateItemNombre(${si},${idx},${ii},this.value)"></td><td><input class="item-input" type="number" value="${it.cantidad}" ${dis} min="0" onchange="updateItem(${si},${idx},${ii},'cantidad',this.value)"></td><td><input class="item-input" type="number" value="${it.precio_unitario}" ${dis} min="0" onchange="updateItem(${si},${idx},${ii},'precio_unitario',this.value)"></td><td><input class="item-input" type="number" value="${it.descuento_pct||''}" ${dis} min="0" max="100" placeholder="0" onchange="updateItem(${si},${idx},${ii},'descuento_pct',this.value)"></td><td style="text-align:center"><input type="checkbox" title="Marcar como exento (sin IVA)" ${it.exento?'checked':''} style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)" onchange="updateItemExento(${si},${idx},${ii},this.checked)"></td><td class="item-linea" id="linea_${si}_${idx}_${ii}">${Math.round(linea).toLocaleString('es-CL')}</td><td>${isFixed?'':'<button class="del-item-btn" onclick="delItem('+si+','+idx+','+ii+')">×</button>'}</td></tr>`;}).join('')}</tbody></table>${isFixed?'':`<button class="add-item-btn" onclick="addItem(${si},${idx})">+ Agregar ítem</button>`}`;
+  const tots=calcTots(cd.items,caso.tipo_doc);
   const totHtml=`<div class="totales-row"><div class="tot"><div class="tot-l">Neto</div><div class="tot-v" id="tot_neto_${si}_${idx}">$${tots.neto.toLocaleString('es-CL')}</div></div><div class="tot"><div class="tot-l">Exento</div><div class="tot-v" id="tot_exento_${si}_${idx}">$${tots.exento.toLocaleString('es-CL')}</div></div><div class="tot"><div class="tot-l">IVA 19%</div><div class="tot-v" id="tot_iva_${si}_${idx}">$${tots.iva.toLocaleString('es-CL')}</div></div><div class="tot"><div class="tot-l">Total</div><div class="tot-v highlight" id="tot_total_${si}_${idx}">$${tots.total.toLocaleString('es-CL')}</div></div></div>`;
 
   // ── Referencias ─────────────────────────────────────────────
