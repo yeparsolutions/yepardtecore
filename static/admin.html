@@ -768,7 +768,7 @@ async function cargarCAFs(eid,amb){
       log(activos.length+' CAFs en BD detectados','ok');
     }
     // Si ya hay sets cargados, recalcular análisis
-    if(S.setsDetectados&&S.setsDetectados.length) analizarCAFs();
+    if(S.setsDetectados&&S.setsDetectados.length){ analizarCAFs(); asignarFolios(); }
   }catch{log('No se pudieron cargar CAFs','warn');}
 }
 async function buscarEmisor(){
@@ -870,7 +870,7 @@ async function subirCAFs(){
     catch(e){fail++;msgs.push('✗ Tipo '+c.tipo+': '+(e.data?.detail||'Error'));}
   }
   res(3,fail===0,ok+' cargados'+(fail?', '+fail+' error':'')+'\n\n'+msgs.join('\n'));
-  if(ok>0){done(4,'✓ '+ok+' CAFs');await cargarCAFs(S.id,document.getElementById('e_amb').value);if(S.setsDetectados.length) analizarCAFs();unlock(5);}
+  if(ok>0){done(4,'✓ '+ok+' CAFs');await cargarCAFs(S.id,document.getElementById('e_amb').value);if(S.setsDetectados.length){ analizarCAFs(); asignarFolios(); }unlock(5);}
 }
 
 
@@ -888,6 +888,69 @@ function calcularFoliosRequeridos(sets){
     });
   });
   return req;
+}
+
+
+/* ══════════════════════════════════════════════════════
+   ASIGNACIÓN DE FOLIOS
+   Se ejecuta al confirmar el set o al actualizar CAFs.
+   Asigna folios secuenciales desde folio_actual de cada tipo.
+══════════════════════════════════════════════════════ */
+function asignarFolios(){
+  if(!S.setsDetectados||!S.setsDetectados.length) return;
+  if(!S.cafsDisponibles||!Object.keys(S.cafsDisponibles).length) return;
+
+  // Contador de siguiente folio por tipo DTE
+  const nextFolio = {};
+  Object.entries(S.cafsDisponibles).forEach(([tipo, info])=>{
+    nextFolio[parseInt(tipo)] = info.folio_actual;
+  });
+
+  // Recorrer todos los sets y casos (solo sets con casos editables)
+  S.setsDetectados.forEach(set=>{
+    if(set.esLibro) return;
+    set.casoData.forEach((cd, ci)=>{
+      const tipo = set.casos[ci]?.tipo_doc;
+      if(!tipo || !nextFolio[tipo]) return;
+
+      const folio = nextFolio[tipo];
+      cd.folio_asignado = folio;
+      nextFolio[tipo]++;
+
+      // Actualizar la referencia al SET con el folio asignado
+      const refSet = cd.referencias?.find(r=>r.tipo_doc_ref==='SET');
+      if(refSet) refSet.folio_ref = folio;
+    });
+  });
+
+  // Actualizar referencias cruzadas (NC/ND que apuntan a otro caso)
+  S.setsDetectados.forEach(set=>{
+    if(set.esLibro) return;
+    set.casoData.forEach((cd, ci)=>{
+      cd.referencias?.forEach(ref=>{
+        if(ref.tipo_doc_ref==='SET') return;
+        if(!ref.num_caso_ref) return;
+        // Buscar el folio del caso referenciado
+        const setRef = S.setsDetectados.find(s=>s.natencion===String(ref.natencion_ref))||set;
+        const ciRef  = setRef.casos.findIndex(c=>parseInt(c.caso.split('-').pop())===ref.num_caso_ref);
+        if(ciRef>=0 && setRef.casoData[ciRef]?.folio_asignado){
+          ref.folio_ref = setRef.casoData[ciRef].folio_asignado;
+        }
+      });
+    });
+  });
+
+  log('Folios asignados desde folio_actual de cada tipo','ok');
+  // Actualizar display del modal si está abierto
+  if(document.getElementById('modalOverlay').classList.contains('open')){
+    renderModalCaso(S.setActivo, S.casoActual);
+  }
+}
+
+// Llamar asignarFolios cuando se actualicen los CAFs disponibles
+function actualizarYAsignarFolios(){
+  analizarCAFs();
+  asignarFolios();
 }
 
 function analizarCAFs(){
@@ -1052,6 +1115,7 @@ function cargarSet(file){
     document.getElementById('btnConfSet').style.display='block';
     // Analizar CAFs necesarios vs disponibles y desbloquear paso 4
     analizarCAFs();
+    asignarFolios();
     unlock(4);
   };
   rd.readAsText(file,'ISO-8859-1');
@@ -1339,7 +1403,10 @@ function renderMultiSetOverview(sets){
           }).join(' / ');
           const refBadge=docRefs.length>0?`<span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--accent);background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.2);border-radius:4px;padding:1px 6px">${docRefs.length} ref</span>`:'';
           return `<div class="caso-row" id="caso_row_${si}_${ci}" onclick="abrirWizardSet(${si},${ci})" style="border-left:2px solid ${col}">
-            <div class="caso-row-n" style="color:${col}">CASO ${c.caso}</div>
+            <div class="caso-row-n" style="color:${col}">
+              <div>CASO ${c.caso}</div>
+              ${set.casoData[ci]?.folio_asignado?`<div style="font-size:9px;color:var(--accent);font-family:'JetBrains Mono',monospace">F${set.casoData[ci].folio_asignado}</div>`:''}
+            </div>
             <div class="caso-row-tipo">T${c.tipo_doc||'?'}</div>
             <div class="caso-row-desc" style="min-width:0">
               <div style="color:var(--text2);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${docN}</div>
@@ -1569,6 +1636,7 @@ function renderModalCaso(si,idx){
   </div>`;
 
   const docRefs=refs.filter(r=>r.tipo_doc_ref!=='SET');
+  const folioAsig = cd.folio_asignado;
   const descSub = docRefs.length>0
     ? docRefs.map(r=>`${r.cod_ref?'CodRef '+r.cod_ref+': ':''}${r.razon_ref||r._ref_texto_original||''}`).join(' · ')
     : 'Solo referencia al set';
@@ -1576,7 +1644,10 @@ function renderModalCaso(si,idx){
     <div class="caso-header">
       <div class="caso-num" style="color:${col}">CASO ${caso.caso}</div>
       <div class="caso-info">
-        <div class="caso-title">${caso.tipo_doc?TN[caso.tipo_doc]||'Tipo '+caso.tipo_doc:'Tipo desconocido'}</div>
+        <div class="caso-title" style="display:flex;align-items:center;gap:8px">
+          <span>${caso.tipo_doc?TN[caso.tipo_doc]||'Tipo '+caso.tipo_doc:'Tipo desconocido'}</span>
+          ${folioAsig?`<span style="font-family:'JetBrains Mono',monospace;font-size:11px;background:rgba(16,185,129,.12);color:var(--accent);border:1px solid rgba(16,185,129,.3);border-radius:5px;padding:2px 8px">Folio ${folioAsig}</span>`:`<span style="font-size:11px;color:var(--text4);font-style:italic">Sin folio asignado — sube CAFs primero</span>`}
+        </div>
         <div class="caso-sub" title="${descSub}" style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${descSub}</div>
       </div>
       ${caso.tipo_doc?`<div class="caso-tipo">T${caso.tipo_doc}</div>`:''}
