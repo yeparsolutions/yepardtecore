@@ -35,42 +35,41 @@ PERIODO     = "2026-05"  # Mayo 2026 — formato gYearMonth (AAAA-MM)
 
 # ── Documentos del período (extraídos de los XMLs aprobados) ──────────────────
 DOCUMENTOS = [
-    # Set Básico 4841543
-    {"tipo": 33, "folio":  97, "fecha": "2026-05-21", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
+    # Set Básico 4841543 — Track ID 249266618 — fecha 2026-05-22
+    {"tipo": 33, "folio": 106, "fecha": "2026-05-22", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
      "neto": 505345,   "exe": 0,     "iva": 96016,  "total": 601361},
-    {"tipo": 33, "folio":  98, "fecha": "2026-05-21", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
+    {"tipo": 33, "folio": 107, "fecha": "2026-05-22", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
      "neto": 2601662,  "exe": 0,     "iva": 494316, "total": 3095978},
-    {"tipo": 33, "folio":  99, "fecha": "2026-05-21", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
+    {"tipo": 33, "folio": 108, "fecha": "2026-05-22", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
      "neto": 780422,   "exe": 34968, "iva": 148280, "total": 963670},
-    {"tipo": 33, "folio": 101, "fecha": "2026-05-21", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
+    {"tipo": 33, "folio": 109, "fecha": "2026-05-22", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
      "neto": 1045156,  "exe": 13594, "iva": 198580, "total": 1257330},
-    {"tipo": 61, "folio":  88, "fecha": "2026-05-21", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
+    {"tipo": 61, "folio": 115, "fecha": "2026-05-22", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
      "neto": 0,        "exe": 0,     "iva": 0,      "total": 0},
-    {"tipo": 61, "folio":  89, "fecha": "2026-05-21", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
+    {"tipo": 61, "folio": 116, "fecha": "2026-05-22", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
      "neto": 1254468,  "exe": 0,     "iva": 238349, "total": 1492817},
-    {"tipo": 61, "folio":  91, "fecha": "2026-05-21", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
+    {"tipo": 61, "folio": 117, "fecha": "2026-05-22", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
      "neto": 780422,   "exe": 34968, "iva": 148280, "total": 963670},
-    {"tipo": 56, "folio":  69, "fecha": "2026-05-21", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
+    {"tipo": 56, "folio":  81, "fecha": "2026-05-22", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
      "neto": 0,        "exe": 0,     "iva": 0,      "total": 0},
-    # Set Exentas 4841548
-    {"tipo": 34, "folio":  64, "fecha": "2026-05-21", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
+    # Set Exentas 4841548 — Track ID 249266732 — fecha 2026-05-22
+    {"tipo": 34, "folio":  67, "fecha": "2026-05-22", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
      "neto": 0,        "exe": 41496, "iva": 0,      "total": 41496},
-    {"tipo": 61, "folio": 109, "fecha": "2026-05-21", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
+    {"tipo": 61, "folio": 118, "fecha": "2026-05-22", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
      "neto": 0,        "exe": 5184,  "iva": 0,      "total": 5184},
-    {"tipo": 34, "folio":  65, "fecha": "2026-05-21", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
+    {"tipo": 34, "folio":  68, "fecha": "2026-05-22", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
      "neto": 0,        "exe": 522026,"iva": 0,      "total": 522026},
-    {"tipo": 61, "folio": 110, "fecha": "2026-05-21", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
+    {"tipo": 61, "folio": 119, "fecha": "2026-05-22", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
      "neto": 0,        "exe": 0,     "iva": 0,      "total": 0},
-    {"tipo": 56, "folio":  78, "fecha": "2026-05-21", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
+    {"tipo": 56, "folio":  83, "fecha": "2026-05-22", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
      "neto": 0,        "exe": 0,     "iva": 0,      "total": 0},
-    {"tipo": 34, "folio":  66, "fecha": "2026-05-21", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
+    {"tipo": 34, "folio":  69, "fecha": "2026-05-22", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
      "neto": 0,        "exe": 530803,"iva": 0,      "total": 530803},
-    {"tipo": 61, "folio": 111, "fecha": "2026-05-21", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
+    {"tipo": 61, "folio": 121, "fecha": "2026-05-22", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
      "neto": 0,        "exe": 159439,"iva": 0,      "total": 159439},
-    {"tipo": 56, "folio":  79, "fecha": "2026-05-21", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
+    {"tipo": 56, "folio":  85, "fecha": "2026-05-22", "rut_doc": "77777777-7", "razon": "EMPRESA LTDA",
      "neto": 0,        "exe": 42385, "iva": 0,      "total": 42385},
-    # Nota: Guías de Despacho (tipo 52) NO van en Libro de Ventas (no en enumeración XSD)
-    # Las guías tienen su propio Libro de Guías
+    # Nota: Guías (tipo 52) NO van en Libro de Ventas
 ]
 
 
