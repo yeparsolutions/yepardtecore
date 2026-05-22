@@ -624,9 +624,7 @@ function setTheme(t){
   document.getElementById('btnLight').classList.toggle('active',t==='light');
   try{localStorage.setItem('ydt_theme',t);}catch{}
 }
-(function(){
-  try{const saved=localStorage.getItem('ydt_theme');if(saved==='light')setTheme('light');}catch{}
-})();
+// La inicialización del tema se hace en window.onload para que los botones existan
 
 /* ══════════════════════════════════════════════════════
    ESTADO GLOBAL
@@ -1334,7 +1332,6 @@ function renderMultiSetOverview(sets){
   sets.forEach((set, si)=>{
     const col = getSetColor(set.key, si);
     const validados = set.casoValidado.filter(v=>v).length;
-    const col=getSetColor(set.key,si);
     html += `
     <div style="margin-bottom:14px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
@@ -1855,6 +1852,8 @@ function dDp(e,fid,zid,cb){e.preventDefault();dLv(zid);const f=e.dataTransfer.fi
 function dpCAFs(e){e.preventDefault();dLv('z4caf');addCAFs(e.dataTransfer.files);}
 
 window.onload=function(){
+  // Restaurar tema guardado
+  try{const saved=localStorage.getItem('ydt_theme');if(saved==='light')setTheme('light');}catch{}
   document.getElementById('apiUrl').value=window.location.origin;
   log('Panel YeparDTEcore listo','info');
   setTimeout(autoCargar,400);
