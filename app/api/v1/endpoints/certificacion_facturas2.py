@@ -2,7 +2,7 @@
 # ══════════════════════════════════════════════════════════════
 # SET BASICO FACTURAS — NÚMERO DE ATENCIÓN: 4841543
 # 8 documentos: 4 Facturas (33), 3 NC (61), 1 ND (56)
-# Mismo patrón que certificacion_facturas.py, nuevos valores.
+# Mismo patrón que certificacion_facturas.py, nuevos valores
 # ══════════════════════════════════════════════════════════════
 
 import logging
@@ -109,7 +109,7 @@ async def _emitir_set(fecha: str, service: DTEService, emisor_id: int):
     await emitir(3, {
         "tipo_dte": 33, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "Pintura B y W AFECTO",  "cantidad":  35, "precio_unitario":  4282, "exento": False},
+            {"nombre": "Pintura B&W AFECTO",  "cantidad":  35, "precio_unitario":  4282, "exento": False},
             {"nombre": "ITEM 2 AFECTO",          "cantidad": 188, "precio_unitario":  3354, "exento": False},
             {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   1, "precio_unitario": 34968, "exento": True},
         ],
@@ -129,12 +129,14 @@ async def _emitir_set(fecha: str, service: DTEService, emisor_id: int):
     })
 
     # ── CASO 5 — NC corrige giro (CodRef=2) → MntTotal=0 ──────
+    # Los ítems deben corresponder a los de la FAC referenciada (Caso 1)
+    # con precio=0 y forzar_monto_cero=True
     if 1 in folios:
         await emitir(5, {
             "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
             "items": [
-                {"nombre": "CORRIGE GIRO DEL RECEPTOR", "cantidad": 1,
-                 "precio_unitario": 0, "exento": True},
+                {"nombre": "Cajón AFECTO",   "cantidad": 143, "precio_unitario": 0, "exento": False},
+                {"nombre": "Relleno AFECTO",  "cantidad":  61, "precio_unitario": 0, "exento": False},
             ],
             "forzar_monto_cero": True,
             "referencias": [
@@ -162,7 +164,7 @@ async def _emitir_set(fecha: str, service: DTEService, emisor_id: int):
         await emitir(7, {
             "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
             "items": [
-                {"nombre": "Pintura B y W AFECTO",  "cantidad":  35, "precio_unitario":  4282, "exento": False},
+                {"nombre": "Pintura B&W AFECTO",  "cantidad":  35, "precio_unitario":  4282, "exento": False},
                 {"nombre": "ITEM 2 AFECTO",          "cantidad": 188, "precio_unitario":  3354, "exento": False},
                 {"nombre": "ITEM 3 SERVICIO EXENTO", "cantidad":   1, "precio_unitario": 34968, "exento": True},
             ],
@@ -173,12 +175,13 @@ async def _emitir_set(fecha: str, service: DTEService, emisor_id: int):
         })
 
     # ── CASO 8 — ND anula NC5 (CodRef=1) → MntTotal=0 espejo ──
+    # Los ítems deben ser los mismos que la NC referenciada (Caso 5)
     if 5 in folios:
         await emitir(8, {
             "tipo_dte": 56, "fecha_emision": fecha, "receptor": RECEPTOR,
             "items": [
-                {"nombre": "CORRIGE GIRO DEL RECEPTOR", "cantidad": 1,
-                 "precio_unitario": 0, "exento": True},
+                {"nombre": "Cajón AFECTO",   "cantidad": 143, "precio_unitario": 0, "exento": False},
+                {"nombre": "Relleno AFECTO",  "cantidad":  61, "precio_unitario": 0, "exento": False},
             ],
             "forzar_monto_cero": True,
             "referencias": [
