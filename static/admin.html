@@ -891,52 +891,108 @@ function calcularFoliosRequeridos(sets){
 }
 
 function analizarCAFs(){
-  if(!S.setsDetectados||!S.setsDetectados.length)return;
-  const requeridos=calcularFoliosRequeridos(S.setsDetectados);
-  const disponibles=S.cafsDisponibles||{};
-  const tipos=Object.keys(requeridos).map(Number).sort();
+  if(!S.setsDetectados||!S.setsDetectados.length) return;
+  const requeridos = calcularFoliosRequeridos(S.setsDetectados);
+  const disponibles = S.cafsDisponibles||{};
+  const tipos = Object.keys(requeridos).map(Number).sort();
 
-  let todoOk=true;
-  let html='<div style="margin-bottom:8px;font-size:12px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">CAFs requeridos según el set</div>';
-  html+='<div class="caf-req-grid">';
+  let todoOk = true;
+  let html = '<div style="margin-bottom:8px;font-size:12px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">CAFs requeridos según el set cargado</div>';
+  html += '<div class="caf-req-grid">';
 
-  tipos.forEach(tipo=>{
-    const req=requeridos[tipo];
-    const disp=disponibles[tipo];
-    const tiene=disp?disp.disponibles:0;
-    const faltan=Math.max(0,req-tiene);
-    let estado=faltan===0?'ok':tiene>0?'warn':'err';
-    if(estado!=='ok')todoOk=false;
-    const icon=estado==='ok'?'✓':estado==='warn'?'⚠':'✗';
-    html+=`<div class="caf-req-card ${estado}">
-      <div class="caf-status-badge">${icon}</div>
-      <div class="caf-req-tipo ${estado}">T${tipo}</div>
-      <div class="caf-req-nombre">${TN[tipo]||'Tipo '+tipo}</div>
-      <div class="caf-req-row"><span class="caf-req-lbl">Necesarios</span><span class="caf-req-val">${req}</span></div>
-      <div class="caf-req-row"><span class="caf-req-lbl">Disponibles</span><span class="caf-req-val ${estado}">${tiene}</span></div>
-      ${faltan>0?`<div class="caf-req-row"><span class="caf-req-lbl">Faltan</span><span class="caf-req-val err">${faltan}</span></div>`:''}
-      ${disp?`<div style="font-size:10px;color:var(--text4);margin-top:6px">Folios ${disp.folio_actual}–${disp.folio_hasta}</div>`:'<div style="font-size:10px;color:#ef4444;margin-top:6px">No hay CAF de este tipo</div>'}
+  tipos.forEach(tipo => {
+    const req      = requeridos[tipo];       // folios necesarios para 1 set completo
+    const disp_obj = disponibles[tipo];
+    const tiene    = disp_obj ? disp_obj.disponibles : 0;
+
+    // Semáforo:
+    // 🔴 Rojo:    0 disponibles, o no alcanza ni para 1 set
+    // 🟠 Naranja: alcanza para 1 set pero no para 3 (próximo a acabar)
+    // 🟢 Verde:   alcanza para 3 o más sets iguales
+    const setsConTiene = tiene > 0 ? Math.floor(tiene / req) : 0;
+    let estado, icon, colorCls, colorBg, colorBorder, colorText;
+    if(tiene === 0 || setsConTiene === 0){
+      estado='err'; icon='✗'; colorCls='ref-codref-1';
+      colorBg='rgba(239,68,68,.06)'; colorBorder='rgba(239,68,68,.3)'; colorText='#ef4444';
+      todoOk = false;
+    } else if(setsConTiene < 3){
+      estado='warn'; icon='⚠'; colorCls='ref-codref-2';
+      colorBg='rgba(245,158,11,.06)'; colorBorder='rgba(245,158,11,.3)'; colorText='#f59e0b';
+      todoOk = false;
+    } else {
+      estado='ok'; icon='✓'; colorCls='';
+      colorBg='rgba(16,185,129,.06)'; colorBorder='rgba(16,185,129,.25)'; colorText='#10b981';
+    }
+
+    // Barra visual de progreso (hasta 3 sets = 100%)
+    const pct = Math.min(100, Math.round((tiene / (req * 3)) * 100));
+    const barColor = estado==='ok'?'#10b981':estado==='warn'?'#f59e0b':'#ef4444';
+
+    html += `<div style="border-radius:10px;padding:13px 14px;border:1px solid ${colorBorder};background:${colorBg};position:relative">
+      <div style="position:absolute;top:10px;right:12px;font-size:18px;font-weight:700;color:${colorText}">${icon}</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:${colorText};margin-bottom:1px">T${tipo}</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px">${TN[tipo]||'Tipo '+tipo}</div>
+
+      <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+        <span style="color:var(--text3)">Por set</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-weight:500;color:var(--text2)">${req} folios</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:6px">
+        <span style="color:var(--text3)">Disponibles</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:${colorText}">${tiene}</span>
+      </div>
+
+      <!-- Barra de capacidad -->
+      <div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:6px">
+        <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px;transition:width .4s"></div>
+      </div>
+
+      <!-- Indicador de sets posibles -->
+      <div style="display:flex;gap:4px;align-items:center">
+        ${[1,2,3].map(n=>`<div title="${n} set${n>1?'s':''}" style="flex:1;height:6px;border-radius:3px;background:${setsConTiene>=n?barColor:'var(--border)'}"></div>`).join('')}
+        <span style="font-size:10px;color:var(--text3);margin-left:4px;white-space:nowrap">
+          ${setsConTiene >= 3 ? '3+ sets ✓' : setsConTiene > 0 ? setsConTiene+' set'+( setsConTiene>1?'s':'')+' posible'+(setsConTiene>1?'s':'') : 'Sin folios'}
+        </span>
+      </div>
+
+      ${disp_obj?`<div style="font-size:10px;color:var(--text4);margin-top:6px">Folios ${disp_obj.folio_actual}–${disp_obj.folio_hasta}</div>`:'<div style="font-size:10px;color:#ef4444;margin-top:6px">Sin CAF — solicitar en SII</div>'}
     </div>`;
   });
 
-  html+='</div>';
+  html += '</div>';
 
+  // Mensaje resumen
   if(todoOk){
-    html+='<div style="background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.25);border-radius:8px;padding:9px 13px;font-size:12px;color:#10b981;display:flex;align-items:center;gap:8px">✓ Tienes suficientes folios para generar todos los XMLs</div>';
+    html += `<div style="background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.25);border-radius:8px;padding:9px 13px;font-size:12px;color:#10b981;display:flex;align-items:center;gap:8px;margin-top:2px">
+      ✓ Tienes folios suficientes para generar 3 sets de cada tipo
+    </div>`;
     done(4,'✓ CAFs OK');
     unlock(5);
-  }else{
-    const faltantes=tipos.filter(t=>requeridos[t]>(disponibles[t]?.disponibles||0));
-    html+=`<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:9px 13px;font-size:12px;color:#f59e0b;display:flex;align-items:flex-start;gap:8px"><span>⚠</span><span>Sube los CAFs faltantes: tipos ${faltantes.map(t=>'T'+t).join(', ')}. Solicítalos en el portal del SII (maullin.sii.cl → Facturación → Autorización de Folios).</span></div>`;
+  } else {
+    const faltantes=tipos.filter(t=>(disponibles[t]?.disponibles||0)<requeridos[t]);
+    const proximos =tipos.filter(t=>{const d=disponibles[t];return d&&d.disponibles>0&&Math.floor(d.disponibles/requeridos[t])<3;});
+    let msg = '';
+    if(faltantes.length) msg += `<strong>Sin folios:</strong> ${faltantes.map(t=>'T'+t).join(', ')}. `;
+    if(proximos.length)  msg += `<strong>Próximos a agotarse:</strong> ${proximos.map(t=>{const d=disponibles[t];return 'T'+t+' ('+Math.floor(d.disponibles/requeridos[t])+' set posible)';}).join(', ')}.`;
+    html += `<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:9px 13px;font-size:12px;color:#f59e0b;display:flex;gap:8px;align-items:flex-start;margin-top:2px">
+      <span>⚠</span><span>${msg} Solicita los que faltan en maullin.sii.cl → Facturación → Autorización de Folios.</span>
+    </div>`;
   }
 
-  const el=document.getElementById('cafs_analisis');
-  if(el){el.innerHTML=html;el.style.display='block';}
-  // También actualizar el ibox de resumen
-  const tipos_texto=tipos.map(t=>{const d=disponibles[t];return 'T'+t+': '+(d?d.disponibles+' disp.':'sin CAF');}).join(' · ');
-  document.getElementById('cafs_info_b').textContent=tipos_texto||'Sin CAFs en BD';
+  const el = document.getElementById('cafs_analisis');
+  if(el){ el.innerHTML = html; el.style.display = 'block'; }
+
+  // Actualizar ibox resumen
+  const resumen = tipos.map(t => {
+    const d = disponibles[t];
+    const q = requeridos[t];
+    const sets = d ? Math.floor(d.disponibles/q) : 0;
+    return `T${t}: ${d?d.disponibles:'0'} disp. (${sets>=3?'✓ 3+ sets':sets>0?sets+' set posible':'✗ sin folios'})`;
+  }).join(' · ');
+  document.getElementById('cafs_info_b').textContent = resumen || 'Sin CAFs en BD';
   document.getElementById('cafs_info').classList.add('show');
 }
+
 
 /* ══════════════════════════════════════════════════════
    PASO 4: PARSEO SET SII — MULTI-SET
@@ -1006,85 +1062,32 @@ function cargarSet(file){
 }
 
 function parsearTxtMultiSet(txt){
-  // Dividir el .txt en bloques por cada sección SET / LIBRO
-  // El SII separa sets con líneas como "========== SET BASICO... =========="
-  // o simplemente con el encabezado "NUMERO DE ATENCION : XXXXXXX"
   const sets = [];
+  // Buscar cada header de set: "SET XXXX - NUMERO DE ATENCIÓN: NNNNN"
+  // El .txt real usa tanto ATENCION como ATENCIÓN (con tilde)
+  const headerRe = /(SET\s+[^\n\r]+?NUMERO\s+DE\s+ATENCI[OÓ]N\s*:\s*(\d+))/gi;
+  const headerMatches = [...txt.matchAll(headerRe)];
+  if(!headerMatches.length) return null;
 
-  // Estrategia: buscar cada ocurrencia de "NUMERO DE ATENCION"
-  const natRegex = /NUMERO\s+DE\s+ATENCION\s*:\s*(\d+)/gi;
-  const natMatches = [...txt.matchAll(natRegex)];
+  headerMatches.forEach((match, mi) => {
+    const headerLine = match[1].trim();
+    const natencion  = match[2];
+    const start      = match.index;
+    const end        = mi + 1 < headerMatches.length
+                       ? headerMatches[mi+1].index
+                       : txt.length;
+    const bloque     = txt.slice(start, end);
 
-  if(natMatches.length===0) return null;
-
-  natMatches.forEach((match, mi)=>{
-    const start = match.index;
-    const end = mi+1 < natMatches.length ? natMatches[mi+1].index : txt.length;
-    const bloque = txt.slice(start, end);
-    const natencion = match[1];
-    const {key, label} = detectarTipoSet(bloque);
-    const casos = parsearCasos(bloque, natencion);
-    // Los libros (ventas, compras, libro_guias) son sets informativos sin casos editables
+    // detectarTipoSet lee el propio headerLine — garantiza match correcto
+    const {key, label} = detectarTipoSet(headerLine);
     const esLibro = ['ventas','compras','libro_guias'].includes(key);
+    const casos   = esLibro ? [] : parsearCasos(bloque, natencion);
     sets.push({key, label, natencion, casos, esLibro});
   });
 
-  return sets;
+  return sets.length ? sets : null;
 }
 
-/* ── Parser de referencias del .txt SII ─────────────────────────
-   Formato real SII:
-     REFERENCIA    FACTURA ELECTRONICA CORRESPONDIENTE A CASO NATENCION-N
-     RAZON REFERENCIA  CORRIGE GIRO DEL RECEPTOR
-   
-   No hay FOLIO REF explícito — el folio se resuelve al generar el XML
-   usando el folio que se asignó al caso referenciado en el mismo set.
-   El CodRef se deduce automáticamente de la RAZON.
-──────────────────────────────────────────────────────────────── */
-
-// Mapa de texto DOC en REFERENCIA → tipo DTE
-const DOC_TEXT_TIPO = [
-  {re:/FACTURA\s+NO\s+AFECTA\s+O\s+EXENTA\s+ELECTR/i, tipo:34},
-  {re:/FACTURA\s+DE\s+COMPRA\s+ELECTR/i,              tipo:46},
-  {re:/FACTURA\s+ELECTR/i,                            tipo:33},
-  {re:/NOTA\s+DE\s+CREDITO\s+ELECTR/i,               tipo:61},
-  {re:/NOTA\s+DE\s+DEBITO\s+ELECTR/i,                tipo:56},
-  {re:/GUIA\s+DE\s+DESPACHO/i,                       tipo:52},
-  {re:/FACTURA\b/i,                                  tipo:33},
-  {re:/NOTA\s+DE\s+CREDITO\b/i,                      tipo:61},
-  {re:/NOTA\s+DE\s+DEBITO\b/i,                       tipo:56},
-];
-
-// Deducir CodRef desde la razón
-const RAZON_CODREF = [
-  {re:/ANULA/i,             cod:1, label:'Anula documento'},
-  {re:/CORRIGE\s+GIRO/i,    cod:2, label:'Corrige giro del receptor'},
-  {re:/CORRIGE/i,           cod:2, label:'Corrige dato'},
-  {re:/DEVOLUCI[OÓ]N/i,    cod:3, label:'Devolución de mercaderías'},
-  {re:/MODIFICA/i,          cod:3, label:'Modifica monto'},
-];
-
-function deducirCodRef(razon){
-  for(const{re,cod,label} of RAZON_CODREF){
-    if(re.test(razon)) return {cod,label};
-  }
-  return {cod:null,label:'Sin código'};
-}
-
-function parsearRefLine(refText){
-  // Extraer tipo doc referenciado
-  let tipo=null;
-  for(const{re,tipo:t} of DOC_TEXT_TIPO){if(re.test(refText)){tipo=t;break;}}
-  // Extraer número de atención y número de caso referenciado
-  // Formato: "...CORRESPONDIENTE A CASO NATENCION-N"
-  const mCaso=refText.match(/CASO\s+(\d+)-(\d+)/i);
-  return {
-    tipo_doc_ref: tipo,
-    natencion_ref: mCaso?mCaso[1]:null,
-    num_caso_ref:  mCaso?parseInt(mCaso[2]):null,  // número del caso dentro del set
-    // folio_ref: null — se resuelve al generar, cuando sabemos el folio de ese caso
-  };
-}
 
 function parsearCasos(bloqueTxt, natencion){
   const casos=[];
@@ -1402,6 +1405,7 @@ function renderModalCaso(si,idx){
   const set=S.setsDetectados[si];
   const caso=set.casos[idx];
   const cd=set.casoData[idx];
+  const refs=cd.referencias||[];
   const isFixed=isItemsFijo(caso);
   const isGuia=caso.tipo_doc===52;
   const col=getSetColor(set.key, si);
@@ -1504,7 +1508,7 @@ function renderModalCaso(si,idx){
     2:{label:'Corrige giro del receptor',cls:'ref-codref-2',color:'#f59e0b'},
     3:{label:'Corrige montos / devolución',cls:'ref-codref-3',color:'#60a5fa'},
   };
-  const refs=cd.referencias||[];
+  // refs declarado arriba
   const refsHtml=`<div class="refs-section">
     <div class="refs-title">
       <span>Referencias del documento</span>
