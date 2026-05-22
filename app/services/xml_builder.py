@@ -76,6 +76,7 @@ class InputDTE:
     referencias: list = field(default_factory=list)
     forma_pago: int = 1
     indicador_traslado: int = 0
+    indicador_despacho:  int = 0
     observacion: str = ""
     descuento_global_pct: float = 0.0
     descuento_global_monto: int = 0
@@ -220,6 +221,11 @@ class XMLBuilder:
 
         if tipo == 52:
             etree.SubElement(iddoc, f"{{{NS}}}IndTraslado").text = str(d.indicador_traslado or 1)
+            # IndDespacho: 1=despacho por cuenta del emisor a instalaciones del cliente
+            #              2=despacho por cuenta del emisor al lugar indicado por el cliente
+            #              3=traslado entre bodegas del emisor
+            if d.indicador_despacho:
+                etree.SubElement(iddoc, f"{{{NS}}}IndDespacho").text = str(d.indicador_despacho)
 
         if es_boleta:
             # Boletas (39, 41): IndServicio=3 OBLIGATORIO; sin FmaPago
@@ -285,15 +291,11 @@ class XMLBuilder:
                 # NC CodRef=2: solo MntTotal=0, sin otros campos de montos
                 pass
             else:
-                # Solo emitir MntNeto si hay monto afecto
-                if self.monto_neto > 0:
-                    etree.SubElement(totales, f"{{{NS}}}MntNeto").text  = str(self.monto_neto)
+                etree.SubElement(totales, f"{{{NS}}}MntNeto").text  = str(self.monto_neto)
                 if self.monto_exento > 0:
                     etree.SubElement(totales, f"{{{NS}}}MntExe").text = str(self.monto_exento)
-                # Solo emitir TasaIVA/IVA si hay monto afecto (no en NC/ND sobre exentas)
-                if self.monto_iva > 0:
-                    etree.SubElement(totales, f"{{{NS}}}TasaIVA").text  = "19"
-                    etree.SubElement(totales, f"{{{NS}}}IVA").text      = str(self.monto_iva)
+                etree.SubElement(totales, f"{{{NS}}}TasaIVA").text  = "19"
+                etree.SubElement(totales, f"{{{NS}}}IVA").text      = str(self.monto_iva)
 
         etree.SubElement(totales, f"{{{NS}}}MntTotal").text = str(self.monto_total)
 
@@ -320,9 +322,7 @@ class XMLBuilder:
         if item.unidad:
             etree.SubElement(det, f"{{{NS}}}UnmdItem").text = item.unidad
 
-        # PrcItem: omitir cuando es 0 (ítem ficticio CodRef=2) — XSD exige > 0
-        if round(item.precio_unitario) != 0:
-            etree.SubElement(det, f"{{{NS}}}PrcItem").text = str(round(item.precio_unitario))
+        etree.SubElement(det, f"{{{NS}}}PrcItem").text = str(round(item.precio_unitario))
 
         if item.descuento_pct > 0:
             etree.SubElement(det, f"{{{NS}}}DescuentoPct").text   = f"{item.descuento_pct:.2f}"
