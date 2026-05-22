@@ -105,7 +105,7 @@ async def _emitir_set(fecha: str, service: DTEService, emisor_id: int,
         "tipo_dte": 52, "fecha_emision": fecha,
         "receptor": receptor_interno,
         "indicador_traslado": 5,
-        "indicador_despacho": 1,   # Traslado interno: despacha el emisor
+        # Traslado interno: sin TipoDespacho (no es despacho a cliente)
         "items": [
             {"nombre": "ITEM 1", "cantidad":  80, "precio_unitario": 0, "exento": True},
             {"nombre": "ITEM 2", "cantidad": 127, "precio_unitario": 0, "exento": True},
