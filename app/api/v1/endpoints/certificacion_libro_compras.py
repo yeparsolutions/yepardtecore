@@ -42,7 +42,7 @@ def _iva(n): return round(n * 0.19)
 DOCUMENTOS = [
     # FAC 234: normal afecta, derecho a crédito
     {
-        "tipo": 30, "folio": 234, "fecha": "2026-05-21",
+        "tipo": 30, "folio": 234, "fecha": "2026-05-22",
         "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
         "neto": 34744, "exe": 0, "iva": _iva(34744),
         "total": 34744 + _iva(34744),
@@ -50,7 +50,7 @@ DOCUMENTOS = [
     },
     # FAC-E 32: mixta exento + afecto
     {
-        "tipo": 33, "folio": 32, "fecha": "2026-05-21",
+        "tipo": 33, "folio": 32, "fecha": "2026-05-22",
         "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
         "neto": 8608, "exe": 9597, "iva": _iva(8608),
         "total": 8608 + _iva(8608) + 9597,
@@ -58,7 +58,7 @@ DOCUMENTOS = [
     },
     # FAC 781: IVA uso común, factor 0.60
     {
-        "tipo": 30, "folio": 781, "fecha": "2026-05-21",
+        "tipo": 30, "folio": 781, "fecha": "2026-05-22",
         "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
         "neto": 29947, "exe": 0,
         "iva": 0,           # MntIVA=0 cuando es IVA uso común
@@ -68,7 +68,7 @@ DOCUMENTOS = [
     },
     # NC 451: descuento sobre FAC 234
     {
-        "tipo": 60, "folio": 451, "fecha": "2026-05-21",
+        "tipo": 60, "folio": 451, "fecha": "2026-05-22",
         "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
         "neto": 2807, "exe": 0, "iva": _iva(2807),
         "total": 2807 + _iva(2807),
@@ -76,7 +76,7 @@ DOCUMENTOS = [
     },
     # FAC-E 67: entrega gratuita → IVA no recuperable cod=6
     {
-        "tipo": 33, "folio": 67, "fecha": "2026-05-21",
+        "tipo": 33, "folio": 67, "fecha": "2026-05-22",
         "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
         "neto": 10913, "exe": 0,
         "iva": 0,           # MntIVA=0 cuando no es recuperable
@@ -87,7 +87,7 @@ DOCUMENTOS = [
     },
     # FCOMPRA-E 9: retención total IVA
     {
-        "tipo": 46, "folio": 9, "fecha": "2026-05-21",
+        "tipo": 46, "folio": 9, "fecha": "2026-05-22",
         "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
         "neto": 10019, "exe": 0,
         "iva": _iva(10019),
@@ -97,7 +97,7 @@ DOCUMENTOS = [
     },
     # NC-E 211: descuento sobre FAC-E 32 (exento)
     {
-        "tipo": 61, "folio": 211, "fecha": "2026-05-21",
+        "tipo": 61, "folio": 211, "fecha": "2026-05-22",
         "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
         "neto": 0, "exe": 6396, "iva": 0,
         "total": 6396,
