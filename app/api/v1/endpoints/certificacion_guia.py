@@ -105,6 +105,7 @@ async def _emitir_set(fecha: str, service: DTEService, emisor_id: int,
         "tipo_dte": 52, "fecha_emision": fecha,
         "receptor": receptor_interno,
         "indicador_traslado": 5,
+        "indicador_despacho": 1,   # Traslado interno: despacha el emisor
         "items": [
             {"nombre": "ITEM 1", "cantidad":  80, "precio_unitario": 0, "exento": True},
             {"nombre": "ITEM 2", "cantidad": 127, "precio_unitario": 0, "exento": True},
@@ -118,6 +119,7 @@ async def _emitir_set(fecha: str, service: DTEService, emisor_id: int,
         "tipo_dte": 52, "fecha_emision": fecha,
         "receptor": RECEPTOR_CLIENTE,
         "indicador_traslado": 1,
+        "indicador_despacho": 2,   # Venta: despacha emisor al local del cliente
         "items": [
             {"nombre": "ITEM 1", "cantidad": 361, "precio_unitario": 7374, "exento": False},
             {"nombre": "ITEM 2", "cantidad": 700, "precio_unitario": 1664, "exento": False},
@@ -130,6 +132,7 @@ async def _emitir_set(fecha: str, service: DTEService, emisor_id: int,
         "tipo_dte": 52, "fecha_emision": fecha,
         "receptor": RECEPTOR_CLIENTE,
         "indicador_traslado": 2,
+        "indicador_despacho": 3,   # Venta: retira el cliente
         "items": [
             {"nombre": "ITEM 1", "cantidad": 174, "precio_unitario": 2001, "exento": False},
             {"nombre": "ITEM 2", "cantidad": 431, "precio_unitario": 5759, "exento": False},
