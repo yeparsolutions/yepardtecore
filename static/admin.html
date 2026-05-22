@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -201,6 +200,26 @@ nav{position:sticky;top:0;z-index:100;background:var(--nav-bg);backdrop-filter:b
 .lg.err{border-color:#ef4444;background:rgba(239,68,68,.05);color:#fca5a5}
 .lg.warn{border-color:#f59e0b;background:rgba(245,158,11,.05);color:#fcd34d}
 .lgt{color:var(--text3);margin-right:6px}
+
+
+/* ── Análisis CAFs ── */
+.caf-req-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-bottom:12px}
+.caf-req-card{border-radius:10px;padding:12px 14px;border:1px solid;position:relative}
+.caf-req-card.ok{background:rgba(16,185,129,.06);border-color:rgba(16,185,129,.25)}
+.caf-req-card.warn{background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.3)}
+.caf-req-card.err{background:rgba(239,68,68,.06);border-color:rgba(239,68,68,.3)}
+.caf-req-tipo{font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;margin-bottom:2px}
+.caf-req-tipo.ok{color:#10b981}
+.caf-req-tipo.warn{color:#f59e0b}
+.caf-req-tipo.err{color:#ef4444}
+.caf-req-nombre{font-size:11px;color:var(--text3);margin-bottom:8px}
+.caf-req-row{display:flex;justify-content:space-between;align-items:center;font-size:11px;margin-bottom:2px}
+.caf-req-lbl{color:var(--text3)}
+.caf-req-val{font-family:'JetBrains Mono',monospace;font-weight:500}
+.caf-req-val.ok{color:#10b981}
+.caf-req-val.warn{color:#f59e0b}
+.caf-req-val.err{color:#ef4444}
+.caf-status-badge{position:absolute;top:10px;right:10px;font-size:16px}
 
 /* ══ Consola en modo claro — texto más oscuro para legibilidad ══ */
 html.light .lg.info{color:#1d4ed8}
@@ -447,48 +466,14 @@ html.light .caso-warn-txt{color:#92400e}
     </div>
   </div>
 
-  <!-- PASO 3: CAFs -->
+  <!-- PASO 3: SET DE PRUEBA (ahora paso 3) -->
   <div class="card locked" id="c3">
     <div class="ch" onclick="tgl(3)">
-      <div class="sn">3</div><div class="ct">CAFs del SII</div>
+      <div class="sn">3</div><div class="ct">Set de Prueba SII</div>
       <span class="badge p" id="b3">pendiente</span>
     </div>
     <div class="cb">
-      <div class="ibox" id="cafs_info"><div class="ibox-t">CAFs activos en BD</div><div class="ibox-b" id="cafs_info_b"></div></div>
-      <p style="font-size:13px;color:#64748b;margin-bottom:16px">Para el Set Básico necesitas CAFs de <code style="font-family:'JetBrains Mono',monospace;color:#60a5fa">tipo 33</code>, <code style="font-family:'JetBrains Mono',monospace;color:#60a5fa">tipo 61</code> y <code style="font-family:'JetBrains Mono',monospace;color:#60a5fa">tipo 56</code>.</p>
-      <div class="uzone" id="z3" ondragover="dOv(event,'z3')" ondragleave="dLv('z3')" ondrop="dpCAFs(event)">
-        <input type="file" id="fcafs" accept=".xml" multiple onchange="addCAFs(this.files)">
-        <div class="uicon">📑</div>
-        <div class="utxt"><strong>Arrastra los XML de CAF o haz clic</strong>Puedes seleccionar varios a la vez</div>
-      </div>
-      <div class="clist" id="clist"></div>
-      <div class="brow">
-        <button class="btn bp" id="bcafs" onclick="subirCAFs()" disabled>Subir CAFs</button>
-        <button class="btn bg" onclick="clrCAFs()">Limpiar</button>
-      </div>
-      <div class="result" id="r3"><div class="rlbl" id="r3l"></div><div class="rbody" id="r3c"></div></div>
-    </div>
-  </div>
-
-  <!-- PASO 4: SET DE PRUEBA -->
-  <div class="card locked" id="c4">
-    <div class="ch" onclick="tgl(4)">
-      <div class="sn">4</div><div class="ct">Set de Prueba SII</div>
-      <span class="badge p" id="b4">pendiente</span>
-    </div>
-    <div class="cb">
-      <p style="font-size:13px;color:#64748b;margin-bottom:16px">Sube el <code style="font-family:'JetBrains Mono',monospace;color:#e2e8f0">.txt</code> del SII con tu número de atención. Se abrirá un asistente para validar y ajustar cada caso antes de generar.</p>
-
-      <!-- Selector de tipo de set -->
-      <div class="f" style="margin-bottom:16px">
-        <label>Tipo de set</label>
-        <select id="set_tipo">
-          <option value="basico">Set Básico — Facturas (N° 4841543)</option>
-          <option value="exentas">Set Exentas (N° 4841548)</option>
-          <option value="guias">Set Guías de Despacho (N° 4841546)</option>
-          <option value="compras">Libro de Compras (N° 4841545)</option>
-        </select>
-      </div>
+      <p style="font-size:13px;color:var(--text3);margin-bottom:16px">Sube el <code style="font-family:'JetBrains Mono',monospace;color:var(--text)">.txt</code> del SII. El sistema detecta automáticamente si contiene uno o varios sets (Básico, Exentas, Guías, etc.) y los separa.</p>
 
       <div class="uzone" id="z4" ondragover="dOv(event,'z4')" ondragleave="dLv('z4')" ondrop="dpSet(event)">
         <input type="file" id="fset" accept=".txt" onchange="cargarSet(this.files[0])">
@@ -515,6 +500,29 @@ html.light .caso-warn-txt{color:#92400e}
     </div>
   </div>
 
+  <!-- PASO 4: CAFs (ahora paso 4) -->
+  <div class="card locked" id="c4">
+    <div class="ch" onclick="tgl(4)">
+      <div class="sn">4</div><div class="ct">CAFs del SII</div>
+      <span class="badge p" id="b4">pendiente</span>
+    </div>
+    <div class="cb">
+      <div class="ibox" id="cafs_info"><div class="ibox-t">CAFs activos en BD</div><div class="ibox-b" id="cafs_info_b"></div></div>
+      <p style="font-size:13px;color:#64748b;margin-bottom:16px">Para el Set Básico necesitas CAFs de <code style="font-family:'JetBrains Mono',monospace;color:#60a5fa">tipo 33</code>, <code style="font-family:'JetBrains Mono',monospace;color:#60a5fa">tipo 61</code> y <code style="font-family:'JetBrains Mono',monospace;color:#60a5fa">tipo 56</code>.</p>
+      <div class="uzone" id="z3" ondragover="dOv(event,'z4caf')" ondragleave="dLv('z4caf')" ondrop="dpCAFs(event)">
+        <input type="file" id="fcafs" accept=".xml" multiple onchange="addCAFs(this.files)">
+        <div class="uicon">📑</div>
+        <div class="utxt"><strong>Arrastra los XML de CAF o haz clic</strong>Puedes seleccionar varios a la vez</div>
+      </div>
+      <div class="clist" id="clist"></div>
+      <div class="brow">
+        <button class="btn bp" id="bcafs" onclick="subirCAFs()" disabled>Subir CAFs</button>
+        <button class="btn bg" onclick="clrCAFs()">Limpiar</button>
+      </div>
+      <div class="result" id="r3"><div class="rlbl" id="r3l"></div><div class="rbody" id="r3c"></div></div>
+    </div>
+  </div>
+
   <!-- PASO 5: GENERAR -->
   <div class="card locked" id="c5">
     <div class="ch" onclick="tgl(5)">
@@ -527,20 +535,10 @@ html.light .caso-warn-txt{color:#92400e}
         <div class="ibox-b" id="set_resumen_b">No se ha cargado un set de prueba aún.</div>
       </div>
 
-      <!-- Tabs para elegir cuál set generar -->
-      <div class="set-tabs" id="gen_tabs" style="display:none">
-        <div class="set-tab active" id="tab_basico2" onclick="selectGenTab('basico2')">Básico v2</div>
-        <div class="set-tab" id="tab_exentas" onclick="selectGenTab('exentas')">Exentas</div>
-        <div class="set-tab" id="tab_guias" onclick="selectGenTab('guias')">Guías</div>
-        <div class="set-tab" id="tab_compras" onclick="selectGenTab('compras')">L. Compras</div>
-      </div>
+      <!-- Tarjetas de sets detectados — se renderizan dinámicamente en confirmarSet() -->
+      <div id="gen_tabs" style="display:none"></div>
 
-      <p style="font-size:13px;color:#64748b;margin-bottom:16px">Genera el <code style="font-family:'JetBrains Mono',monospace;color:#e2e8f0">EnvioDTE</code> firmado, listo para subir al SII.</p>
-      <div class="brow" style="flex-direction:column;gap:10px">
-        <button class="btn bp bfull" id="btnGenerar" onclick="generarXML()" style="padding:13px">
-          ⚙️ &nbsp;Generar XML
-        </button>
-      </div>
+      <p style="font-size:13px;color:var(--text3);margin-bottom:16px">Cada set genera su propio XML independiente para subir al SII por separado.</p>
       <div class="download-box" id="dlbox5">
         <div class="dl-icon">📥</div>
         <div class="dl-name" id="dl_name5"></div>
@@ -551,8 +549,8 @@ html.light .caso-warn-txt{color:#92400e}
         <div class="sii-steps-title">Cómo subir el XML al SII</div>
         <div class="sii-step"><div class="sii-num">1</div><div class="sii-txt">Descarga el XML con el botón de arriba</div></div>
         <div class="sii-step"><div class="sii-num">2</div><div class="sii-txt">Entra a <a href="https://maullin.sii.cl" target="_blank">maullin.sii.cl</a> con tu RUT y clave tributaria</div></div>
-        <div class="sii-step"><div class="sii-num">3</div><div class="sii-txt">Ve a <strong style="color:#e2e8f0">Factura Electrónica → Envío de DTE → Enviar Archivo</strong></div></div>
-        <div class="sii-step"><div class="sii-num">4</div><div class="sii-txt">Sube el XML — el SII entregará un <strong style="color:#10b981">Track ID</strong> para consultar el resultado</div></div>
+        <div class="sii-step"><div class="sii-num">3</div><div class="sii-txt">Ve a <strong style="color:var(--text)">Factura Electrónica → Envío de DTE → Enviar Archivo</strong></div></div>
+        <div class="sii-step"><div class="sii-num">4</div><div class="sii-txt">Sube el XML — el SII entregará un <strong style="color:var(--accent)">Track ID</strong> para consultar el resultado</div></div>
       </div>
       <div class="result" id="r5"><div class="rlbl" id="r5l"></div><div class="rbody" id="r5c"></div></div>
     </div>
@@ -586,13 +584,12 @@ function setTheme(t){
    ESTADO GLOBAL
 ══════════════════════════════════════════════════════ */
 const S = {
-  id: null, cert: false, tipos: new Set(), cafs: [],
+  id: null, cert: false, cafs: [],
   xmlBlob: null, xmlNombre: null,
-  setData: null,      // datos parseados del .txt SII
-  casoData: [],       // array de casos con items editados
-  casoValidado: [],   // bool por cada caso
-  casoActual: 0,      // índice en wizard
-  genTab: 'basico2',  // qué endpoint generar
+  setData: null,
+  casoData: [], casoValidado: [], casoActual: 0, genTab: 'basico2',
+  setsDetectados: [], setActivo: 0,
+  cafsDisponibles: {},   // {tipo: {disponibles, folio_actual, folio_hasta}}
 };
 
 const TN = {33:'Factura Afecta',34:'Fact. Exenta',39:'Boleta',41:'Boleta Exenta',52:'Guía Despacho',56:'N. Débito',61:'N. Crédito'};
@@ -677,7 +674,7 @@ async function cargarEmisor(e){
   document.getElementById('e_tel').value=e.telefono||'';
   document.getElementById('e_amb').value=e.ambiente||'certificacion';
   if(e.acteco){document.getElementById('ac_cod_0').value=e.acteco;}
-  done(1,'✓ cargado');unlock(2);
+  done(1,'✓ cargado');unlock(2);unlock(3);
   await cargarCert(e.id);
   await cargarCAFs(e.id,e.ambiente);
 }
@@ -688,7 +685,7 @@ async function cargarCert(eid){
       S.cert=true;
       document.getElementById('cert_info_b').textContent='Titular: '+(d.titular||'—')+'\nRUT: '+(d.rut||'—')+'\nVence: '+(d.vence||'—');
       document.getElementById('cert_info').classList.add('show');
-      done(2,'✓ activo');unlock(3);log('Certificado activo — vence '+d.vence,'ok');
+      done(2,'✓ activo');unlock(3);unlock(4);log('Certificado activo — vence '+d.vence,'ok');
     }
   }catch{log('Sin certificado cargado','warn');}
 }
@@ -696,13 +693,15 @@ async function cargarCAFs(eid,amb){
   try{
     const d=await api('/v1/caf/emisor/'+eid);
     const activos=d.cafs.filter(c=>c.activo&&!c.agotado&&c.ambiente===amb);
+    S.cafsDisponibles={};
+    activos.forEach(c=>{S.cafsDisponibles[c.tipo_dte]={disponibles:c.disponibles,folio_actual:c.folio_actual,folio_hasta:c.folio_hasta};});
     if(activos.length>0){
-      activos.forEach(c=>S.tipos.add(c.tipo_dte));
       document.getElementById('cafs_info_b').textContent=activos.map(c=>'T'+c.tipo_dte+' ('+TN[c.tipo_dte]+') — folios '+c.folio_actual+'-'+c.folio_hasta+' ('+c.disponibles+' disp.)').join('\n');
       document.getElementById('cafs_info').classList.add('show');
-      if(S.tipos.size>0){done(3,activos.length+' CAFs');unlock(4);unlock(5);}
-      log(activos.length+' CAFs detectados','ok');
+      log(activos.length+' CAFs en BD detectados','ok');
     }
+    // Si ya hay sets cargados, recalcular análisis
+    if(S.setsDetectados&&S.setsDetectados.length) analizarCAFs();
   }catch{log('No se pudieron cargar CAFs','warn');}
 }
 async function buscarEmisor(){
@@ -716,7 +715,7 @@ async function buscarEmisor(){
   }catch(e){res(1,false,e.data?.detail||JSON.stringify(e.data));}
 }
 function cambiarEmisor(){
-  S.id=null;S.cert=false;S.tipos.clear();S.cafs=[];S.xmlBlob=null;S.setData=null;S.casoData=[];S.casoValidado=[];
+  S.id=null;S.cert=false;S.cafs=[];S.xmlBlob=null;S.setData=null;S.casoData=[];S.casoValidado=[];S.setsDetectados=[];S.setActivo=0;S.cafsDisponibles={};
   document.getElementById('ebanner').classList.remove('show');
   document.getElementById('cert_info').classList.remove('show');
   document.getElementById('cafs_info').classList.remove('show');
@@ -762,7 +761,7 @@ async function crearEmisor(){
     document.getElementById('eb_amb').textContent='Ambiente: '+d.ambiente+' · Activo';
     document.getElementById('ebanner').classList.add('show');
     res(1,true,'Emisor creado\nID: '+d.id+'\nRUT: '+d.rut+'\nActeco: '+(acteco_principal||'—'));
-    done(1,'✓ creado');unlock(2);
+    done(1,'✓ creado');unlock(2);unlock(3);
   }catch(e){res(1,false,e.data?.detail||JSON.stringify(e.data));}
 }
 
@@ -782,7 +781,7 @@ async function subirCert(){
     document.getElementById('cert_info_b').textContent='Titular: '+(d.rut||'')+'\nVence: '+(d.vence||'');
     document.getElementById('cert_info').classList.add('show');
     res(2,true,'Certificado cargado\nVence: '+(d.vence||''));
-    done(2,'✓ activo');unlock(3);
+    done(2,'✓ activo');unlock(3);unlock(4);
   }catch(e){res(2,false,e.data?.detail||JSON.stringify(e.data));}
 }
 
@@ -800,16 +799,99 @@ async function subirCAFs(){
   let ok=0,fail=0,msgs=[];
   for(const c of S.cafs){
     const fd=new FormData();fd.append('emisor_id',S.id);fd.append('ambiente',amb);fd.append('archivo',c.file);
-    try{const d=await api('/v1/caf/cargar-archivo',{method:'POST',body:fd});ok++;S.tipos.add(c.tipo);msgs.push('✓ Tipo '+c.tipo+': '+d.disponibles+' folios');}
+    try{const d=await api('/v1/caf/cargar-archivo',{method:'POST',body:fd});ok++;msgs.push('✓ Tipo '+c.tipo+': '+d.disponibles+' folios');}
     catch(e){fail++;msgs.push('✗ Tipo '+c.tipo+': '+(e.data?.detail||'Error'));}
   }
   res(3,fail===0,ok+' cargados'+(fail?', '+fail+' error':'')+'\n\n'+msgs.join('\n'));
-  if(ok>0){done(3,'✓ '+ok+' CAFs');unlock(4);unlock(5);}
+  if(ok>0){done(4,'✓ '+ok+' CAFs');await cargarCAFs(S.id,document.getElementById('e_amb').value);if(S.setsDetectados.length) analizarCAFs();unlock(5);}
+}
+
+
+/* ══════════════════════════════════════════════════════
+   ANÁLISIS DE CAFs REQUERIDOS vs DISPONIBLES
+══════════════════════════════════════════════════════ */
+
+// Cuántos DTEs de cada tipo necesita cada set key
+function calcularFoliosRequeridos(sets){
+  const req={};  // {tipo: count}
+  sets.forEach(set=>{
+    set.casos.forEach(caso=>{
+      if(!caso.tipo_doc)return;
+      req[caso.tipo_doc]=(req[caso.tipo_doc]||0)+1;
+    });
+  });
+  return req;
+}
+
+function analizarCAFs(){
+  if(!S.setsDetectados||!S.setsDetectados.length)return;
+  const requeridos=calcularFoliosRequeridos(S.setsDetectados);
+  const disponibles=S.cafsDisponibles||{};
+  const tipos=Object.keys(requeridos).map(Number).sort();
+
+  let todoOk=true;
+  let html='<div style="margin-bottom:8px;font-size:12px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">CAFs requeridos según el set</div>';
+  html+='<div class="caf-req-grid">';
+
+  tipos.forEach(tipo=>{
+    const req=requeridos[tipo];
+    const disp=disponibles[tipo];
+    const tiene=disp?disp.disponibles:0;
+    const faltan=Math.max(0,req-tiene);
+    let estado=faltan===0?'ok':tiene>0?'warn':'err';
+    if(estado!=='ok')todoOk=false;
+    const icon=estado==='ok'?'✓':estado==='warn'?'⚠':'✗';
+    html+=`<div class="caf-req-card ${estado}">
+      <div class="caf-status-badge">${icon}</div>
+      <div class="caf-req-tipo ${estado}">T${tipo}</div>
+      <div class="caf-req-nombre">${TN[tipo]||'Tipo '+tipo}</div>
+      <div class="caf-req-row"><span class="caf-req-lbl">Necesarios</span><span class="caf-req-val">${req}</span></div>
+      <div class="caf-req-row"><span class="caf-req-lbl">Disponibles</span><span class="caf-req-val ${estado}">${tiene}</span></div>
+      ${faltan>0?`<div class="caf-req-row"><span class="caf-req-lbl">Faltan</span><span class="caf-req-val err">${faltan}</span></div>`:''}
+      ${disp?`<div style="font-size:10px;color:var(--text4);margin-top:6px">Folios ${disp.folio_actual}–${disp.folio_hasta}</div>`:'<div style="font-size:10px;color:#ef4444;margin-top:6px">No hay CAF de este tipo</div>'}
+    </div>`;
+  });
+
+  html+='</div>';
+
+  if(todoOk){
+    html+='<div style="background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.25);border-radius:8px;padding:9px 13px;font-size:12px;color:#10b981;display:flex;align-items:center;gap:8px">✓ Tienes suficientes folios para generar todos los XMLs</div>';
+    done(4,'✓ CAFs OK');
+    unlock(5);
+  }else{
+    const faltantes=tipos.filter(t=>requeridos[t]>(disponibles[t]?.disponibles||0));
+    html+=`<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:9px 13px;font-size:12px;color:#f59e0b;display:flex;align-items:flex-start;gap:8px"><span>⚠</span><span>Sube los CAFs faltantes: tipos ${faltantes.map(t=>'T'+t).join(', ')}. Solicítalos en el portal del SII (maullin.sii.cl → Facturación → Autorización de Folios).</span></div>`;
+  }
+
+  const el=document.getElementById('cafs_analisis');
+  if(el){el.innerHTML=html;el.style.display='block';}
+  // También actualizar el ibox de resumen
+  const tipos_texto=tipos.map(t=>{const d=disponibles[t];return 'T'+t+': '+(d?d.disponibles+' disp.':'sin CAF');}).join(' · ');
+  document.getElementById('cafs_info_b').textContent=tipos_texto||'Sin CAFs en BD';
+  document.getElementById('cafs_info').classList.add('show');
 }
 
 /* ══════════════════════════════════════════════════════
-   PASO 4: PARSEO SET SII
+   PASO 4: PARSEO SET SII — MULTI-SET
 ══════════════════════════════════════════════════════ */
+
+// Mapa de título SII → clave interna del set
+const SET_TITLE_MAP = [
+  {re:/SET\s+B[AÁ]SICO.*FACTURA/i,        key:'basico2',  label:'Set Básico Facturas'},
+  {re:/SET\s+FACTURA.*EXENTA/i,            key:'exentas',  label:'Set Facturas Exentas'},
+  {re:/SET\s+GU[IÍ]A/i,                   key:'guias',    label:'Set Guías de Despacho'},
+  {re:/LIBRO\s+DE\s+COMPRAS/i,             key:'compras',  label:'Libro de Compras'},
+  {re:/LIBRO\s+DE\s+VENTAS/i,             key:'ventas',   label:'Libro de Ventas'},
+  {re:/SET\s+BOLETA/i,                     key:'boletas',  label:'Set Boletas'},
+];
+
+function detectarTipoSet(bloque){
+  for(const{re,key,label} of SET_TITLE_MAP){
+    if(re.test(bloque)) return {key,label};
+  }
+  return {key:'desconocido', label:'Set desconocido'};
+}
+
 function dpSet(e){e.preventDefault();dLv('z4');const f=e.dataTransfer.files[0];if(f)cargarSet(f);}
 
 function cargarSet(file){
@@ -817,32 +899,63 @@ function cargarSet(file){
   const rd=new FileReader();
   rd.onload=function(e){
     const txt=e.target.result;
-    const parsed=parsearSetSII(txt);
-    if(!parsed){res(4,false,'No se pudo parsear el archivo.\nVerifica que sea el .txt del SII.');return;}
-    S.setData=parsed;
-    // Inicializar casoData desde el parse
-    S.casoData = parsed.casos.map(c=>({
-      ...c,
-      items: c.items.map(it=>({...it})),
-      ind_traslado: c.ind_traslado || null,
-      ind_despacho: c.ind_despacho || null,
-    }));
-    S.casoValidado = new Array(parsed.casos.length).fill(false);
-    renderOverview(parsed);
-    log('Set SII parseado: N° '+parsed.natencion+' — '+parsed.casos.length+' casos','ok');
-    res(4,true,'Set detectado: N° Atención '+parsed.natencion+'\n'+parsed.casos.length+' casos encontrados\n\nHaz clic en "Revisar y ajustar casos" para validar cada caso.');
+    const sets=parsearTxtMultiSet(txt);
+    if(!sets||sets.length===0){
+      res(4,false,'No se pudo parsear el archivo.\nVerifica que sea el .txt del SII con el formato correcto.');
+      return;
+    }
+    S.setsDetectados = sets;   // array de {key, label, natencion, casos}
+    S.setActivo = 0;           // índice del set seleccionado para el wizard
+    // Inicializar casoData y validado para cada set
+    sets.forEach(set=>{
+      set.casoData = set.casos.map(c=>({
+        ...c, items: c.items.map(it=>({...it})),
+        ind_traslado: c.ind_traslado||null,
+        ind_despacho: c.ind_despacho||null,
+      }));
+      set.casoValidado = new Array(set.casos.length).fill(false);
+    });
+    renderMultiSetOverview(sets);
+    const resumen = sets.map(s=>`• ${s.label} — N° ${s.natencion} (${s.casos.length} casos)`).join('\n');
+    log(`${sets.length} set(s) detectado(s) en el archivo`,'ok');
+    res(3,true,`${sets.length} set(s) encontrado(s):\n${resumen}\n\nRevisa cada set y haz clic en "Confirmar" cuando estés listo.`);
     document.getElementById('btnConfSet').style.display='block';
+    // Analizar CAFs necesarios vs disponibles y desbloquear paso 4
+    analizarCAFs();
+    unlock(4);
   };
   rd.readAsText(file,'UTF-8');
 }
 
-function parsearSetSII(txt){
-  const mNat=txt.match(/NUMERO\s+DE\s+ATENCION\s*:\s*(\d+)/i);
-  if(!mNat)return null;
-  const natencion=mNat[1];
+function parsearTxtMultiSet(txt){
+  // Dividir el .txt en bloques por cada sección SET / LIBRO
+  // El SII separa sets con líneas como "========== SET BASICO... =========="
+  // o simplemente con el encabezado "NUMERO DE ATENCION : XXXXXXX"
+  const sets = [];
+
+  // Estrategia: buscar cada ocurrencia de "NUMERO DE ATENCION"
+  const natRegex = /NUMERO\s+DE\s+ATENCION\s*:\s*(\d+)/gi;
+  const natMatches = [...txt.matchAll(natRegex)];
+
+  if(natMatches.length===0) return null;
+
+  natMatches.forEach((match, mi)=>{
+    const start = match.index;
+    const end = mi+1 < natMatches.length ? natMatches[mi+1].index : txt.length;
+    const bloque = txt.slice(start, end);
+    const natencion = match[1];
+    const {key, label} = detectarTipoSet(bloque);
+    const casos = parsearCasos(bloque, natencion);
+    sets.push({key, label, natencion, casos});
+  });
+
+  return sets;
+}
+
+function parsearCasos(bloqueTxt, natencion){
   const casos=[];
-  const casoBlocks=txt.split(/CASO\s+\d+-\d+\s*\n={2,}/);
-  const casoHeaders=txt.match(/CASO\s+(\d+-\d+)/g)||[];
+  const casoBlocks=bloqueTxt.split(/CASO\s+\d+-\d+\s*\n={2,}/);
+  const casoHeaders=bloqueTxt.match(/CASO\s+(\d+-\d+)/g)||[];
   casoBlocks.slice(1).forEach((block,idx)=>{
     const casoN=casoHeaders[idx]?casoHeaders[idx].replace('CASO ','').trim():String(idx+1);
     let tipoDoc=null;
@@ -864,7 +977,6 @@ function parsearSetSII(txt){
         }
       }
     }
-    // Indicadores guía
     const mInd=block.match(/IND(?:ICADOR)?\s+TRASLADO\s*[:=]?\s*(\d+)/i);
     const mDesp=block.match(/(?:IND(?:ICADOR)?\s+)?DESPACHO\s*[:=]?\s*(\d+)/i);
     const mDG=block.match(/DESCUENTO\s+GLOBAL\s+ITEMES\s+AFECTOS\s+([\d.]+)%/i);
@@ -877,283 +989,171 @@ function parsearSetSII(txt){
       ind_despacho:mDesp?parseInt(mDesp[1]):null,
     });
   });
-  return{natencion,casos};
+  return casos;
 }
 
-function renderOverview(parsed){
-  document.getElementById('so_nat').textContent='N° '+parsed.natencion;
-  document.getElementById('so_sub').textContent=parsed.casos.length+' casos · '+document.getElementById('set_tipo').options[document.getElementById('set_tipo').selectedIndex].text;
-  const cont=document.getElementById('so_casos');
-  cont.innerHTML=parsed.casos.map((c,i)=>{
-    const docN=c.tipo_doc?TN[c.tipo_doc]||'T'+c.tipo_doc:'—';
-    const itemsN=c.items.length+' ítem'+(c.items.length!==1?'s':'');
-    const setKey=document.getElementById('set_tipo').value;
-    const warns=WARN[setKey]||{};
-    const hasWarn=warns[i];
-    return `<div class="caso-row" id="caso_row_${i}" onclick="abrirWizardEnCaso(${i})">
-      <div class="caso-row-n">CASO ${c.caso}</div>
-      <div class="caso-row-tipo">T${c.tipo_doc||'?'}</div>
-      <div class="caso-row-desc">${docN}${c.razon?' — '+c.razon:''}${hasWarn?' ⚠️':''}</div>
-      <div class="caso-row-items">${itemsN}</div>
-      <div class="caso-row-status pending" id="caso_status_${i}">○</div>
+const SET_COLORS = {
+  basico2:'#3b82f6', exentas:'#8b5cf6', guias:'#f59e0b',
+  compras:'#10b981', ventas:'#ec4899', boletas:'#06b6d4', desconocido:'#64748b'
+};
+
+function renderMultiSetOverview(sets){
+  const cont = document.getElementById('so_casos');
+  // Cabecera: mostrar cada set como sección colapsable con sus casos
+  let html = '';
+  sets.forEach((set, si)=>{
+    const col = SET_COLORS[set.key]||'#64748b';
+    const validados = set.casoValidado.filter(v=>v).length;
+    html += `
+    <div style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <div style="width:3px;height:28px;background:${col};border-radius:2px;flex-shrink:0"></div>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:500;color:var(--text)">${set.label}</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text3)">N° ${set.natencion} · ${set.casos.length} casos · <span id="val_count_${si}">${validados}/${set.casos.length} validados</span></div>
+        </div>
+        <button class="btn bg" onclick="abrirWizardSet(${si})" style="font-size:12px;padding:6px 12px">✏️ Revisar casos</button>
+      </div>
+      <div style="padding-left:13px;display:flex;flex-direction:column;gap:5px" id="set_casos_${si}">
+        ${set.casos.map((c,ci)=>{
+          const docN=c.tipo_doc?TN[c.tipo_doc]||'T'+c.tipo_doc:'—';
+          return `<div class="caso-row" id="caso_row_${si}_${ci}" onclick="abrirWizardSet(${si},${ci})" style="border-left:2px solid ${col}">
+            <div class="caso-row-n" style="color:${col}">CASO ${c.caso}</div>
+            <div class="caso-row-tipo">T${c.tipo_doc||'?'}</div>
+            <div class="caso-row-desc">${docN}${c.razon?' — '+c.razon:''}</div>
+            <div class="caso-row-items">${c.items.length} ítem${c.items.length!==1?'s':''}</div>
+            <div class="caso-row-status pending" id="caso_status_${si}_${ci}">○</div>
+          </div>`;
+        }).join('')}
+      </div>
     </div>`;
-  }).join('');
+  });
+  document.getElementById('so_nat').textContent=sets.length > 1 ? `${sets.length} sets detectados` : `N° ${sets[0].natencion}`;
+  document.getElementById('so_sub').textContent=`${sets.reduce((a,s)=>a+s.casos.length,0)} casos totales en el archivo`;
+  cont.innerHTML=html;
   document.getElementById('set_overview').style.display='block';
 }
 
-function updateCasoStatus(i){
-  const el=document.getElementById('caso_status_'+i);
+function updateCasoStatus(si,ci){
+  const el=document.getElementById('caso_status_'+si+'_'+ci);
   if(!el)return;
-  if(S.casoValidado[i]){
+  const set=S.setsDetectados[si];
+  if(set.casoValidado[ci]){
     el.className='caso-row-status ok';el.textContent='✓';
-    document.getElementById('caso_row_'+i).classList.add('validated');
+    document.getElementById('caso_row_'+si+'_'+ci)?.classList.add('validated');
   }else{
     el.className='caso-row-status edit';el.textContent='✏';
-    document.getElementById('caso_row_'+i).classList.remove('validated');
+    document.getElementById('caso_row_'+si+'_'+ci)?.classList.remove('validated');
   }
+  const cnt=document.getElementById('val_count_'+si);
+  if(cnt)cnt.textContent=set.casoValidado.filter(v=>v).length+'/'+set.casos.length+' validados';
 }
 
 /* ══════════════════════════════════════════════════════
-   MODAL WIZARD DE CASOS
+   MODAL WIZARD — MULTI-SET
 ══════════════════════════════════════════════════════ */
-function abrirWizard(){if(!S.setData)return;abrirWizardEnCaso(0);}
-function abrirWizardEnCaso(idx){
-  S.casoActual=idx;
-  renderModalCaso(idx);
-  document.getElementById('modalOverlay').classList.add('open');
-  document.body.style.overflow='hidden';
-}
-function closeModal(){
-  document.getElementById('modalOverlay').classList.remove('open');
-  document.body.style.overflow='';
-}
+function abrirWizard(){if(!S.setsDetectados||!S.setsDetectados.length)return;abrirWizardSet(0,0);}
+function abrirWizardSet(si,ci=0){S.setActivo=si;S.casoActual=ci;renderModalCaso(si,ci);document.getElementById('modalOverlay').classList.add('open');document.body.style.overflow='hidden';}
+function closeModal(){document.getElementById('modalOverlay').classList.remove('open');document.body.style.overflow='';}
 function handleOverlayClick(e){if(e.target===document.getElementById('modalOverlay'))closeModal();}
 
-function renderModalCaso(idx){
-  const parsed=S.setData;
-  const casos=parsed.casos;
-  const caso=casos[idx];
-  const cd=S.casoData[idx];
-  const setKey=document.getElementById('set_tipo').value;
-  const warns=WARN[setKey]||{};
-  const fixedItems=FIXED_ITEMS[setKey]||{};
+function renderModalCaso(si,idx){
+  const set=S.setsDetectados[si];
+  const caso=set.casos[idx];
+  const cd=set.casoData[idx];
+  const warns=WARN[set.key]||{};
+  const fixedItems=FIXED_ITEMS[set.key]||{};
   const isFixed=fixedItems[idx];
   const isGuia=caso.tipo_doc===52;
-
-  // Progress pips
-  const pips=casos.map((_,i)=>`<div class="mpip ${i===idx?'active':S.casoValidado[i]?'done':''}"></div>`).join('');
+  const col=SET_COLORS[set.key]||'#64748b';
+  const pips=set.casos.map((_,i)=>`<div class="mpip ${i===idx?'active':set.casoValidado[i]?'done':''}"></div>`).join('');
   document.getElementById('mProgress').innerHTML=pips;
-  document.getElementById('mSetLabel').textContent='N° '+parsed.natencion;
-  document.getElementById('mNatLabel').textContent=document.getElementById('set_tipo').options[document.getElementById('set_tipo').selectedIndex].text.split('(')[0].trim();
-  document.getElementById('mFooterInfo').textContent='Caso '+(idx+1)+' de '+casos.length+(S.casoValidado[idx]?' · ✓ Validado':'');
+  document.getElementById('mSetLabel').innerHTML=`<span style="color:${col}">${set.label}</span>`;
+  document.getElementById('mNatLabel').textContent='N° '+set.natencion;
+  document.getElementById('mFooterInfo').textContent='Caso '+(idx+1)+' de '+set.casos.length+(set.casoValidado[idx]?' · ✓ Validado':'');
   document.getElementById('mBtnPrev').disabled=idx===0;
-  const esUltimo=idx===casos.length-1;
-  document.getElementById('mBtnNext').textContent=esUltimo?'Finalizar ✓':'Validar y continuar →';
-
-  // Calcular totales
-  function calcTots(items,tipo){
-    let neto=0,exento=0,desc=0;
-    items.forEach(it=>{
-      const base=(it.cantidad||0)*(it.precio_unitario||0);
-      const d=base*(it.descuento_pct||0)/100;
-      desc+=d;
-      if(it.exento||tipo===34)exento+=base-d;
-      else neto+=base-d;
-    });
-    const iva=tipo!==34?Math.round(neto*0.19):0;
-    return{neto:Math.round(neto),exento:Math.round(exento),iva,total:Math.round(neto+iva+exento),desc:Math.round(desc)};
-  }
-
-  // Construir HTML del modal
-  let warnHtml='';
-  if(warns[idx]){
-    warnHtml=`<div class="caso-warn"><div class="caso-warn-icon">⚠️</div><div class="caso-warn-txt">${warns[idx]}</div></div>`;
-  }
-
-  // Indicadores guía
-  let indHtml='';
-  if(isGuia){
-    indHtml=`<div class="indicadores-box">
-      <div class="ind-field">
-        <div class="ind-label">IndTraslado</div>
-        <input class="ind-input" type="number" id="ind_traslado_${idx}" value="${cd.ind_traslado??''}" min="1" max="9" placeholder="1-9">
-        <div class="ind-desc">1=Venta despacha, 2=Retira cliente, 5=Traslado interno, …</div>
-      </div>
-      <div class="ind-field">
-        <div class="ind-label">IndDespacho / TipoDespacho</div>
-        <input class="ind-input" type="number" id="ind_despacho_${idx}" value="${cd.ind_despacho??''}" min="1" max="3" placeholder="1-3 (vacío=sin despacho)">
-        <div class="ind-desc">Dejar vacío para traslado interno (IndTraslado=5)</div>
-      </div>
-    </div>`;
-  }
-
-  // Tabla de ítems
+  document.getElementById('mBtnNext').textContent=idx===set.casos.length-1?'Finalizar set ✓':'Validar y continuar →';
+  function calcTots(items,tipo){let neto=0,exento=0;items.forEach(it=>{const base=(it.cantidad||0)*(it.precio_unitario||0);const d=base*(it.descuento_pct||0)/100;if(it.exento||tipo===34)exento+=base-d;else neto+=base-d;});const iva=tipo!==34?Math.round(neto*0.19):0;return{neto:Math.round(neto),exento:Math.round(exento),iva,total:Math.round(neto+iva+exento)};}
+  const warnHtml=warns[idx]?`<div class="caso-warn"><div class="caso-warn-icon">⚠️</div><div class="caso-warn-txt">${warns[idx]}</div></div>`:'';
+  const indHtml=isGuia?`<div class="indicadores-box"><div class="ind-field"><div class="ind-label">IndTraslado</div><input class="ind-input" type="number" id="ind_traslado_${si}_${idx}" value="${cd.ind_traslado??''}" min="1" max="9" placeholder="1-9"><div class="ind-desc">1=Venta despacha, 2=Retira cliente, 5=Traslado interno</div></div><div class="ind-field"><div class="ind-label">IndDespacho</div><input class="ind-input" type="number" id="ind_despacho_${si}_${idx}" value="${cd.ind_despacho??''}" min="1" max="3" placeholder="vacío=sin despacho"><div class="ind-desc">Dejar vacío para traslado interno</div></div></div>`:'';
   const tots=calcTots(cd.items,caso.tipo_doc);
-  let itemsHtml=`
-    <table class="items-table">
-      <thead><tr>
-        <th style="width:40%">Nombre ítem</th>
-        <th style="width:13%;text-align:right">Cant.</th>
-        <th style="width:16%;text-align:right">Precio unit.</th>
-        <th style="width:12%;text-align:right">Desc %</th>
-        <th style="width:15%;text-align:right">Total línea</th>
-        <th style="width:4%"></th>
-      </tr></thead>
-      <tbody id="items_tbody_${idx}">
-      ${cd.items.map((it,ii)=>{
-        const linea=Math.round((it.cantidad||0)*(it.precio_unitario||0)*(1-(it.descuento_pct||0)/100));
-        const dis=isFixed?'disabled':'';
-        return `<tr id="item_row_${idx}_${ii}">
-          <td><input class="item-nombre-input" value="${it.nombre}" ${dis} onchange="updateItemNombre(${idx},${ii},this.value)"></td>
-          <td><input class="item-input" type="number" value="${it.cantidad}" ${dis} min="0" onchange="updateItem(${idx},${ii},'cantidad',this.value)"></td>
-          <td><input class="item-input" type="number" value="${it.precio_unitario}" ${dis} min="0" onchange="updateItem(${idx},${ii},'precio_unitario',this.value)"></td>
-          <td><input class="item-input" type="number" value="${it.descuento_pct||''}" ${dis} min="0" max="100" placeholder="0" onchange="updateItem(${idx},${ii},'descuento_pct',this.value)"></td>
-          <td class="item-linea" id="linea_${idx}_${ii}">${clp(linea)}</td>
-          <td>${isFixed?'':'<button class="del-item-btn" onclick="delItem('+idx+','+ii+')">×</button>'}</td>
-        </tr>`;
-      }).join('')}
-      </tbody>
-    </table>
-    ${isFixed?'':`<button class="add-item-btn" onclick="addItem(${idx})">+ Agregar ítem</button>`}`;
-
-  // Totales
-  const totHtml=`<div class="totales-row">
-    <div class="tot"><div class="tot-l">Neto</div><div class="tot-v" id="tot_neto_${idx}">$${clp(tots.neto)}</div></div>
-    <div class="tot"><div class="tot-l">Exento</div><div class="tot-v" id="tot_exento_${idx}">$${clp(tots.exento)}</div></div>
-    <div class="tot"><div class="tot-l">IVA 19%</div><div class="tot-v" id="tot_iva_${idx}">$${clp(tots.iva)}</div></div>
-    <div class="tot"><div class="tot-l">Total</div><div class="tot-v highlight" id="tot_total_${idx}">$${clp(tots.total)}</div></div>
-  </div>`;
-
-  document.getElementById('modalBody').innerHTML=`
-    <div class="caso-header">
-      <div class="caso-num">CASO ${caso.caso}</div>
-      <div class="caso-info">
-        <div class="caso-title">${caso.tipo_doc?TN[caso.tipo_doc]||'Tipo '+caso.tipo_doc:'Tipo desconocido'}</div>
-        <div class="caso-sub">${caso.razon||'Sin referencia adicional'}</div>
-      </div>
-      ${caso.tipo_doc?`<div class="caso-tipo">T${caso.tipo_doc}</div>`:''}
-    </div>
-    ${warnHtml}
-    ${indHtml}
-    <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;font-weight:500">Ítems del caso</div>
-    ${itemsHtml}
-    ${totHtml}
-    <div style="font-size:11px;color:#475569;margin-top:4px">
-      ${isFixed?'⚠ Ítems fijos — no se modifican (NC/ND con monto cero).':'Modifica cantidades, precios y descuentos según el set del SII.'}
-    </div>`;
+  const itemsHtml=`<table class="items-table"><thead><tr><th style="width:38%">Nombre ítem</th><th style="width:13%;text-align:right">Cant.</th><th style="width:16%;text-align:right">Precio</th><th style="width:11%;text-align:right">Desc%</th><th style="width:14%;text-align:right">Línea</th><th style="width:4%"></th></tr></thead><tbody>${cd.items.map((it,ii)=>{const linea=Math.round((it.cantidad||0)*(it.precio_unitario||0)*(1-(it.descuento_pct||0)/100));const dis=isFixed?'disabled':'';return `<tr><td><input class="item-nombre-input" value="${it.nombre}" ${dis} onchange="updateItemNombre(${si},${idx},${ii},this.value)"></td><td><input class="item-input" type="number" value="${it.cantidad}" ${dis} min="0" onchange="updateItem(${si},${idx},${ii},'cantidad',this.value)"></td><td><input class="item-input" type="number" value="${it.precio_unitario}" ${dis} min="0" onchange="updateItem(${si},${idx},${ii},'precio_unitario',this.value)"></td><td><input class="item-input" type="number" value="${it.descuento_pct||''}" ${dis} min="0" max="100" placeholder="0" onchange="updateItem(${si},${idx},${ii},'descuento_pct',this.value)"></td><td class="item-linea" id="linea_${si}_${idx}_${ii}">${Math.round(linea).toLocaleString('es-CL')}</td><td>${isFixed?'':'<button class="del-item-btn" onclick="delItem('+si+','+idx+','+ii+')">×</button>'}</td></tr>`;}).join('')}</tbody></table>${isFixed?'':`<button class="add-item-btn" onclick="addItem(${si},${idx})">+ Agregar ítem</button>`}`;
+  const totHtml=`<div class="totales-row"><div class="tot"><div class="tot-l">Neto</div><div class="tot-v" id="tot_neto_${si}_${idx}">$${tots.neto.toLocaleString('es-CL')}</div></div><div class="tot"><div class="tot-l">Exento</div><div class="tot-v" id="tot_exento_${si}_${idx}">$${tots.exento.toLocaleString('es-CL')}</div></div><div class="tot"><div class="tot-l">IVA 19%</div><div class="tot-v" id="tot_iva_${si}_${idx}">$${tots.iva.toLocaleString('es-CL')}</div></div><div class="tot"><div class="tot-l">Total</div><div class="tot-v highlight" id="tot_total_${si}_${idx}">$${tots.total.toLocaleString('es-CL')}</div></div></div>`;
+  document.getElementById('modalBody').innerHTML=`<div class="caso-header"><div class="caso-num" style="color:${col}">CASO ${caso.caso}</div><div class="caso-info"><div class="caso-title">${caso.tipo_doc?TN[caso.tipo_doc]||'Tipo '+caso.tipo_doc:'Tipo desconocido'}</div><div class="caso-sub">${caso.razon||'Sin referencia adicional'}</div></div>${caso.tipo_doc?`<div class="caso-tipo">T${caso.tipo_doc}</div>`:''}</div>${warnHtml}${indHtml}<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;font-weight:500">Ítems del caso</div>${itemsHtml}${totHtml}<div style="font-size:11px;color:var(--text4);margin-top:4px">${isFixed?'⚠ Ítems fijos — no modificar.':'Modifica según el set del SII.'}</div>`;
 }
 
-/* Item helpers en modal */
-function updateItem(casoIdx,itemIdx,field,val){
-  const it=S.casoData[casoIdx].items[itemIdx];
-  it[field]=parseFloat(val)||0;
-  refreshLinea(casoIdx,itemIdx,it);
-  refreshTotales(casoIdx);
-}
-function updateItemNombre(casoIdx,itemIdx,val){
-  S.casoData[casoIdx].items[itemIdx].nombre=val;
-}
-function refreshLinea(ci,ii,it){
-  const el=document.getElementById('linea_'+ci+'_'+ii);
-  if(el)el.textContent=clp(Math.round((it.cantidad||0)*(it.precio_unitario||0)*(1-(it.descuento_pct||0)/100)));
-}
-function refreshTotales(ci){
-  const cd=S.casoData[ci];
-  const caso=S.setData.casos[ci];
-  let neto=0,exento=0,desc=0;
-  cd.items.forEach(it=>{
-    const base=(it.cantidad||0)*(it.precio_unitario||0);
-    const d=base*(it.descuento_pct||0)/100;
-    desc+=d;
-    if(it.exento||caso.tipo_doc===34)exento+=base-d;
-    else neto+=base-d;
-  });
-  const iva=caso.tipo_doc!==34?Math.round(neto*0.19):0;
-  const q=id=>document.getElementById(id);
-  if(q('tot_neto_'+ci))q('tot_neto_'+ci).textContent='$'+clp(Math.round(neto));
-  if(q('tot_exento_'+ci))q('tot_exento_'+ci).textContent='$'+clp(Math.round(exento));
-  if(q('tot_iva_'+ci))q('tot_iva_'+ci).textContent='$'+clp(iva);
-  if(q('tot_total_'+ci))q('tot_total_'+ci).textContent='$'+clp(Math.round(neto+iva+exento));
-}
-function addItem(ci){
-  S.casoData[ci].items.push({nombre:'NUEVO ÍTEM',cantidad:1,precio_unitario:1000,exento:false,descuento_pct:null});
-  renderModalCaso(ci);
-}
-function delItem(ci,ii){
-  if(S.casoData[ci].items.length<=1){log('El caso debe tener al menos 1 ítem','warn');return;}
-  S.casoData[ci].items.splice(ii,1);
-  renderModalCaso(ci);
-}
-
-/* Guardar indicadores guía antes de avanzar */
-function guardarIndicadores(idx){
-  const it=document.getElementById('ind_traslado_'+idx);
-  const id=document.getElementById('ind_despacho_'+idx);
-  if(it)S.casoData[idx].ind_traslado=it.value?parseInt(it.value):null;
-  if(id)S.casoData[idx].ind_despacho=id.value?parseInt(id.value):null;
-}
+function updateItem(si,ci,ii,field,val){const it=S.setsDetectados[si].casoData[ci].items[ii];it[field]=parseFloat(val)||0;const linea=Math.round((it.cantidad||0)*(it.precio_unitario||0)*(1-(it.descuento_pct||0)/100));const el=document.getElementById(`linea_${si}_${ci}_${ii}`);if(el)el.textContent=linea.toLocaleString('es-CL');refreshTotales(si,ci);}
+function updateItemNombre(si,ci,ii,val){S.setsDetectados[si].casoData[ci].items[ii].nombre=val;}
+function refreshTotales(si,ci){const cd=S.setsDetectados[si].casoData[ci];const caso=S.setsDetectados[si].casos[ci];let neto=0,exento=0;cd.items.forEach(it=>{const base=(it.cantidad||0)*(it.precio_unitario||0);const d=base*(it.descuento_pct||0)/100;if(it.exento||caso.tipo_doc===34)exento+=base-d;else neto+=base-d;});const iva=caso.tipo_doc!==34?Math.round(neto*0.19):0;const q=id=>document.getElementById(id);const fmt=v=>'$'+Math.round(v).toLocaleString('es-CL');if(q(`tot_neto_${si}_${ci}`))q(`tot_neto_${si}_${ci}`).textContent=fmt(neto);if(q(`tot_exento_${si}_${ci}`))q(`tot_exento_${si}_${ci}`).textContent=fmt(exento);if(q(`tot_iva_${si}_${ci}`))q(`tot_iva_${si}_${ci}`).textContent=fmt(iva);if(q(`tot_total_${si}_${ci}`))q(`tot_total_${si}_${ci}`).textContent=fmt(neto+iva+exento);}
+function addItem(si,ci){S.setsDetectados[si].casoData[ci].items.push({nombre:'NUEVO ÍTEM',cantidad:1,precio_unitario:1000,exento:false,descuento_pct:null});renderModalCaso(si,ci);}
+function delItem(si,ci,ii){if(S.setsDetectados[si].casoData[ci].items.length<=1){log('Mínimo 1 ítem','warn');return;}S.setsDetectados[si].casoData[ci].items.splice(ii,1);renderModalCaso(si,ci);}
+function guardarIndicadores(si,idx){const it=document.getElementById(`ind_traslado_${si}_${idx}`);const id=document.getElementById(`ind_despacho_${si}_${idx}`);if(it)S.setsDetectados[si].casoData[idx].ind_traslado=it.value?parseInt(it.value):null;if(id)S.setsDetectados[si].casoData[idx].ind_despacho=id.value?parseInt(id.value):null;}
 
 function nextCaso(){
-  const idx=S.casoActual;
-  guardarIndicadores(idx);
-  S.casoValidado[idx]=true;
-  updateCasoStatus(idx);
-  log('Caso '+(idx+1)+' validado ✓','ok');
-  if(idx===S.setData.casos.length-1){
+  const si=S.setActivo,idx=S.casoActual;
+  const set=S.setsDetectados[si];
+  guardarIndicadores(si,idx);
+  set.casoValidado[idx]=true;
+  updateCasoStatus(si,idx);
+  log(`[${set.label}] Caso ${idx+1} validado ✓`,'ok');
+  if(idx===set.casos.length-1){
     closeModal();
-    // Verificar si todos validados
-    const todos=S.casoValidado.every(v=>v);
-    if(todos){
-      log('Todos los casos validados — listo para generar','ok');
-      res(4,true,'Todos los casos revisados ✓\nHaz clic en "Confirmar" para continuar al paso 5.');
-    }
-  }else{
-    S.casoActual=idx+1;
-    renderModalCaso(S.casoActual);
-  }
+    if(set.casoValidado.every(v=>v))log(`✓ Set "${set.label}" completo`,'ok');
+  }else{S.casoActual=idx+1;renderModalCaso(si,S.casoActual);}
 }
-function prevCaso(){
-  if(S.casoActual===0)return;
-  guardarIndicadores(S.casoActual);
-  S.casoActual--;
-  renderModalCaso(S.casoActual);
-}
-function skipCaso(){
-  const idx=S.casoActual;
-  if(idx===S.setData.casos.length-1){closeModal();return;}
-  S.casoActual=idx+1;
-  renderModalCaso(S.casoActual);
-}
+function prevCaso(){if(S.casoActual===0)return;guardarIndicadores(S.setActivo,S.casoActual);S.casoActual--;renderModalCaso(S.setActivo,S.casoActual);}
+function skipCaso(){const set=S.setsDetectados[S.setActivo];if(S.casoActual===set.casos.length-1){closeModal();return;}S.casoActual++;renderModalCaso(S.setActivo,S.casoActual);}
 
 function confirmarSet(){
-  if(!S.setData)return;
-  const nat=S.setData.natencion;
-  document.getElementById('c5_titulo').textContent='Generar XML — N° '+nat;
-  document.getElementById('set_resumen_b').textContent='N° Atención: '+nat+'\n'+S.setData.casos.length+' casos configurados\nValidados: '+S.casoValidado.filter(v=>v).length+'/'+S.setData.casos.length;
-  document.getElementById('gen_tabs').style.display='flex';
-  done(4,'✓ '+nat);
-  log('Set '+nat+' confirmado','ok');
+  if(!S.setsDetectados||!S.setsDetectados.length)return;
+  const sets=S.setsDetectados;
+  document.getElementById('c5_titulo').textContent='Generar XML — '+sets.length+' set(s)';
+  document.getElementById('set_resumen_b').textContent=sets.map(s=>s.label+' N° '+s.natencion+': '+s.casoValidado.filter(v=>v).length+'/'+s.casos.length+' validados').join('\n');
+  renderGenSelector(sets);
+  done(3,'✓ '+sets.length+' set(s)');
+  log('Sets confirmados','ok');
   const c5=document.getElementById('c5');
   if(c5.classList.contains('locked'))unlock(5);
   else c5.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
+
 /* ══════════════════════════════════════════════════════
-   PASO 5: GENERAR XML
+   PASO 5: GENERAR XML — SELECTOR DINÁMICO MULTI-SET
 ══════════════════════════════════════════════════════ */
-function selectGenTab(key){
-  S.genTab=key;
-  document.querySelectorAll('.set-tab').forEach(t=>t.classList.remove('active'));
-  document.getElementById('tab_'+key)?.classList.add('active');
+
+// Renderiza las tarjetas de set detectados para elegir cuál generar
+function renderGenSelector(sets){
+  const container=document.getElementById('gen_tabs');
+  container.style.display='block';
+  container.innerHTML=sets.map((set,si)=>{
+    const col=SET_COLORS[set.key]||'#64748b';
+    const v=set.casoValidado.filter(v=>v).length;
+    const endpoint=ENDPOINT_MAP[set.key];
+    const tieneEndpoint=!!endpoint;
+    return `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:8px;display:flex;align-items:center;gap:14px">
+      <div style="width:4px;height:44px;background:${col};border-radius:2px;flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:500;color:var(--text)">${set.label}</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text3);margin-top:2px">N° ${set.natencion} · ${set.casos.length} casos · ${v}/${set.casos.length} validados</div>
+        ${!tieneEndpoint?`<div style="font-size:11px;color:#f59e0b;margin-top:3px">⚠ Endpoint no configurado para "${set.key}"</div>`:''}
+      </div>
+      <div style="display:flex;gap:8px;flex-shrink:0">
+        <button class="btn bg" onclick="abrirWizardSet(${si},0)" style="font-size:12px;padding:6px 12px">✏️ Revisar</button>
+        <button class="btn bp" onclick="generarXML('${set.key}','${set.natencion}')" ${!tieneEndpoint?'disabled':''} style="font-size:12px;padding:6px 14px;white-space:nowrap">⚙️ Generar XML</button>
+      </div>
+    </div>`;
+  }).join('');
 }
 
-async function generarXML(){
+async function generarXML(setKey, natencion){
   if(!S.id){log('Carga el emisor primero','warn');return;}
-  const btn=document.getElementById('btnGenerar');
-  btn.disabled=true;btn.textContent='Generando...';
-  const endpoint=ENDPOINT_MAP[S.genTab];
-  const nat=S.setData?S.setData.natencion:'';
-  log('Generando '+S.genTab+(nat?' N° '+nat:'')+'...','info');
+  const endpoint=ENDPOINT_MAP[setKey];
+  if(!endpoint){res(5,false,'No hay endpoint configurado para el set: '+setKey);return;}
+  // Deshabilitar el botón correcto
+  const btns=document.querySelectorAll('#gen_tabs .bp');
+  btns.forEach(b=>{if(b.textContent.includes('Generar')){b.disabled=true;b.textContent='Generando...';}});
+  log(`Generando ${setKey} N° ${natencion}...`,'info');
   try{
     const url=base()+endpoint+'?emisor_id='+S.id;
     const r=await fetch(url,{method:'POST'});
@@ -1165,23 +1165,24 @@ async function generarXML(){
     }
     const cd=r.headers.get('Content-Disposition')||'';
     const match=cd.match(/filename="([^"]+)"/);
-    S.xmlNombre=match?match[1]:'EnvioDTE.xml';
+    S.xmlNombre=match?match[1]:`EnvioDTE_${setKey}_${natencion}.xml`;
     S.xmlBlob=await r.blob();
     const casos=r.headers.get('X-Casos-Generados')||'?';
     const errores=r.headers.get('X-Casos-Error')||'0';
-    log('XML generado — '+casos+' documentos firmados'+(errores!=='0'?' ('+errores+' con error)':''),'ok');
+    log(`✓ XML ${setKey} — ${casos} docs firmados`+(errores!=='0'?` (${errores} error)`:''),'ok');
     document.getElementById('dl_name5').textContent=S.xmlNombre;
     document.getElementById('dlbox5').classList.add('show');
     document.getElementById('sii_steps5').classList.add('show');
     done(5,'✓ XML listo');
-    res(5,true,'EnvioDTE generado con '+casos+' documentos.\nArchivo: '+S.xmlNombre+'\nDescárgalo y súbelo en maullin.sii.cl');
+    res(5,true,`EnvioDTE generado: ${S.xmlNombre}\n${casos} documentos firmados.\nDescárgalo y súbelo en maullin.sii.cl`);
   }catch(e){
     log('Error: '+e,'err');
     res(5,false,'Error: '+String(e));
   }finally{
-    btn.disabled=false;btn.textContent='⚙️  Generar XML';
+    btns.forEach(b=>{b.disabled=false;b.textContent='⚙️ Generar XML';});
   }
 }
+
 function descargarXML(){
   if(!S.xmlBlob){log('Primero genera el XML','warn');return;}
   const url=URL.createObjectURL(S.xmlBlob);
@@ -1199,7 +1200,7 @@ function done(n,txt){document.getElementById('c'+n).classList.replace('active','
 function dOv(e,id){e.preventDefault();document.getElementById(id).classList.add('over');}
 function dLv(id){document.getElementById(id).classList.remove('over');}
 function dDp(e,fid,zid,cb){e.preventDefault();dLv(zid);const f=e.dataTransfer.files[0];if(!f)return;const dt=new DataTransfer();dt.items.add(f);document.getElementById(fid).files=dt.files;cb(document.getElementById(fid));}
-function dpCAFs(e){e.preventDefault();dLv('z3');addCAFs(e.dataTransfer.files);}
+function dpCAFs(e){e.preventDefault();dLv('z4caf');addCAFs(e.dataTransfer.files);}
 
 window.onload=function(){
   document.getElementById('apiUrl').value=window.location.origin;
