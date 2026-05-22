@@ -928,34 +928,29 @@ function analizarCAFs(){
     const pct = Math.min(100, Math.round((tiene / (req * 3)) * 100));
     const barColor = estado==='ok'?'#10b981':estado==='warn'?'#f59e0b':'#ef4444';
 
-    html += `<div style="border-radius:10px;padding:13px 14px;border:1px solid ${colorBorder};background:${colorBg};position:relative">
-      <div style="position:absolute;top:10px;right:12px;font-size:18px;font-weight:700;color:${colorText}">${icon}</div>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:${colorText};margin-bottom:1px">T${tipo}</div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:10px">${TN[tipo]||'Tipo '+tipo}</div>
+    // Tarjeta estilo semáforo: fondo sólido verde/amarillo/rojo
+    const cardBg    = estado==='ok'  ? 'rgba(134,239,172,.25)'  // verde suave
+                    : estado==='warn'? 'rgba(253,224,71,.25)'   // amarillo suave
+                    :                  'rgba(252,165,165,.25)';  // rojo suave
+    const cardBorder= estado==='ok'  ? 'rgba(22,163,74,.4)'
+                    : estado==='warn'? 'rgba(202,138,4,.4)'
+                    :                  'rgba(220,38,38,.4)';
+    const textMain  = estado==='ok'  ? '#15803d'
+                    : estado==='warn'? '#92400e'
+                    :                  '#991b1b';
 
-      <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
-        <span style="color:var(--text3)">Por set</span>
-        <span style="font-family:'JetBrains Mono',monospace;font-weight:500;color:var(--text2)">${req} folios</span>
+    html += `<div style="border-radius:14px;padding:16px;background:${cardBg};border:1.5px solid ${cardBorder};text-align:center;min-width:120px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:800;color:${textMain};line-height:1">T${tipo}</div>
+      <div style="font-size:11px;color:${textMain};opacity:.75;margin-bottom:10px;font-weight:500">${(TN[tipo]||'Tipo '+tipo).replace('Fact. ','Fact. ')}</div>
+      <div style="font-size:12px;color:${textMain};margin-bottom:3px">Requeridos: <strong>${req}</strong></div>
+      <div style="font-size:12px;color:${textMain};margin-bottom:8px">Disponibles: <strong>${tiene}</strong></div>
+      <div style="display:flex;gap:3px;justify-content:center;margin-bottom:6px">
+        ${[1,2,3].map(n=>`<div title="${n} set" style="width:22px;height:5px;border-radius:3px;background:${setsConTiene>=n?textMain:'rgba(0,0,0,.15)'}"></div>`).join('')}
       </div>
-      <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:6px">
-        <span style="color:var(--text3)">Disponibles</span>
-        <span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:${colorText}">${tiene}</span>
+      <div style="font-size:10px;color:${textMain};opacity:.8;font-weight:600">
+        ${setsConTiene>=3?'✓ 3+ sets':setsConTiene>0?setsConTiene+' set posible':'✗ sin folios'}
       </div>
-
-      <!-- Barra de capacidad -->
-      <div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:6px">
-        <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px;transition:width .4s"></div>
-      </div>
-
-      <!-- Indicador de sets posibles -->
-      <div style="display:flex;gap:4px;align-items:center">
-        ${[1,2,3].map(n=>`<div title="${n} set${n>1?'s':''}" style="flex:1;height:6px;border-radius:3px;background:${setsConTiene>=n?barColor:'var(--border)'}"></div>`).join('')}
-        <span style="font-size:10px;color:var(--text3);margin-left:4px;white-space:nowrap">
-          ${setsConTiene >= 3 ? '3+ sets ✓' : setsConTiene > 0 ? setsConTiene+' set'+( setsConTiene>1?'s':'')+' posible'+(setsConTiene>1?'s':'') : 'Sin folios'}
-        </span>
-      </div>
-
-      ${disp_obj?`<div style="font-size:10px;color:var(--text4);margin-top:6px">Folios ${disp_obj.folio_actual}–${disp_obj.folio_hasta}</div>`:'<div style="font-size:10px;color:#ef4444;margin-top:6px">Sin CAF — solicitar en SII</div>'}
+      ${disp_obj?`<div style="font-size:9px;color:${textMain};opacity:.6;margin-top:4px">${disp_obj.folio_actual}–${disp_obj.folio_hasta}</div>`:''}
     </div>`;
   });
 
@@ -1017,6 +1012,197 @@ const SET_TITLE_MAP = [
   {re:/SET\s+GU.A\s+DE\s+DESPACHO/i,        key:'guias',       label:'Set Guías de Despacho'},
   {re:/SET\s+BOLETA/i,                      key:'boletas',     label:'Set Boletas'},
 ];
+
+function detectarTipoSet(bloque){
+  for(const{re,key,label} of SET_TITLE_MAP){
+    if(re.test(bloque)) return {key,label};
+  }
+  return {key:'desconocido', label:'Set desconocido'};
+}
+
+function dpSet(e){e.preventDefault();dLv('z4');const f=e.dataTransfer.files[0];if(f)cargarSet(f);}
+
+function cargarSet(file){
+  if(!file)return;
+  const rd=new FileReader();
+  rd.onload=function(e){
+    const txt=e.target.result;
+    const sets=parsearTxtMultiSet(txt);
+    if(!sets||sets.length===0){
+      res(4,false,'No se pudo parsear el archivo.\nVerifica que sea el .txt del SII con el formato correcto.');
+      return;
+    }
+    S.setsDetectados = sets;   // array de {key, label, natencion, casos}
+    S.setActivo = 0;           // índice del set seleccionado para el wizard
+    // Inicializar casoData y validado para cada set
+    sets.forEach(set=>{
+      set.casoData = set.casos.map(c=>({
+        ...c,
+        items: c.items.map(it=>({...it})),
+        referencias: (c.referencias||[]).map(r=>({...r})),
+        ind_traslado: c.ind_traslado||null,
+        ind_despacho: c.ind_despacho||null,
+      }));
+      set.casoValidado = new Array(set.casos.length).fill(false);
+    });
+    renderMultiSetOverview(sets);
+    const resumen = sets.map(s=>`• ${s.label} — N° ${s.natencion} (${s.casos.length} casos)`).join('\n');
+    log(`${sets.length} set(s) detectado(s) en el archivo`,'ok');
+    res(3,true,`${sets.length} set(s) encontrado(s):\n${resumen}\n\nRevisa cada set y haz clic en "Confirmar" cuando estés listo.`);
+    document.getElementById('btnConfSet').style.display='block';
+    // Analizar CAFs necesarios vs disponibles y desbloquear paso 4
+    analizarCAFs();
+    unlock(4);
+  };
+  rd.readAsText(file,'ISO-8859-1');
+}
+
+function parsearTxtMultiSet(txt){
+  const sets = [];
+  // Buscar cada header de set: "SET XXXX - NUMERO DE ATENCIÓN: NNNNN"
+  // El .txt real usa tanto ATENCION como ATENCIÓN (con tilde)
+  const headerRe = /(SET\s+[^\n\r]+?NUMERO\s+DE\s+ATENCI[OÓ]N\s*:\s*(\d+))/gi;
+  const headerMatches = [...txt.matchAll(headerRe)];
+  if(!headerMatches.length) return null;
+
+  headerMatches.forEach((match, mi) => {
+    const headerLine = match[1].trim();
+    const natencion  = match[2];
+    const start      = match.index;
+    const end        = mi + 1 < headerMatches.length
+                       ? headerMatches[mi+1].index
+                       : txt.length;
+    const bloque     = txt.slice(start, end);
+
+    // detectarTipoSet lee el propio headerLine — garantiza match correcto
+    const {key, label} = detectarTipoSet(headerLine);
+    const esLibro = ['ventas','compras','libro_guias'].includes(key);
+    const casos   = esLibro ? [] : parsearCasos(bloque, natencion);
+    sets.push({key, label, natencion, casos, esLibro});
+  });
+
+  return sets.length ? sets : null;
+}
+
+
+function parsearCasos(bloqueTxt, natencion){
+  const casos=[];
+  // Split por "CASO NNAT-N\r\n====" — manejar \r\n del archivo SII
+  const casoBlocks = bloqueTxt.split(/CASO\s+\d+-\d+\s*\r?\n=+[=\r\n]+/);
+  const casoHeaders = [...bloqueTxt.matchAll(/CASO\s+(\d+-\d+)\s*\r?\n=+/g)].map(m=>m[1]);
+
+  casoBlocks.slice(1).forEach((block, idx)=>{
+    const casoN = casoHeaders[idx] || String(idx+1);
+    const numCaso = parseInt(casoN.split('-').pop()) || idx+1;
+
+    // Limpiar \r del bloque
+    const blockClean = block.replace(/\r/g,'');
+    const lines = blockClean.split('\n');
+
+    // Tipo documento — buscar línea DOCUMENTO
+    let tipoDoc = null;
+    const docLine = lines.find(l => /^DOCUMENTO\b/i.test(l.trim()));
+    if(docLine){
+      const docText = docLine.split('\t').slice(1).join(' ').trim().toUpperCase();
+      for(const[nombre,cod] of Object.entries(DOC_MAP)){
+        if(docText.includes(nombre.toUpperCase())){tipoDoc=cod;break;}
+      }
+    }
+
+    // Referencia — línea REFERENCIA (no confundir con CASO dentro de ella)
+    const refLine   = lines.find(l=>/^REFERENCIA\b/i.test(l.trim()));
+    const razonLine = lines.find(l=>/^RAZON\s+REFERENCIA\b/i.test(l.trim()));
+    const razonTexto = razonLine ? razonLine.split('\t').pop().trim() : '';
+
+    // Items — después de la línea "ITEM ... CANTIDAD ..."
+    const items=[];
+    let enItems=false;
+    let hasPrice=false; // ¿la cabecera tiene PRECIO UNITARIO?
+    for(const linea of lines){
+      const l=linea.trim();
+      if(!l) continue;
+      // Detectar cabecera de items
+      if(/^ITEM\b/i.test(l) && /CANTIDAD/i.test(l)){
+        enItems=true;
+        hasPrice=/PRECIO|VALOR/i.test(l);
+        continue;
+      }
+      // Parar en líneas de control
+      if(/^(DESCUENTO|REFERENCIA|RAZON|INDICADOR|MOTIVO|TRASLADO|DOCUMENTO|OBSERVAC|MONTO)/i.test(l)){
+        if(!/^ITEM\b/i.test(l)) enItems=false;
+        continue;
+      }
+      if(enItems && l){
+        const parts = linea.split('\t').map(p=>p.trim()).filter(p=>p!=='');
+        if(parts.length >= 1 && !/^(DESCUENTO|REFERENCIA|RAZON)/i.test(parts[0])){
+          const nombre  = parts[0];
+          // Extraer números: quitar puntos de miles y % 
+          const nums = parts.slice(1)
+            .map(p=>p.replace(/\./g,'').replace(',','.').replace(/[^0-9.]/g,''))
+            .filter(p=>p!=='')
+            .map(Number);
+          const cantidad = nums[0]||0;
+          const precio   = hasPrice ? (nums[1]||0) : 0;
+          const descPct  = parts.find(p=>/^\d+%$/.test(p.trim()))
+                          ? parseFloat(parts.find(p=>/\d+%/.test(p))):null;
+          if(cantidad>0||(!hasPrice&&nombre)){
+            items.push({
+              nombre,
+              cantidad: cantidad||1,
+              precio_unitario: precio,
+              exento: tipoDoc===34 || /EXENTO|EXENTA/i.test(nombre),
+              descuento_pct: descPct
+            });
+          }
+        }
+      }
+    }
+
+    // Referencias
+    const referencias=[];
+    referencias.push({
+      tipo_doc_ref:'SET', folio_ref:numCaso, fecha_ref:null,
+      cod_ref:null, razon_ref:'CASO '+natencion+'-'+numCaso
+    });
+    if(refLine){
+      const refTexto = refLine.split('\t').slice(1).join(' ').trim();
+      const parsed   = parsearRefLine(refTexto);
+      const {cod,label} = deducirCodRef(razonTexto);
+      referencias.push({
+        tipo_doc_ref: parsed.tipo_doc_ref,
+        natencion_ref: parsed.natencion_ref,
+        num_caso_ref:  parsed.num_caso_ref,
+        folio_ref: null, fecha_ref: null,
+        cod_ref: cod, razon_ref: razonTexto,
+        _ref_texto_original: refTexto, _cod_label: label,
+      });
+    }
+
+    // Indicadores guía
+    const motivoLine = lines.find(l=>/^MOTIVO/i.test(l.trim()));
+    const traslLine  = lines.find(l=>/^TRASLADO\s+POR/i.test(l.trim()));
+    let indTraslado=null, indDespacho=null;
+    if(motivoLine){
+      const m=motivoLine.toUpperCase();
+      if(/TRASLADO.*BODEGA|INTERNO/i.test(m)) indTraslado=5;
+      else if(/VENTA/i.test(m)) indTraslado=1;
+    }
+    if(traslLine){
+      if(/EMISOR/i.test(traslLine)) indDespacho=2;
+      else if(/CLIENTE/i.test(traslLine)) indDespacho=3;
+    }
+
+    const mDG=blockClean.match(/DESCUENTO\s+GLOBAL\s+ITEMES\s+AFECTOS\s+([\d.]+)%/i);
+
+    casos.push({
+      caso:casoN, tipo_doc:tipoDoc, items, referencias,
+      desc_global: mDG?parseFloat(mDG[1]):null,
+      ind_traslado: indTraslado, ind_despacho: indDespacho,
+    });
+  });
+  return casos;
+}
+
 
 function detectarTipoSet(bloque){
   for(const{re,key,label} of SET_TITLE_MAP){
@@ -1341,8 +1527,11 @@ function renderMultiSetOverview(sets){
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
         <div style="width:3px;height:28px;background:${col};border-radius:2px;flex-shrink:0"></div>
         <div style="flex:1">
-          <div style="font-size:13px;font-weight:500;color:var(--text)">${set.label}</div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text3)">N° ${set.natencion} · ${set.casos.length} casos${set.esLibro?' · <span style="color:#f59e0b">📚 Se genera desde los docs del set principal</span>':' · <span id="val_count_'+si+'">'+validados+'/'+set.casos.length+' validados</span>'}</div>
+          <div style="display:flex;align-items:baseline;gap:8px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${col}">N° ${set.natencion}</span>
+            <span style="font-size:12px;color:var(--text3)">${set.label}</span>
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text3);margin-top:2px">${set.casos.length} casos${set.esLibro?' · <span style="color:#f59e0b">📚 generado desde el set principal</span>':' · <span id="val_count_'+si+'">'+validados+'/'+set.casos.length+' validados</span>'}</div>
         </div>
         ${set.esLibro
           ? `<span style="font-size:11px;color:var(--text4);padding:4px 8px;border:1px solid var(--border);border-radius:6px">Se genera automáticamente</span>`
