@@ -98,7 +98,7 @@ async def _emitir_set(fecha: str, service: DTEService, emisor_id: int):
     await emitir(1, {
         "tipo_dte": 34, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "HORAS PROGRAMADOR", "cantidad": 8,
+            {"nombre": "HORAS PROGRAMADOR", "cantidad": 8, "unidad": "Hora",
              "precio_unitario": 5187, "exento": True},
         ],
         "referencias": [_ref_set(1, fecha)],
@@ -132,12 +132,13 @@ async def _emitir_set(fecha: str, service: DTEService, emisor_id: int):
     })
 
     # ── CASO 4 — NC corrige giro caso 3 (CodRef=2) → MntTotal=0
+    # Ítems = los de FAC caso 3 con precio=0
     if 3 in folios:
         await emitir(4, {
             "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
             "items": [
-                {"nombre": "CORRIGE GIRO DEL RECEPTOR", "cantidad": 1,
-                 "precio_unitario": 0, "exento": True},
+                {"nombre": "SERV CONSULTORIA FACT ELECTRONICA",   "cantidad": 1, "precio_unitario": 0, "exento": True},
+                {"nombre": "SERV CONSULTORIA GUIA DESPACHO ELECT", "cantidad": 1, "precio_unitario": 0, "exento": True},
             ],
             "forzar_monto_cero": True,
             "referencias": [
@@ -147,12 +148,13 @@ async def _emitir_set(fecha: str, service: DTEService, emisor_id: int):
         })
 
     # ── CASO 5 — ND anula NC4 (CodRef=1) → MntTotal=0 espejo ──
+    # Ítems = los de NC4 (= FAC caso 3 con precio=0)
     if 4 in folios:
         await emitir(5, {
             "tipo_dte": 56, "fecha_emision": fecha, "receptor": RECEPTOR,
             "items": [
-                {"nombre": "CORRIGE GIRO DEL RECEPTOR", "cantidad": 1,
-                 "precio_unitario": 0, "exento": True},
+                {"nombre": "SERV CONSULTORIA FACT ELECTRONICA",   "cantidad": 1, "precio_unitario": 0, "exento": True},
+                {"nombre": "SERV CONSULTORIA GUIA DESPACHO ELECT", "cantidad": 1, "precio_unitario": 0, "exento": True},
             ],
             "forzar_monto_cero": True,
             "referencias": [
@@ -165,9 +167,9 @@ async def _emitir_set(fecha: str, service: DTEService, emisor_id: int):
     await emitir(6, {
         "tipo_dte": 34, "fecha_emision": fecha, "receptor": RECEPTOR,
         "items": [
-            {"nombre": "CAPACITACION USO CIGUENALES", "cantidad": 1,
+            {"nombre": "CAPACITACION USO CIGÜEÑALES", "cantidad": 1,
              "precio_unitario": 318879, "exento": True},
-            {"nombre": "CAPACITACION USO PLCs CNC",   "cantidad": 1,
+            {"nombre": "CAPACITACION USO PLC's CNC",   "cantidad": 1,
              "precio_unitario": 211924, "exento": True},
         ],
         "referencias": [_ref_set(6, fecha)],
@@ -179,7 +181,7 @@ async def _emitir_set(fecha: str, service: DTEService, emisor_id: int):
         await emitir(7, {
             "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
             "items": [
-                {"nombre": "CAPACITACION USO CIGUENALES", "cantidad": 1,
+                {"nombre": "CAPACITACION USO CIGÜEÑALES", "cantidad": 1,
                  "precio_unitario": 159439, "exento": True},
             ],
             "referencias": [
@@ -194,7 +196,7 @@ async def _emitir_set(fecha: str, service: DTEService, emisor_id: int):
         await emitir(8, {
             "tipo_dte": 56, "fecha_emision": fecha, "receptor": RECEPTOR,
             "items": [
-                {"nombre": "CAPACITACION USO PLCs CNC", "cantidad": 1,
+                {"nombre": "CAPACITACION USO PLC's CNC", "cantidad": 1,
                  "precio_unitario": 42385, "exento": True},
             ],
             "referencias": [
