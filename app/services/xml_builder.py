@@ -220,12 +220,10 @@ class XMLBuilder:
         etree.SubElement(iddoc, f"{{{NS}}}FchEmis").text = d.fecha_emision.strftime("%Y-%m-%d")
 
         if tipo == 52:
-            etree.SubElement(iddoc, f"{{{NS}}}IndTraslado").text = str(d.indicador_traslado or 1)
-            # IndDespacho: 1=despacho por cuenta del emisor a instalaciones del cliente
-            #              2=despacho por cuenta del emisor al lugar indicado por el cliente
-            #              3=traslado entre bodegas del emisor
+            # IndDespacho va ANTES de IndTraslado en el XSD DTE_v10
             if d.indicador_despacho:
                 etree.SubElement(iddoc, f"{{{NS}}}IndDespacho").text = str(d.indicador_despacho)
+            etree.SubElement(iddoc, f"{{{NS}}}IndTraslado").text = str(d.indicador_traslado or 1)
 
         if es_boleta:
             # Boletas (39, 41): IndServicio=3 OBLIGATORIO; sin FmaPago
