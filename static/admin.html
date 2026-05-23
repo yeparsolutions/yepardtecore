@@ -1652,17 +1652,32 @@ function renderModalCaso(si,idx){
       </div>
     </div>`:'';
   const itemsHtml=`<table class="items-table"><thead><tr>
-  <th style="width:38%">Nombre ítem <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text4);font-weight:400">NmbItem</span></th>
-  <th style="width:11%;text-align:right">Cant. <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text4);font-weight:400">QtyItem</span></th>
-  <th style="width:13%;text-align:right">Precio <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text4);font-weight:400">PrcItem</span></th>
-  <th style="width:9%;text-align:right">Desc% <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text4);font-weight:400">DscPct</span></th>
-  <th style="width:5%;text-align:center" title="IndExe=1 — Línea exenta de IVA">Exe</th>
-  <th style="width:11%;text-align:right">Línea <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text4);font-weight:400">MntItem</span></th>
+  <th style="width:28%" title="NmbItem">Nombre</th>
+  <th style="width:12%" title="DscItem — puede diferir del nombre">Desc. <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text4)">DscItem</span></th>
+  <th style="width:7%" title="VlrCodigo — código interno del producto">Cód. <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text4)">VlrCdg</span></th>
+  <th style="width:5%" title="UnmdItem — unidad de medida">Un.</th>
+  <th style="width:9%;text-align:right" title="QtyItem">Cant.</th>
+  <th style="width:10%;text-align:right" title="PrcItem">Precio</th>
+  <th style="width:7%;text-align:right" title="DescuentoPct">Desc%</th>
+  <th style="width:4%;text-align:center" title="IndExe=1 — sin IVA">Exe</th>
+  <th style="width:10%;text-align:right" title="MontoItem">Línea</th>
   <th style="width:3%"></th>
 </tr></thead><tbody>${cd.items.map((it,ii)=>{const linea=Math.round((it.cantidad||0)*(it.precio_unitario||0)*(1-(it.descuento_pct||0)/100));const dis=isFixed?'disabled':'';return `<tr>
   <td><input class="item-nombre-input" value="${it.nombre}" ${dis}
-    title="NmbItem en el XML"
+    title="NmbItem — nombre que aparece en el XML"
     onchange="updateItemNombre(${si},${idx},${ii},this.value)"></td>
+  <td><input class="item-nombre-input" value="${it.descripcion||it.nombre}" ${dis}
+    title="DscItem — descripción larga (puede diferir del nombre)"
+    style="font-size:11px;color:var(--text3)"
+    onchange="updateItemField(${si},${idx},${ii},'descripcion',this.value)"></td>
+  <td><input class="item-input" value="${it.codigo_val||''}" ${dis}
+    placeholder="cód" title="VlrCodigo — código interno del producto"
+    style="font-size:10px;text-align:left"
+    onchange="updateItemField(${si},${idx},${ii},'codigo_val',this.value)"></td>
+  <td><input class="item-input" value="${it.unidad||'UN'}" ${dis}
+    placeholder="UN" title="UnmdItem — unidad de medida (UN, KG, HR, etc.)"
+    style="font-size:10px;text-align:left"
+    onchange="updateItemField(${si},${idx},${ii},'unidad',this.value)"></td>
   <td><input class="item-input" type="number" value="${it.cantidad}" ${dis} min="0"
     onchange="updateItem(${si},${idx},${ii},'cantidad',this.value)"></td>
   <td><input class="item-input" type="number" value="${it.precio_unitario}" ${dis} min="0"
@@ -1671,7 +1686,7 @@ function renderModalCaso(si,idx){
     min="0" max="100" placeholder="0"
     onchange="updateItem(${si},${idx},${ii},'descuento_pct',this.value)"></td>
   <td style="text-align:center">
-    <input type="checkbox" title="IndExe=1 — Exento de IVA"
+    <input type="checkbox" title="IndExe=1 — Línea exenta de IVA (sin IVA)"
       ${it.exento?'checked':''} style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)"
       onchange="updateItemExento(${si},${idx},${ii},this.checked)">
   </td>
@@ -2366,7 +2381,8 @@ function generarXMLEjemplo(set, cd, caso, ci){
   xml += `      </Totales>\n`;
   xml += `    </Encabezado>\n`;
 
-  // Detalle — fiel al formato XML real del SII
+  // Detalle — estructura completa fiel al XML real del SII
+  // CdgItem (si tiene código), DscItem, UnmdItem, DescuentoPct/Monto
   cd.items.forEach((it, ii)=>{
     const qty     = parseFloat(it.cantidad)||0;
     const prc     = parseFloat(it.precio_unitario)||0;
@@ -2374,12 +2390,26 @@ function generarXMLEjemplo(set, cd, caso, ci){
     const descPct = parseFloat(it.descuento_pct)||0;
     const descMnt = descPct ? Math.round(base*(descPct/100)) : 0;
     const linea   = Math.round(base - descMnt);
+    const codVal  = (it.codigo_val||'').trim();
+    const dscItem = (it.descripcion||it.nombre||'').trim();
+    const unmd    = (it.unidad||'UN').trim();
 
     xml += `    <Detalle>\n`;
     xml += `      <NroLinDet>${ii+1}</NroLinDet>\n`;
+
+    if(codVal){
+      xml += `      <CdgItem>\n`;
+      xml += `        <TpoCodigo>${it.codigo_tipo||'INT'}</TpoCodigo>\n`;
+      xml += `        <VlrCodigo>${codVal}</VlrCodigo>\n`;
+      xml += `      </CdgItem>\n`;
+    }
+
     xml += `      <NmbItem>${it.nombre}</NmbItem>\n`;
+    xml += `      <DscItem>${dscItem}</DscItem>\n`;
     xml += `      <QtyItem>${Math.round(qty)}</QtyItem>\n`;
+    xml += `      <UnmdItem>${unmd}</UnmdItem>\n`;
     xml += `      <PrcItem>${Math.round(prc)}</PrcItem>\n`;
+
     if(descPct){
       xml += `      <DescuentoPct>${Math.round(descPct)}</DescuentoPct>\n`;
       xml += `      <DescuentoMonto>${descMnt}</DescuentoMonto>\n`;
