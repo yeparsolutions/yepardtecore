@@ -305,11 +305,15 @@ class XMLBuilder:
             if d.forzar_monto_cero:
                 pass  # Solo MntTotal=0, sin otros campos
             else:
-                etree.SubElement(totales, f"{{{NS}}}MntNeto").text  = str(self.monto_neto)
+                # MntNeto solo si hay afectos (NC/ND exenta lo tiene en 0)
+                if self.monto_neto > 0:
+                    etree.SubElement(totales, f"{{{NS}}}MntNeto").text  = str(self.monto_neto)
                 if self.monto_exento > 0:
                     etree.SubElement(totales, f"{{{NS}}}MntExe").text = str(self.monto_exento)
-                etree.SubElement(totales, f"{{{NS}}}TasaIVA").text  = "19"
-                etree.SubElement(totales, f"{{{NS}}}IVA").text      = str(self.monto_iva)
+                # TasaIVA e IVA solo cuando hay IVA real — NO para NC/ND de docs exentos
+                if self.monto_iva > 0:
+                    etree.SubElement(totales, f"{{{NS}}}TasaIVA").text  = "19"
+                    etree.SubElement(totales, f"{{{NS}}}IVA").text      = str(self.monto_iva)
 
         etree.SubElement(totales, f"{{{NS}}}MntTotal").text = str(self.monto_total)
 
