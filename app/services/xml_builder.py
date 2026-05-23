@@ -91,9 +91,7 @@ def _sanitizar_texto(texto: str, largo: int = 80) -> str:
     Referencia: soporte OML Soluciones - artículo 'Rechazado por error en firma'.
     """
     reemplazos = {
-        # '&' NO se reemplaza — lxml lo escapa como &amp; automáticamente
-        # El SII decodifica &amp; → & correctamente. Reemplazar por 'y' causaba
-        # que 'Pintura B&W' llegara como 'Pintura B y W' → rechazo item no corresponde.
+        '&': ' y ',   # & → causa RFR definitivo en SII
         "'": '',      # comilla simple
         '"': '',      # comilla doble
         '#': '',      # gato
@@ -175,12 +173,9 @@ class XMLBuilder:
 
         self._build_encabezado(doc_el)
 
-        # FIX 2: NC/ND con forzar_monto_cero=True (CodRef=2 corrige giro/razón social)
-        # NO llevan <Detalle>. El SII rechaza "valores no cuadran" si hay
-        # Detalle con MontoItem=0. Se salta directo a <Referencia>.
-        if not d.forzar_monto_cero:
-            for idx, item in enumerate(d.items, start=1):
-                self._build_detalle(doc_el, item, idx, forzar_monto_cero=False)
+        for idx, item in enumerate(d.items, start=1):
+            self._build_detalle(doc_el, item, idx,
+                                forzar_monto_cero=d.forzar_monto_cero)
 
         # DscRcgGlobal: DESPUES de Detalle, ANTES de Referencia (orden XSD)
         if self._desc_global_monto > 0:
@@ -326,9 +321,15 @@ class XMLBuilder:
         if item.unidad:
             etree.SubElement(det, f"{{{NS}}}UnmdItem").text = item.unidad
 
-        # PrcItem: omitir cuando es 0 (ítem ficticio CodRef=2) — XSD exige > 0
+        # PrcItem: incluir siempre en guías (T52) aunque sea 0
+        # porque el SII valida QtyItem × PrcItem = MontoItem.
+        # Para NC/ND CodRef=2 sin precio, omitir (forzar_monto_cero maneja ese caso).
+        tipo = self.datos.tipo_dte
         if round(item.precio_unitario) != 0:
             etree.SubElement(det, f"{{{NS}}}PrcItem").text = str(round(item.precio_unitario))
+        elif tipo == 52:
+            # Guía sin precio (traslado interno): incluir PrcItem=0 explícito
+            etree.SubElement(det, f"{{{NS}}}PrcItem").text = "0"
 
         if item.descuento_pct > 0:
             etree.SubElement(det, f"{{{NS}}}DescuentoPct").text   = f"{item.descuento_pct:.2f}"
