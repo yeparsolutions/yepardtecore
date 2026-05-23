@@ -751,17 +751,18 @@ function isItemsFijo(caso){
 const DOC_MAP = {'FACTURA ELECTRONICA':33,'FACTURA NO AFECTA O EXENTA ELECTRONICA':34,'NOTA DE CREDITO ELECTRONICA':61,'NOTA DE CREDITO':61,'NOTA DE DEBITO ELECTRONICA':56,'NOTA DE DEBITO':56,'GUIA DE DESPACHO ELECTRONICA':52,'GUIA DE DESPACHO':52};
 // ENDPOINT_MAP — configurable desde el panel (persiste en localStorage)
 // Los defaults son los endpoints estándar de YeparDTEcore
-// Todos los sets usan el endpoint DINÁMICO
-// que recibe los datos completos del admin en el body
-const ENDPOINT_DINAMICO = '/v1/certificacion-dinamica/generar-xml';
+// Todos los endpoints son DINÁMICOS — funcionan para cualquier usuario
+// Los libros usan un endpoint único que recibe tipo_libro + natencion como params
+const ENDPOINT_DINAMICO       = '/v1/certificacion-dinamica/generar-xml';
+const ENDPOINT_LIBROS         = '/v1/certificacion-libros/generar-xml';
 const ENDPOINT_DEFAULTS = {
   basico2:     ENDPOINT_DINAMICO,
   exentas:     ENDPOINT_DINAMICO,
   guias:       ENDPOINT_DINAMICO,
-  compras:     '/v1/certificacion-libro-compras/generar-xml',  // libros siguen igual
-  ventas:      '/v1/certificacion-libro-ventas/generar-xml',
-  libro_guias: '/v1/certificacion-libro-guias/generar-xml',
   boletas:     ENDPOINT_DINAMICO,
+  compras:     ENDPOINT_LIBROS,   // libros: un único endpoint dinámico
+  ventas:      ENDPOINT_LIBROS,
+  libro_guias: ENDPOINT_LIBROS,
 };
 
 function getEndpointMap(){
@@ -1669,7 +1670,8 @@ function renderModalCaso(si,idx){
   <th style="width:3%"></th>
 </tr></thead><tbody>${cd.items.map((it,ii)=>{const linea=Math.round((it.cantidad||0)*(it.precio_unitario||0)*(1-(it.descuento_pct||0)/100));const dis=isFixed?'disabled':'';return `<tr>
   <td><input class="item-nombre-input" value="${it.nombre}" ${dis}
-    title="NmbItem — nombre que aparece en el XML"
+    title="NmbItem — debe coincidir EXACTAMENTE con el txt del SII. No corrijas ortografía."
+    style="${dis?'':'border-left:3px solid var(--accent)'}"
     onchange="updateItemNombre(${si},${idx},${ii},this.value)"></td>
   <td><input class="item-nombre-input" value="${it.descripcion||it.nombre}" ${dis}
     title="DscItem — descripción larga (puede diferir del nombre)"
@@ -1812,7 +1814,11 @@ function renderModalCaso(si,idx){
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;font-weight:500">Ítems del caso</div>
     ${itemsHtml}${totHtml}
     ${refsHtml}
-    <div style="font-size:11px;color:var(--text4);margin-top:8px">${isFixed?'⚠ Ítems fijos — no modificar.':'Modifica ítems y referencias según el set del SII.'}</div>
+    <div style="font-size:11px;color:var(--text4);margin-top:8px">
+      ${isFixed
+        ? '⚠ Ítems fijos — no modificar.'
+        : '✏ Puedes modificar cantidades y precios. <strong style="color:#f59e0b">⚠ No corrijas la ortografía de los nombres</strong> — el SII valida texto exacto del set.'}
+    </div>
     ${buildReceptorSection(si,idx,cd)}`;
 }
 
@@ -1993,7 +1999,13 @@ async function generarXML(setKey, natencion){
         numero_caso:          ci+1,
         tipo_dte:             caso.tipo_doc,
         fecha_emision:        new Date().toISOString().split('T')[0],
-        forzar_monto_cero:    cd.items&&cd.items.length===0&&[56,61].includes(caso.tipo_doc),
+        // forzar_monto_cero si no hay ítems O si alguna ref tiene CodRef=2
+        // El dte_service lo detecta y omite <Detalle> en el XML
+        forzar_monto_cero: (()=>{
+          if(cd.items&&cd.items.length===0&&[56,61].includes(caso.tipo_doc)) return true;
+          const refs=cd.referencias||[];
+          return refs.some(r=>r.tipo_doc_ref!=='SET'&&parseInt(r.cod_ref)===2);
+        })(),
         indicador_traslado:   cd.ind_traslado||0,
         indicador_despacho:   cd.ind_despacho||0,
         descuento_global_pct: caso.desc_global||0,
@@ -2005,16 +2017,24 @@ async function generarXML(setKey, natencion){
           comuna:       cd.receptor.comuna||'',
           ciudad:       cd.receptor.ciudad||'',
         } : {rut:'77777777-7',razon_social:'EMPRESA LTDA',giro:'',direccion:'',comuna:'',ciudad:''},
-        items: (cd.items||[]).map(it=>({
-          nombre:          it.nombre||'',
-          descripcion:     it.descripcion||it.nombre||'',
-          cantidad:        Number(it.cantidad)||0,
-          precio_unitario: Number(it.precio_unitario)||0,
-          descuento_pct:   Number(it.descuento_pct)||0,
-          exento:          Boolean(it.exento),
-          codigo:          it.codigo_val||'',
-          unidad:          it.unidad||'UN',
-        })),
+        // Si forzar_monto_cero (CodRef=2 o sin ítems en NC/ND),
+        // enviar items=[] para que xml_builder omita <Detalle> completamente
+        items: (()=>{
+          const refs=cd.referencias||[];
+          const esCodRef2=refs.some(r=>r.tipo_doc_ref!=='SET'&&parseInt(r.cod_ref)===2);
+          const sinItems=!cd.items||cd.items.length===0;
+          if(esCodRef2||(sinItems&&[56,61].includes(caso.tipo_doc))) return [];
+          return (cd.items||[]).map(it=>({
+            nombre:          it.nombre||'',
+            descripcion:     it.descripcion||it.nombre||'',
+            cantidad:        Number(it.cantidad)||0,
+            precio_unitario: Number(it.precio_unitario)||0,
+            descuento_pct:   Number(it.descuento_pct)||0,
+            exento:          Boolean(it.exento),
+            codigo:          it.codigo_val||'',
+            unidad:          it.unidad||'UN',
+          }));
+        })(),
         referencias: (cd.referencias||[]).map(ref=>({
           tipo_doc_ref: ref.tipo_doc_ref,
           folio_ref:    Number(ref.folio_ref)||1,
@@ -2043,8 +2063,11 @@ async function generarXML(setKey, natencion){
     };
     log(`Enviando ${casos.length} casos al endpoint dinámico...`,'info');
   } else {
-    // Libros y otros: POST simple con query param
-    const url2=base()+endpoint+'?emisor_id='+S.id;
+    // Libros: endpoint dinámico con tipo_libro + natencion como params
+    const tipoLibroMap = {ventas:'ventas', compras:'compras', libro_guias:'guias'};
+    const tipoLibro = tipoLibroMap[setKey] || setKey;
+    const periodoHoy = new Date().toISOString().slice(0,7); // AAAA-MM
+    const url2=base()+endpoint+`?emisor_id=${S.id}&tipo_libro=${tipoLibro}&natencion=${encodeURIComponent(natencion)}&periodo=${periodoHoy}`;
     fetchOptions = {method:'POST'};
     // Usar URL con query param
     const r2=await fetch(url2,fetchOptions);
