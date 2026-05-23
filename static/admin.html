@@ -2050,7 +2050,10 @@ async function generarXML(setKey, natencion){
             descripcion:     it.descripcion||it.nombre||'',
             cantidad:        Number(it.cantidad)||0,
             precio_unitario: Number(it.precio_unitario)||0,
-            descuento_pct:   Number(it.descuento_pct)||0,
+            // Si hay descuento global (DscRcgGlobal), los ítems van con precio COMPLETO
+            // — sin DescuentoPct por ítem. El descuento lo aplica el DscRcgGlobal.
+            // Si NO hay descuento global, se respeta el descuento individual del ítem.
+            descuento_pct:   caso.desc_global ? 0 : Number(it.descuento_pct)||0,
             exento:          Boolean(it.exento),
             codigo:          it.codigo_val||'',
             unidad:          it.unidad||'UN',
@@ -2473,11 +2476,16 @@ function generarXMLEjemplo(set, cd, caso, ci){
   const esBoleta      = TIPOS_BOLETA.includes(tipo);
   const esExenta      = TIPO_EXENTA.includes(tipo);
   const forzarCero    = cd.items.length === 0 && esNota;
+  // Si hay descuento global, los ítems van con precio completo (sin descuento_pct)
+  // El descuento lo aplica DscRcgGlobal — no duplicar en cada Detalle
+  const hayDescGlobal = !!(caso.desc_global);
 
   let subtotalAfecto = 0, subtotalExento = 0;
   cd.items.forEach(it=>{
     const bruto = (it.cantidad||0)*(it.precio_unitario||0);
-    const neto  = Math.round(bruto - bruto*(it.descuento_pct||0)/100);
+    // Con descuento global: usar precio completo. Sin él: respetar descuento del ítem.
+    const descItemPct = hayDescGlobal ? 0 : (it.descuento_pct||0);
+    const neto  = Math.round(bruto - bruto*descItemPct/100);
     if(it.exento||esExenta) subtotalExento += neto;
     else subtotalAfecto += neto;
   });
@@ -2495,6 +2503,14 @@ function generarXMLEjemplo(set, cd, caso, ci){
     mntIVA    = Math.round(subtotalAfecto * 0.19);
     mntExento = Math.round(subtotalExento);
     mntTotal  = mntNeto + mntIVA + mntExento;
+  }
+  // Aplicar descuento global a los totales (igual que xml_builder._calcular_totales)
+  // Los ítems ya van con precio completo — el descuento se aplica aquí una sola vez
+  if(hayDescGlobal && caso.desc_global > 0){
+    const descMnt   = Math.round(mntNeto * caso.desc_global / 100);
+    mntNeto         = mntNeto - descMnt;
+    mntIVA          = Math.round(mntNeto * 0.19);
+    mntTotal        = mntNeto + mntIVA + mntExento;
   }
   if(forzarCero){ mntNeto=0; mntIVA=0; mntExento=0; mntTotal=0; }
 
@@ -2569,13 +2585,13 @@ function generarXMLEjemplo(set, cd, caso, ci){
   xml += `    </Encabezado>\n`;
 
   // ── Detalle — orden XSD fiel al xml_builder.py ───────────────────────────
-  // Orden: NroLinDet → [CdgItem] → [IndExe] → NmbItem → QtyItem → [UnmdItem]
-  //        → [PrcItem si ≠0] → [DescuentoPct] → [DescuentoMonto] → MontoItem
   cd.items.forEach((it, ii)=>{
     const qty     = parseFloat(it.cantidad)||0;
     const prc     = parseFloat(it.precio_unitario)||0;
     const base    = qty * prc;
-    const descPct = parseFloat(it.descuento_pct)||0;
+    // Con descuento global: DescuentoPct NO va en el ítem, precio completo
+    // Sin descuento global: respetar descuento individual del ítem
+    const descPct = hayDescGlobal ? 0 : (parseFloat(it.descuento_pct)||0);
     const descMnt = descPct ? Math.round(base*(descPct/100)) : 0;
     const linea   = forzarCero ? 0 : Math.round(base - descMnt);
     const codVal  = (it.codigo_val||'').trim();
