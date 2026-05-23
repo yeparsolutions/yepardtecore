@@ -2322,8 +2322,8 @@ function generarXMLEjemplo(set, cd, caso, ci){
   const folio   = cd.folio_asignado || 'PENDIENTE';
   const tipo    = caso.tipo_doc || '?';
   const fechaHoy= new Date().toISOString().split('T')[0];
-  const E       = S.emisor;  // datos completos del emisor
-  const recep   = cd.receptor || {};  // datos del receptor del caso
+  const E       = S.emisor;
+  const recep   = cd.receptor || {};
 
   // Calcular totales
   let mntNeto=0, mntExento=0, mntIVA=0, mntTotal=0, mntDesc=0;
@@ -2337,11 +2337,16 @@ function generarXMLEjemplo(set, cd, caso, ci){
   });
   mntNeto    = Math.round(mntNeto);
   mntExento  = Math.round(mntExento);
-  mntIVA     = tipo!==34 ? Math.round(mntNeto*0.19) : 0;
+  mntIVA     = [33,52].includes(tipo) ? Math.round(mntNeto*0.19) : 0;
   mntTotal   = mntNeto + mntIVA + mntExento;
 
-  // Construir XML
-  let xml = `<?xml version="1.0" encoding="ISO-8859-1"?>\n`;
+  // ── Tipos que llevan IndServicio ─────────────────────────────
+  // Solo facturas y guías, NUNCA NC (61) ni ND (56)
+  const llevaIndServicio = [33, 34, 52].includes(tipo);
+  // NC y ND: totales simplificados (solo MntTotal)
+  const esNotaCredDeb    = [61, 56].includes(tipo);
+
+  let xml = `<?xml version="1.0" encoding="ISO-8859-1" standalone="no"?>\n`;
   xml += `<DTE version="1.0">\n`;
   xml += `  <Documento ID="F${folio}T${tipo}">\n`;
   xml += `    <Encabezado>\n`;
@@ -2349,25 +2354,27 @@ function generarXMLEjemplo(set, cd, caso, ci){
   xml += `        <TipoDTE>${tipo}</TipoDTE>\n`;
   xml += `        <Folio>${folio}</Folio>\n`;
   xml += `        <FchEmis>${fechaHoy}</FchEmis>\n`;
-  xml += `        <IndServicio>3</IndServicio>\n`;
+  if(llevaIndServicio)
+    xml += `        <IndServicio>3</IndServicio>\n`;
   if(tipo===52){
     if(cd.ind_traslado) xml += `        <IndTraslado>${cd.ind_traslado}</IndTraslado>\n`;
     if(cd.ind_despacho) xml += `        <TipoDespacho>${cd.ind_despacho}</TipoDespacho>\n`;
   }
   xml += `      </IdDoc>\n`;
-  // ── Emisor (datos completos desde BD) ───────────────────────
+
+  // ── Emisor ───────────────────────────────────────────────────
   xml += `      <Emisor>\n`;
   xml += `        <RUTEmisor>${E.rut||'RUT-EMISOR'}</RUTEmisor>\n`;
   xml += `        <RznSoc>${E.razon_social||''}</RznSoc>\n`;
-  if(E.giro)     xml += `        <GiroEmis>${E.giro}</GiroEmis>\n`;
-  if(E.telefono) xml += `        <Telefono>${E.telefono}</Telefono>\n`;
-  if(E.acteco)   xml += `        <Acteco>${E.acteco}</Acteco>\n`;
-  if(E.direccion)xml += `        <DirOrigen>${E.direccion}</DirOrigen>\n`;
-  if(E.comuna)   xml += `        <CmnaOrigen>${E.comuna}</CmnaOrigen>\n`;
-  if(E.ciudad)   xml += `        <CiudadOrigen>${E.ciudad}</CiudadOrigen>\n`;
+  if(E.giro)      xml += `        <GiroEmis>${E.giro}</GiroEmis>\n`;
+  if(E.telefono)  xml += `        <Telefono>${E.telefono}</Telefono>\n`;
+  if(E.acteco)    xml += `        <Acteco>${E.acteco}</Acteco>\n`;
+  if(E.direccion) xml += `        <DirOrigen>${E.direccion}</DirOrigen>\n`;
+  if(E.comuna)    xml += `        <CmnaOrigen>${E.comuna}</CmnaOrigen>\n`;
+  if(E.ciudad)    xml += `        <CiudadOrigen>${E.ciudad}</CiudadOrigen>\n`;
   xml += `      </Emisor>\n`;
 
-  // ── Receptor (ingresado por el usuario) ───────────────────────
+  // ── Receptor ─────────────────────────────────────────────────
   xml += `      <Receptor>\n`;
   xml += `        <RUTRecep>${recep.rut||'<!-- Ingresa RUT receptor -->'}</RUTRecep>\n`;
   if(recep.razon_social) xml += `        <RznSocRecep>${recep.razon_social}</RznSocRecep>\n`;
@@ -2376,18 +2383,21 @@ function generarXMLEjemplo(set, cd, caso, ci){
   if(recep.comuna)       xml += `        <CmnaRecep>${recep.comuna}</CmnaRecep>\n`;
   if(recep.ciudad)       xml += `        <CiudadRecep>${recep.ciudad}</CiudadRecep>\n`;
   xml += `      </Receptor>\n`;
+
+  // ── Totales ──────────────────────────────────────────────────
   xml += `      <Totales>\n`;
-  if(tipo!==34&&mntNeto)   xml += `        <MntNeto>${mntNeto}</MntNeto>\n`;
-  if(tipo!==34)            xml += `        <TasaIVA>19</TasaIVA>\n`;
-  if(mntIVA)               xml += `        <IVA>${mntIVA}</IVA>\n`;
-  if(mntExento)            xml += `        <MntExe>${mntExento}</MntExe>\n`;
-  if(mntDesc)              xml += `        <DescuentoMonto>${mntDesc}</DescuentoMonto>\n`;
+  if(!esNotaCredDeb){
+    if(mntNeto)    xml += `        <MntNeto>${mntNeto}</MntNeto>\n`;
+    if(tipo!==34)  xml += `        <TasaIVA>19</TasaIVA>\n`;
+    if(mntIVA)     xml += `        <IVA>${mntIVA}</IVA>\n`;
+    if(mntExento)  xml += `        <MntExe>${mntExento}</MntExe>\n`;
+    if(mntDesc)    xml += `        <DescuentoMonto>${mntDesc}</DescuentoMonto>\n`;
+  }
   xml += `        <MntTotal>${mntTotal}</MntTotal>\n`;
   xml += `      </Totales>\n`;
   xml += `    </Encabezado>\n`;
 
-  // Detalle — estructura completa fiel al XML real del SII
-  // CdgItem (si tiene código), DscItem, UnmdItem, DescuentoPct/Monto
+  // ── Detalle (ítems) — estructura completa fiel al XML real ───
   cd.items.forEach((it, ii)=>{
     const qty     = parseFloat(it.cantidad)||0;
     const prc     = parseFloat(it.precio_unitario)||0;
@@ -2401,20 +2411,17 @@ function generarXMLEjemplo(set, cd, caso, ci){
 
     xml += `    <Detalle>\n`;
     xml += `      <NroLinDet>${ii+1}</NroLinDet>\n`;
-
     if(codVal){
       xml += `      <CdgItem>\n`;
       xml += `        <TpoCodigo>${it.codigo_tipo||'INT'}</TpoCodigo>\n`;
       xml += `        <VlrCodigo>${codVal}</VlrCodigo>\n`;
       xml += `      </CdgItem>\n`;
     }
-
     xml += `      <NmbItem>${it.nombre}</NmbItem>\n`;
     xml += `      <DscItem>${dscItem}</DscItem>\n`;
     xml += `      <QtyItem>${Math.round(qty)}</QtyItem>\n`;
     xml += `      <UnmdItem>${unmd}</UnmdItem>\n`;
     xml += `      <PrcItem>${Math.round(prc)}</PrcItem>\n`;
-
     if(descPct){
       xml += `      <DescuentoPct>${Math.round(descPct)}</DescuentoPct>\n`;
       xml += `      <DescuentoMonto>${descMnt}</DescuentoMonto>\n`;
@@ -2424,7 +2431,7 @@ function generarXMLEjemplo(set, cd, caso, ci){
     xml += `    </Detalle>\n`;
   });
 
-  // Referencias
+  // ── Referencias — van DESPUÉS de los Detalle, ANTES del cierre ──
   (cd.referencias||[]).forEach((ref, ri)=>{
     if(ref.tipo_doc_ref==='SET'){
       xml += `    <Referencia>\n`;
