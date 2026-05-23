@@ -238,8 +238,7 @@ nav{position:sticky;top:0;z-index:100;background:var(--nav-bg);backdrop-filter:b
 .xml-modal{background:var(--bg3);border:1px solid var(--border2);border-radius:18px;
   width:min(820px,96vw);max-height:90vh;display:flex;flex-direction:column;
   transform:translateY(12px) scale(.98);transition:transform .2s;overflow:hidden;
-  box-shadow:0 24px 60px rgba(0,0,0,.5)}
-.xml-modal-overlay.open .xml-modal{transform:none}
+  box-shadow:0 24px 60px rgba(0,0,0,.5)}.xml-modal-overlay.open .xml-modal{transform:none}
 .xml-mh{display:flex;align-items:center;gap:12px;padding:16px 20px;
   border-bottom:1px solid var(--border);flex-shrink:0}
 .xml-mh-title{font-size:14px;font-weight:500;color:var(--text);flex:1}
@@ -347,7 +346,7 @@ html.light .lgt{color:#94a3b8}
    ═══════════════════════════════════════════ */
 .modal-overlay{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.6);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .25s}
 .modal-overlay.open{opacity:1;pointer-events:all}
-.modal{background:var(--bg3);border:1px solid var(--border2);border-radius:18px;width:min(700px,95vw);max-height:88vh;display:flex;flex-direction:column;transform:translateY(16px) scale(.98);transition:transform .25s;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4)}
+.modal{background:var(--bg3);border:1px solid var(--border2);border-radius:18px;width:min(860px,97vw);max-height:92vh;display:flex;flex-direction:column;transform:translateY(16px) scale(.98);transition:transform .25s;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4)}
 .modal-overlay.open .modal{transform:none}
 
 /* Modal header */
@@ -382,6 +381,9 @@ html.light .caso-warn-txt{color:#92400e}
 .item-input{background:var(--bg2);border:1px solid var(--border3);border-radius:6px;padding:6px 8px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px;width:100%;outline:none;transition:border-color .15s;text-align:right}
 .item-input:focus{border-color:var(--accent)}
 .item-input:disabled{opacity:.45;cursor:not-allowed}
+/* Cantidad y precio: más prominentes */
+td:nth-child(5) .item-input,
+td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);border-color:var(--border2)}
 .item-linea{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text3);text-align:right;padding:4px 8px;white-space:nowrap}
 .item-nombre-input{background:var(--bg2);border:1px solid var(--border3);border-radius:6px;padding:6px 8px;color:var(--text);font-size:12px;width:100%;outline:none;transition:border-color .15s}
 .item-nombre-input:focus{border-color:var(--accent)}
@@ -1652,15 +1654,15 @@ function renderModalCaso(si,idx){
       </div>
     </div>`:'';
   const itemsHtml=`<table class="items-table"><thead><tr>
-  <th style="width:28%" title="NmbItem">Nombre</th>
-  <th style="width:12%" title="DscItem — puede diferir del nombre">Desc. <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text4)">DscItem</span></th>
-  <th style="width:7%" title="VlrCodigo — código interno del producto">Cód. <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text4)">VlrCdg</span></th>
-  <th style="width:5%" title="UnmdItem — unidad de medida">Un.</th>
-  <th style="width:9%;text-align:right" title="QtyItem">Cant.</th>
-  <th style="width:10%;text-align:right" title="PrcItem">Precio</th>
-  <th style="width:7%;text-align:right" title="DescuentoPct">Desc%</th>
+  <th style="width:22%" title="NmbItem">Nombre</th>
+  <th style="width:12%" title="DscItem — descripción larga">Desc. <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text4)">DscItem</span></th>
+  <th style="width:8%" title="VlrCodigo — código interno">Cód.</th>
+  <th style="width:5%" title="UnmdItem — unidad">Un.</th>
+  <th style="width:10%;text-align:right" title="QtyItem — cantidad">Cantidad</th>
+  <th style="width:12%;text-align:right" title="PrcItem — precio unitario">Precio unit.</th>
+  <th style="width:8%;text-align:right" title="DescuentoPct">Desc%</th>
   <th style="width:4%;text-align:center" title="IndExe=1 — sin IVA">Exe</th>
-  <th style="width:10%;text-align:right" title="MontoItem">Línea</th>
+  <th style="width:11%;text-align:right" title="MontoItem">Total línea</th>
   <th style="width:3%"></th>
 </tr></thead><tbody>${cd.items.map((it,ii)=>{const linea=Math.round((it.cantidad||0)*(it.precio_unitario||0)*(1-(it.descuento_pct||0)/100));const dis=isFixed?'disabled':'';return `<tr>
   <td><input class="item-nombre-input" value="${it.nombre}" ${dis}
@@ -1675,19 +1677,22 @@ function renderModalCaso(si,idx){
     style="font-size:10px;text-align:left"
     onchange="updateItemField(${si},${idx},${ii},'codigo_val',this.value)"></td>
   <td><input class="item-input" value="${it.unidad||'UN'}" ${dis}
-    placeholder="UN" title="UnmdItem — unidad de medida (UN, KG, HR, etc.)"
-    style="font-size:10px;text-align:left"
+    placeholder="UN" title="UnmdItem — unidad (UN, KG, HR...)"
+    style="font-size:10px;text-align:center"
     onchange="updateItemField(${si},${idx},${ii},'unidad',this.value)"></td>
   <td><input class="item-input" type="number" value="${it.cantidad}" ${dis} min="0"
+    style="font-size:13px;font-weight:600;color:var(--text);text-align:right;background:var(--bg)"
     onchange="updateItem(${si},${idx},${ii},'cantidad',this.value)"></td>
   <td><input class="item-input" type="number" value="${it.precio_unitario}" ${dis} min="0"
+    style="font-size:13px;font-weight:600;color:var(--text);text-align:right;background:var(--bg)"
     onchange="updateItem(${si},${idx},${ii},'precio_unitario',this.value)"></td>
   <td><input class="item-input" type="number" value="${it.descuento_pct||''}" ${dis}
     min="0" max="100" placeholder="0"
+    style="text-align:right"
     onchange="updateItem(${si},${idx},${ii},'descuento_pct',this.value)"></td>
   <td style="text-align:center">
     <input type="checkbox" title="IndExe=1 — Línea exenta de IVA (sin IVA)"
-      ${it.exento?'checked':''} style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)"
+      ${it.exento?'checked':''} style="width:15px;height:15px;cursor:pointer;accent-color:var(--accent)"
       onchange="updateItemExento(${si},${idx},${ii},this.checked)">
   </td>
   <td class="item-linea" id="linea_${si}_${idx}_${ii}">${Math.round(linea).toLocaleString('es-CL')}</td>
