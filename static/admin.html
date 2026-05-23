@@ -2069,72 +2069,76 @@ function buildReceptorSection(si, ci, cd){
       <div class="recep-actions">
         <button class="mbtn mbtn-pri" onclick="guardarReceptor(${si},${ci})"
           style="font-size:12px;padding:7px 16px">
-          💾 Guardar receptor en BD
+          💾 Guardar receptor
         </button>
         <div style="font-size:11px;color:var(--text4);align-self:center">
-          Se guardará vinculado a este emisor
+          Se guarda localmente para reutilizar
         </div>
       </div>
     </div>`:''}
   </div>`;
 }
 
-async function buscarReceptor(si, ci, rut){
-  if(!rut||!S.id) return null;
-  const rutFmt = rutSII(rut);
-  // Ver si ya lo tenemos cacheado
-  if(S.receptores[rutFmt]) return S.receptores[rutFmt];
-  try{
-    const data = await api(`/v1/receptores/?rut=${encodeURIComponent(rutFmt)}`);
-    if(data && data.length > 0){
-      S.receptores[rutFmt] = data[0];
-      return data[0];
-    }
-  }catch(e){ log('Receptor no encontrado: '+rutFmt,'warn'); }
-  return null;
+// Receptores se guardan en localStorage (no hay endpoint en la API)
+// El receptor viaja dentro del payload al generar cada DTE
+const RECEP_KEY = 'ydt_receptores';
+
+function cargarReceptoresLocal(){
+  try{ return JSON.parse(localStorage.getItem(RECEP_KEY)||'{}'); }catch{ return {}; }
+}
+function guardarReceptoresLocal(map){
+  try{ localStorage.setItem(RECEP_KEY, JSON.stringify(map)); }catch{}
 }
 
-async function guardarReceptor(si, ci){
+function buscarReceptorLocal(rut){
+  const map = cargarReceptoresLocal();
+  return map[rutSII(rut)] || null;
+}
+
+function guardarReceptor(si, ci){
   const cd = S.setsDetectados[si].casoData[ci];
   const r  = cd.receptor||{};
   if(!r.rut){ log('Ingresa el RUT del receptor','warn'); return; }
-  if(!vRut(r.rut)){ log('RUT del receptor inválido','warn'); return; }
-  const body = {
-    rut:        rutSII(r.rut),
-    razon_social: r.razon_social||'',
-    giro:       r.giro||'',
-    direccion:  r.direccion||'',
-    comuna:     r.comuna||'',
-    ciudad:     r.ciudad||'',
-    emisor_id:  S.id,
+  if(!vRut(r.rut)){ log('RUT inválido: '+r.rut,'warn'); return; }
+  const rut = rutSII(r.rut);
+  const datos = {
+    rut, razon_social: r.razon_social||'',
+    giro: r.giro||'', direccion: r.direccion||'',
+    comuna: r.comuna||'', ciudad: r.ciudad||'',
   };
-  try{
-    const data = await api('/v1/receptores/', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(body),
-    });
-    cd.receptor = {...cd.receptor, ...data, _guardado:true};
-    S.receptores[rutSII(r.rut)] = data;
-    log(`Receptor ${data.rut} guardado en BD ✓`,'ok');
-    renderModalCaso(si, ci);  // refrescar para mostrar badge guardado
-  }catch(e){
-    log('Error guardando receptor: '+(e.data?.detail||JSON.stringify(e.data)),'err');
-  }
+  // Guardar en localStorage y en caché de sesión
+  const map = cargarReceptoresLocal();
+  map[rut] = datos;
+  guardarReceptoresLocal(map);
+  S.receptores[rut] = datos;
+  cd.receptor = {...datos, _guardado:true};
+  log(`Receptor ${rut} guardado localmente ✓`,'ok');
+  renderModalCaso(si, ci);
 }
 
-async function onReceptorRutChange(si, ci, val){
+function buscarReceptor(si, ci, rut){
+  if(!rut) return null;
+  const rutFmt = rutSII(rut);
+  // 1. Caché de sesión
+  if(S.receptores[rutFmt]) return S.receptores[rutFmt];
+  // 2. localStorage
+  const local = buscarReceptorLocal(rutFmt);
+  if(local){ S.receptores[rutFmt]=local; return local; }
+  return null;
+}
+
+function onReceptorRutChange(si, ci, val){
   const cd = S.setsDetectados[si].casoData[ci];
   if(!cd.receptor) cd.receptor = {};
   cd.receptor.rut = val;
   cd.receptor._guardado = false;
-  // Autocompletar si existe en BD o cache
-  if(val.length >= 7){
-    const found = await buscarReceptor(si, ci, val);
+  // Autocompletar desde caché local si existe
+  if(val.length >= 7 && vRut(val)){
+    const found = buscarReceptor(si, ci, val);
     if(found){
       cd.receptor = {...found, _guardado:true};
       renderModalCaso(si, ci);
-      log(`Receptor ${found.rut} cargado desde BD`,'ok');
+      log(`Receptor ${found.rut} encontrado en historial`,'ok');
     }
   }
 }
@@ -2414,10 +2418,30 @@ function generarXMLEjemplo(set, cd, caso, ci){
   return xml;
 }
 
-/* ── Syntax highlight básico para XML ─────────────────────────── */
+/* ── Conversión a ISO-8859-1 (entidades XML numéricas) ──────── */
+// Caracteres fuera del rango ASCII básico (>127) que no son
+// válidos en ISO-8859-1 como texto plano → &#NNN;
+function toISO88591Entities(str){
+  let out = '';
+  for(let i=0; i<str.length; i++){
+    const code = str.charCodeAt(i);
+    if(code > 127){
+      out += `&#${code};`;  // ñ→&#241; á→&#225; é→&#233; etc.
+    } else {
+      out += str[i];
+    }
+  }
+  return out;
+}
+
+/* ── Syntax highlight con encoding ISO-8859-1 ─────────────────── */
 function highlightXML(xml){
-  return xml
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  // Primero convertir a ISO-8859-1 (entidades numéricas)
+  const isoXml = toISO88591Entities(xml);
+  // Luego escapar HTML y aplicar colores
+  return isoXml
+    .replace(/&(?!#\d+;)/g,'&amp;')  // & que no sean entidades ya
+    .replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/&lt;(\/?)([\w:]+)([^&]*?)(\/?&gt;)/g,
       (_, slash, tag, attrs, close)=>{
         const attrHL = attrs.replace(/([\w:]+)="([^"]*)"/g,
@@ -2521,9 +2545,7 @@ window.onload=function(){
     <div class="xml-mf">
       <div style="flex:1;font-size:11px;color:var(--text3)" id="xmlFooterInfo"></div>
       <div style="font-size:10px;color:var(--text4);margin-right:8px;text-align:right;line-height:1.4">
-        Vista en UTF-8 · El XML real sale en<br>
-        <span style="font-family:'JetBrains Mono',monospace;color:var(--accent)">ISO-8859-1</span>
-        (ñ→<code style="font-family:'JetBrains Mono',monospace">&#38;#241;</code>, etc.)
+        Vista en <span style="font-family:'JetBrains Mono',monospace;color:var(--accent)">ISO-8859-1</span><br>ñ→&#241; á→&#225; é→&#233;
       </div>
       <button class="mbtn mbtn-sec" onclick="closeXmlModal()">Cerrar</button>
       <button class="mbtn mbtn-pri" id="xmlBtnGenerar" onclick="generarDesdePreview()">
