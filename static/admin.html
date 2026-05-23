@@ -2042,21 +2042,55 @@ async function generarXML(setKey, natencion){
           comuna:       cd.receptor.comuna||'',
           ciudad:       cd.receptor.ciudad||'',
         } : {rut:'77777777-7',razon_social:'EMPRESA LTDA',giro:'',direccion:'',comuna:'',ciudad:''},
-        // Si forzar_monto_cero (CodRef=2 o sin ítems en NC/ND),
-        // enviar items=[] para que xml_builder omita <Detalle> completamente
+        // items: CodRef=2 → un ítem descriptivo con MontoItem=0 (SII lo exige)
+        //        NC/ND sin ítems → lista vacía (forzar_monto_cero lo maneja)
+        //        resto → ítems normales
         items: (()=>{
           const refs=cd.referencias||[];
           const esCodRef2=refs.some(r=>r.tipo_doc_ref!=='SET'&&parseInt(r.cod_ref)===2);
           const sinItems=!cd.items||cd.items.length===0;
-          if(esCodRef2||(sinItems&&[56,61].includes(caso.tipo_doc))) return [];
+
+          if(esCodRef2){
+            // El SII exige al menos 1 ítem aunque sea corrección de texto.
+            // Si el usuario ya agregó ítems en el wizard → usarlos con monto 0.
+            // Si no → auto-generar uno con la razón de referencia como nombre.
+            const itemsExistentes = cd.items||[];
+            if(itemsExistentes.length > 0){
+              return itemsExistentes.map(it=>({
+                nombre:          it.nombre||'',
+                descripcion:     it.descripcion||it.nombre||'',
+                cantidad:        Number(it.cantidad)||1,
+                precio_unitario: 0,   // forzar_monto_cero=true → MontoItem=0
+                descuento_pct:   0,
+                exento:          true, // IndExe=1 es obligatorio cuando monto=0
+                codigo:          it.codigo_val||'',
+                unidad:          it.unidad||'UN',
+              }));
+            }
+            // Auto-generar ítem con la razón de la referencia CodRef=2
+            const refCodRef2 = refs.find(r=>r.tipo_doc_ref!=='SET'&&parseInt(r.cod_ref)===2);
+            const nombreItem = (refCodRef2?.razon_ref||'CORRECCION DATO').toUpperCase();
+            return [{
+              nombre:          nombreItem,
+              descripcion:     nombreItem,
+              cantidad:        1,
+              precio_unitario: 0,
+              descuento_pct:   0,
+              exento:          true,
+              codigo:          '',
+              unidad:          'UN',
+            }];
+          }
+
+          // NC/ND sin ítems y sin CodRef=2: lista vacía
+          if(sinItems&&[56,61].includes(caso.tipo_doc)) return [];
+
           return (cd.items||[]).map(it=>({
             nombre:          it.nombre||'',
             descripcion:     it.descripcion||it.nombre||'',
             cantidad:        Number(it.cantidad)||0,
             precio_unitario: Number(it.precio_unitario)||0,
-            // Si hay descuento global (DscRcgGlobal), los ítems van con precio COMPLETO
-            // — sin DescuentoPct por ítem. El descuento lo aplica el DscRcgGlobal.
-            // Si NO hay descuento global, se respeta el descuento individual del ítem.
+            // Si hay descuento global (DscRcgGlobal), ítems con precio COMPLETO
             descuento_pct:   caso.desc_global ? 0 : Number(it.descuento_pct)||0,
             exento:          Boolean(it.exento),
             codigo:          it.codigo_val||'',
@@ -2479,13 +2513,26 @@ function generarXMLEjemplo(set, cd, caso, ci){
   const esNota        = [56, 61].includes(tipo);
   const esBoleta      = TIPOS_BOLETA.includes(tipo);
   const esExenta      = TIPO_EXENTA.includes(tipo);
-  const forzarCero    = cd.items.length === 0 && esNota;
-  // Si hay descuento global, los ítems van con precio completo (sin descuento_pct)
-  // El descuento lo aplica DscRcgGlobal — no duplicar en cada Detalle
   const hayDescGlobal = !!(caso.desc_global);
 
+  // Determinar la lista de ítems real que irá al XML
+  // (misma lógica que generarXML para que el preview sea fiel)
+  const refs       = cd.referencias||[];
+  const esCodRef2  = refs.some(r=>r.tipo_doc_ref!=='SET'&&parseInt(r.cod_ref)===2);
+  let itemsPreview = cd.items||[];
+  if(esCodRef2){
+    if(itemsPreview.length === 0){
+      const refCodRef2 = refs.find(r=>r.tipo_doc_ref!=='SET'&&parseInt(r.cod_ref)===2);
+      itemsPreview = [{
+        nombre:'('+((refCodRef2?.razon_ref||'CORRECCION DATO').toUpperCase())+')',
+        cantidad:1, precio_unitario:0, exento:true, descuento_pct:0,
+      }];
+    }
+  }
+  const forzarCero = esCodRef2 || (itemsPreview.length === 0 && esNota);
+
   let subtotalAfecto = 0, subtotalExento = 0;
-  cd.items.forEach(it=>{
+  itemsPreview.forEach(it=>{
     const bruto = (it.cantidad||0)*(it.precio_unitario||0);
     // Con descuento global: usar precio completo. Sin él: respetar descuento del ítem.
     const descItemPct = hayDescGlobal ? 0 : (it.descuento_pct||0);
@@ -2589,7 +2636,7 @@ function generarXMLEjemplo(set, cd, caso, ci){
   xml += `    </Encabezado>\n`;
 
   // ── Detalle — orden XSD fiel al xml_builder.py ───────────────────────────
-  cd.items.forEach((it, ii)=>{
+  itemsPreview.forEach((it, ii)=>{
     const qty     = parseFloat(it.cantidad)||0;
     const prc     = parseFloat(it.precio_unitario)||0;
     const base    = qty * prc;
