@@ -1,8 +1,13 @@
-# v3-fix-forzar-monto-cero
 # app/services/xml_builder.py
-# Validado contra DTE_v10.xsd oficial SII
-# FIXES: orden de elementos segun XSD, DscRcgGlobal en posicion correcta,
-#        cod_ref acepta "SET", ELIMINADO TpoTranVenta (no existe en DTE_v10.xsd)
+# ══════════════════════════════════════════════════════════════════
+# FIXES aplicados en este archivo:
+#   [FIX-1] PrcItem=0 explícito cuando precio=0 (todos los tipos)
+#           Antes: solo T52 tenía elif, NC/ND con monto=0 no enviaban PrcItem
+#           → SII rechazaba: "Los Valores de la Linea X del Detalle No Cuadran"
+#   [FIX-2] QtyItem sin decimales cuando cantidad es entera
+#           Antes: siempre f"{cantidad:.2f}" → "80.00", "1.00"
+#           Ahora: "80", "1" (o "1.5" si genuinamente decimal)
+# ══════════════════════════════════════════════════════════════════
 
 from lxml import etree
 from datetime import date, datetime, timezone
@@ -25,7 +30,7 @@ class EmisorDTE:
     ciudad: str
     telefono: str = ""
     correo: str = ""
-    acteco: str = "620200"    # Código actividad económica
+    acteco: str = "620200"
 
 
 @dataclass
@@ -61,7 +66,7 @@ class ReferenciaDTE:
     folio_ref: "int | str"
     fecha_ref: date
     razon_ref: str = ""
-    cod_ref: "str | int" = 0   # "SET" o 1/2/3
+    cod_ref: "str | int" = 0
 
 
 @dataclass
@@ -76,33 +81,44 @@ class InputDTE:
     referencias: list = field(default_factory=list)
     forma_pago: int = 1
     indicador_traslado: int = 0
-    indicador_despacho:  int = 0
+    indicador_despacho: int = 0
     observacion: str = ""
     descuento_global_pct: float = 0.0
     descuento_global_monto: int = 0
-    forzar_monto_cero: bool = False  # Para NC CodRef=2 (corrige texto): fuerza MntTotal=0
+    forzar_monto_cero: bool = False
 
 
 def _sanitizar_texto(texto: str, largo: int = 80) -> str:
     """
-    Elimina caracteres especiales que el SII no acepta en campos de texto.
-    El & (ampersand) es el principal culpable del error RFR 'No hay estadísticas'.
-    El SII procesa el XML de forma no estándar y falla con estos caracteres.
-    Referencia: soporte OML Soluciones - artículo 'Rechazado por error en firma'.
+    Elimina caracteres que el SII rechaza en campos de texto.
+    El & es el principal causante de RFR 'No hay estadísticas'.
     """
     reemplazos = {
-        '&': ' y ',   # & → causa RFR definitivo en SII
-        "'": '',      # comilla simple
-        '"': '',      # comilla doble
-        '#': '',      # gato
+        '&': ' y ',   # & → causa RFR definitivo en SII (aunque lxml lo escape, SII falla)
+        "'": '',
+        '"': '',
+        '#': '',
     }
     resultado = texto
     for char, reemplazo in reemplazos.items():
         resultado = resultado.replace(char, reemplazo)
-    # Limpiar espacios dobles que puedan quedar y truncar
     import re
     resultado = re.sub(r'  +', ' ', resultado).strip()
     return resultado[:largo]
+
+
+def _fmt_qty(cantidad: float) -> str:
+    """
+    [FIX-2] Formatea cantidad SIN decimales si es entera.
+    Antes: f'{cantidad:.2f}' → '80.00', '1.00' (visual innecesario)
+    Ahora: '80', '1' — o '1.50' si genuinamente tiene decimales.
+    El XSD del SII acepta enteros en QtyItem.
+    """
+    # Si la cantidad es entera (80.0 == 80), retornar sin punto decimal
+    if cantidad == int(cantidad):
+        return str(int(cantidad))
+    # Si tiene decimales reales (ej: 2.5 kg), mantenerlos con 2 cifras
+    return f"{cantidad:.2f}"
 
 
 class XMLBuilder:
@@ -150,7 +166,6 @@ class XMLBuilder:
             self.monto_exento = round(subtotal_exento)
             self.monto_total  = self.monto_neto + self.monto_iva + self.monto_exento
 
-        # CodRef=2 (corrige texto): forzar todos los montos a 0
         if self.datos.forzar_monto_cero:
             self.monto_neto   = 0
             self.monto_iva    = 0
@@ -177,7 +192,6 @@ class XMLBuilder:
             self._build_detalle(doc_el, item, idx,
                                 forzar_monto_cero=d.forzar_monto_cero)
 
-        # DscRcgGlobal: DESPUES de Detalle, ANTES de Referencia (orden XSD)
         if self._desc_global_monto > 0:
             dscto = etree.SubElement(doc_el, f"{{{NS}}}DscRcgGlobal")
             etree.SubElement(dscto, f"{{{NS}}}NroLinDR").text  = "1"
@@ -212,31 +226,20 @@ class XMLBuilder:
         enc   = etree.SubElement(parent, f"{{{NS}}}Encabezado")
         iddoc = etree.SubElement(enc, f"{{{NS}}}IdDoc")
 
-        # Orden XSD: TipoDTE, Folio, FchEmis, [IndNoRebaja], [TipoDespacho],
-        # [IndTraslado], [TpoImpresion], [IndServicio], [MntBruto], [FmaPago], ...
-        # NOTA: TpoTranVenta y TpoTranCompra NO existen en DTE_v10.xsd
         etree.SubElement(iddoc, f"{{{NS}}}TipoDTE").text = str(tipo)
         etree.SubElement(iddoc, f"{{{NS}}}Folio").text   = str(d.folio)
         etree.SubElement(iddoc, f"{{{NS}}}FchEmis").text = d.fecha_emision.strftime("%Y-%m-%d")
 
         if tipo == 52:
-            # TipoDespacho va ANTES de IndTraslado
-            # 1=despacho por emisor a local cliente, 2=despacho por emisor lugar indicado, 3=retira cliente
             if d.indicador_despacho:
                 etree.SubElement(iddoc, f"{{{NS}}}TipoDespacho").text = str(d.indicador_despacho)
             etree.SubElement(iddoc, f"{{{NS}}}IndTraslado").text = str(d.indicador_traslado or 1)
 
         if es_boleta:
-            # Boletas (39, 41): IndServicio=3 OBLIGATORIO; sin FmaPago
             etree.SubElement(iddoc, f"{{{NS}}}IndServicio").text = "3"
         elif tipo in (33, 34):
-            # Facturas afecta/exenta: FmaPago opcional pero recomendado.
-            # ELIMINADO TpoTranVenta — NO existe en DTE_v10.xsd (causaba RFR y 8 errores XSD)
             etree.SubElement(iddoc, f"{{{NS}}}FmaPago").text = str(d.forma_pago)
-        # Notas 56/61: sin FmaPago (son correcciones de documentos, no ventas nuevas)
 
-        # Emisor: RUTEmisor, RznSoc, GiroEmis, [Telefono], [CorreoEmisor],
-        # [Acteco], ..., DirOrigen, CmnaOrigen, CiudadOrigen
         em     = d.emisor
         emisor = etree.SubElement(enc, f"{{{NS}}}Emisor")
         etree.SubElement(emisor, f"{{{NS}}}RUTEmisor").text = em.rut
@@ -257,8 +260,6 @@ class XMLBuilder:
         etree.SubElement(emisor, f"{{{NS}}}CmnaOrigen").text   = (em.comuna or "").strip()
         etree.SubElement(emisor, f"{{{NS}}}CiudadOrigen").text = (em.ciudad or "").strip()
 
-        # Receptor: RUTRecep, [CdgIntRecep], RznSocRecep, ..., [GiroRecep],
-        # [Contacto], [CorreoRecep], DirRecep, CmnaRecep, CiudadRecep
         rc       = d.receptor
         receptor = etree.SubElement(enc, f"{{{NS}}}Receptor")
         etree.SubElement(receptor, f"{{{NS}}}RUTRecep").text    = rc.rut.replace(".", "")
@@ -272,7 +273,6 @@ class XMLBuilder:
             etree.SubElement(receptor, f"{{{NS}}}CmnaRecep").text   = rc.comuna or "S/C"
             etree.SubElement(receptor, f"{{{NS}}}CiudadRecep").text = rc.ciudad or "S/C"
 
-        # Totales: MntNeto, [MntExe], ..., [TasaIVA], [IVA], ..., MntTotal
         totales = etree.SubElement(enc, f"{{{NS}}}Totales")
 
         if tipo in TIPOS_FACTURA_EXENTA:
@@ -287,8 +287,7 @@ class XMLBuilder:
                 etree.SubElement(totales, f"{{{NS}}}IVA").text     = str(self.monto_iva)
         else:
             if d.forzar_monto_cero:
-                # NC CodRef=2: solo MntTotal=0, sin otros campos de montos
-                pass
+                pass  # Solo MntTotal=0, sin otros campos
             else:
                 etree.SubElement(totales, f"{{{NS}}}MntNeto").text  = str(self.monto_neto)
                 if self.monto_exento > 0:
@@ -299,9 +298,6 @@ class XMLBuilder:
         etree.SubElement(totales, f"{{{NS}}}MntTotal").text = str(self.monto_total)
 
     def _build_detalle(self, parent, item, numero_linea: int, forzar_monto_cero: bool = False):
-        # Orden XSD: NroLinDet, [CdgItem], [IndExe], ..., NmbItem, [DscItem],
-        # ..., [QtyItem], ..., [UnmdItem], [PrcItem], [DescuentoPct],
-        # [DescuentoMonto], ..., MontoItem
         NS  = self.NAMESPACE
         det = etree.SubElement(parent, f"{{{NS}}}Detalle")
         etree.SubElement(det, f"{{{NS}}}NroLinDet").text = str(numero_linea)
@@ -314,22 +310,24 @@ class XMLBuilder:
         if item.exento:
             etree.SubElement(det, f"{{{NS}}}IndExe").text = "1"
 
-        # Sanitizar: & ' " # causan RFR en SII aunque sean XML válido
+        # Sanitizar nombre antes de insertar: & ' " # causan RFR en SII
         etree.SubElement(det, f"{{{NS}}}NmbItem").text = _sanitizar_texto(item.nombre, 80)
-        etree.SubElement(det, f"{{{NS}}}QtyItem").text = f"{item.cantidad:.2f}"
+
+        # [FIX-2] QtyItem sin decimales cuando la cantidad es entera
+        etree.SubElement(det, f"{{{NS}}}QtyItem").text = _fmt_qty(item.cantidad)
 
         if item.unidad:
             etree.SubElement(det, f"{{{NS}}}UnmdItem").text = item.unidad
 
-        # PrcItem: incluir siempre en guías (T52) aunque sea 0
-        # porque el SII valida QtyItem × PrcItem = MontoItem.
-        # Para NC/ND CodRef=2 sin precio, omitir (forzar_monto_cero maneja ese caso).
-        tipo = self.datos.tipo_dte
-        if round(item.precio_unitario) != 0:
-            etree.SubElement(det, f"{{{NS}}}PrcItem").text = str(round(item.precio_unitario))
-        elif tipo == 52:
-            # Guía sin precio (traslado interno): incluir PrcItem=0 explícito
-            etree.SubElement(det, f"{{{NS}}}PrcItem").text = "0"
+        # ── [FIX-1] PrcItem: siempre incluir, incluso cuando es 0 ────────────
+        # ANTES: solo se agregaba si precio != 0, excepto elif tipo==52
+        # PROBLEMA: sin PrcItem el SII no puede validar QtyItem × PrcItem = MontoItem
+        #           → rechaza con "Los Valores de la Linea X del Detalle No Cuadran"
+        # AFECTA: T52 traslado interno (IndTraslado=5), NC CodRef=2, ND CodRef=1
+        #
+        # AHORA: siempre se incluye PrcItem (0 si el precio es cero)
+        etree.SubElement(det, f"{{{NS}}}PrcItem").text = str(round(item.precio_unitario))
+        # ─────────────────────────────────────────────────────────────────────
 
         if item.descuento_pct > 0:
             etree.SubElement(det, f"{{{NS}}}DescuentoPct").text   = f"{item.descuento_pct:.2f}"
@@ -340,12 +338,6 @@ class XMLBuilder:
         etree.SubElement(det, f"{{{NS}}}MontoItem").text = "0" if forzar_monto_cero else str(item.monto_item)
 
     def _build_referencia(self, parent, ref, numero: int):
-        # Orden XSD: NroLinRef, TpoDocRef, [IndGlobal], FolioRef,
-        # [RUTOtr], [FchRef], [CodRef], [RazonRef]
-        #
-        # IMPORTANTE (instrucciones SII para certificación):
-        #   TpoDocRef="SET" → referencia al set de prueba (sin FolioRef ni CodRef)
-        #   TpoDocRef=33/61/etc → referencia a documento real (con FolioRef, FchRef, CodRef)
         NS = self.NAMESPACE
         es_set = str(ref.tipo_doc_ref).upper() == "SET"
 
@@ -354,18 +346,15 @@ class XMLBuilder:
         etree.SubElement(r, f"{{{NS}}}TpoDocRef").text = str(ref.tipo_doc_ref)
 
         if es_set:
-            # SET: XSD exige NroLinRef → TpoDocRef → FolioRef → FchRef → RazonRef
             etree.SubElement(r, f"{{{NS}}}FolioRef").text = str(ref.folio_ref)
             fecha_ref = ref.fecha_ref.strftime("%Y-%m-%d") if hasattr(ref.fecha_ref, "strftime") else str(ref.fecha_ref)
             etree.SubElement(r, f"{{{NS}}}FchRef").text = fecha_ref
             if ref.razon_ref:
                 etree.SubElement(r, f"{{{NS}}}RazonRef").text = ref.razon_ref[:90]
         else:
-            # Referencia a documento real: FolioRef, FchRef, CodRef
             etree.SubElement(r, f"{{{NS}}}FolioRef").text = str(ref.folio_ref)
             fecha_ref = ref.fecha_ref.strftime("%Y-%m-%d") if hasattr(ref.fecha_ref, "strftime") else str(ref.fecha_ref)
             etree.SubElement(r, f"{{{NS}}}FchRef").text = fecha_ref
-            # CodRef: 1=anula, 2=corrige texto, 3=corrige montos
             if ref.cod_ref not in (0, None, "") and str(ref.cod_ref) in ("1","2","3"):
                 etree.SubElement(r, f"{{{NS}}}CodRef").text = str(ref.cod_ref)
             if ref.razon_ref:
