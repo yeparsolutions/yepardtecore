@@ -156,10 +156,19 @@ class DTEService:
             for r in refs_data
         ]
 
-        # Si no hay ítems en NC/ND, forzar montos a cero automáticamente
+        # forzar_monto_cero cuando:
+        # 1. El caller lo pide explícitamente, O
+        # 2. NC/ND sin ítems (sin_items), O
+        # 3. NC/ND con CodRef=2 en alguna referencia (corrige giro/razón social)
+        #    → en este caso el XML NO debe llevar <Detalle> (Fix 2 xml_builder)
         es_nota = datos["tipo_dte"] in (56, 61)
         sin_items = len(datos.get("items", [])) == 0
-        forzar_cero = bool(datos.get("forzar_monto_cero", False)) or (es_nota and sin_items)
+        tiene_codref2 = es_nota and any(
+            int(r.get("cod_ref", 0)) == 2
+            for r in datos.get("referencias", [])
+            if str(r.get("tipo_doc_ref","")).upper() != "SET"
+        )
+        forzar_cero = bool(datos.get("forzar_monto_cero", False)) or (es_nota and sin_items) or tiene_codref2
 
         return InputDTE(
             tipo_dte             = datos["tipo_dte"],
