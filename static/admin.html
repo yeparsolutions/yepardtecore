@@ -1406,8 +1406,12 @@ function parsearCasos(bloqueTxt, natencion){
       else if(/VENTA/i.test(m)) indTraslado=1;
     }
     if(traslLine){
-      if(/EMISOR/i.test(traslLine)) indDespacho=2;
-      else if(/CLIENTE/i.test(traslLine)) indDespacho=3;
+      // TipoDespacho según quién traslada físicamente:
+      // 1 = Cliente retira en dependencias del emisor   ← TRASLADO POR: CLIENTE
+      // 2 = Emisor despacha al domicilio del receptor   ← TRASLADO POR: EMISOR
+      // 3 = Emisor despacha a otras instalaciones (terceros/aduana) — caso especial
+      if(/EMISOR/i.test(traslLine))   indDespacho=2;
+      else if(/CLIENTE/i.test(traslLine)) indDespacho=1;
     }
 
     // ── Descuento global — parsear porcentaje, glosa y alcance ───────────
@@ -2625,10 +2629,14 @@ function generarXMLEjemplo(set, cd, caso, ci){
     if(mntIVA>0){ xml += `        <TasaIVA>19</TasaIVA>\n`; xml += `        <IVA>${mntIVA}</IVA>\n`; }
   } else {
     if(!forzarCero){
-      xml += `        <MntNeto>${mntNeto}</MntNeto>\n`;
+      // MntNeto solo si hay afectos — NC/ND exenta lo tiene en 0
+      if(mntNeto>0)   xml += `        <MntNeto>${mntNeto}</MntNeto>\n`;
       if(mntExento>0) xml += `        <MntExe>${mntExento}</MntExe>\n`;
-      xml += `        <TasaIVA>19</TasaIVA>\n`;
-      xml += `        <IVA>${mntIVA}</IVA>\n`;
+      // TasaIVA e IVA solo cuando hay IVA real — NO para NC/ND de docs exentos
+      if(mntIVA>0){
+        xml += `        <TasaIVA>19</TasaIVA>\n`;
+        xml += `        <IVA>${mntIVA}</IVA>\n`;
+      }
     }
   }
   xml += `        <MntTotal>${mntTotal}</MntTotal>\n`;
