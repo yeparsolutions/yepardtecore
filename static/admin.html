@@ -751,14 +751,17 @@ function isItemsFijo(caso){
 const DOC_MAP = {'FACTURA ELECTRONICA':33,'FACTURA NO AFECTA O EXENTA ELECTRONICA':34,'NOTA DE CREDITO ELECTRONICA':61,'NOTA DE CREDITO':61,'NOTA DE DEBITO ELECTRONICA':56,'NOTA DE DEBITO':56,'GUIA DE DESPACHO ELECTRONICA':52,'GUIA DE DESPACHO':52};
 // ENDPOINT_MAP — configurable desde el panel (persiste en localStorage)
 // Los defaults son los endpoints estándar de YeparDTEcore
+// Todos los sets usan el endpoint DINÁMICO
+// que recibe los datos completos del admin en el body
+const ENDPOINT_DINAMICO = '/v1/certificacion-dinamica/generar-xml';
 const ENDPOINT_DEFAULTS = {
-  basico2:     '/v1/certificacion-facturas2/generar-xml',
-  exentas:     '/v1/certificacion-exentas/generar-xml',
-  guias:       '/v1/certificacion-guia/generar-xml',
-  compras:     '/v1/certificacion-libro-compras/generar-xml',
+  basico2:     ENDPOINT_DINAMICO,
+  exentas:     ENDPOINT_DINAMICO,
+  guias:       ENDPOINT_DINAMICO,
+  compras:     '/v1/certificacion-libro-compras/generar-xml',  // libros siguen igual
   ventas:      '/v1/certificacion-libro-ventas/generar-xml',
   libro_guias: '/v1/certificacion-libro-guias/generar-xml',
-  boletas:     '/v1/certificacion-boletas/generar-xml',
+  boletas:     ENDPOINT_DINAMICO,
 };
 
 function getEndpointMap(){
@@ -1969,19 +1972,112 @@ async function generarXML(setKey, natencion){
   if(!S.id){log('Carga el emisor primero','warn');return;}
   const endpoint=getEndpointMap()[setKey];
   if(!endpoint){res(5,false,'No hay endpoint configurado para el set: '+setKey);return;}
-  // Deshabilitar el botón correcto
+
   const btns=document.querySelectorAll('#gen_tabs .bp');
   btns.forEach(b=>{if(b.textContent.includes('Generar')){b.disabled=true;b.textContent='Generando...';}});
   log(`Generando ${setKey} N° ${natencion}...`,'info');
+
+  // Buscar el set en setsDetectados
+  const set = S.setsDetectados.find(s=>s.natencion===String(natencion)&&s.key===setKey)
+           || S.setsDetectados.find(s=>s.natencion===String(natencion));
+
+  // Construir body dinámico con todos los datos editados en el admin
+  const usarDinamico = endpoint.includes('/certificacion-dinamica/');
+  let fetchOptions = {method:'POST'};
+
+  if(usarDinamico && set){
+    // Convertir casoData del admin al formato del endpoint dinámico
+    const casos = set.casos.map((caso, ci)=>{
+      const cd = set.casoData[ci]||{};
+      return {
+        numero_caso:          ci+1,
+        tipo_dte:             caso.tipo_doc,
+        fecha_emision:        new Date().toISOString().split('T')[0],
+        forzar_monto_cero:    cd.items&&cd.items.length===0&&[56,61].includes(caso.tipo_doc),
+        indicador_traslado:   cd.ind_traslado||0,
+        indicador_despacho:   cd.ind_despacho||0,
+        descuento_global_pct: caso.desc_global||0,
+        receptor: cd.receptor ? {
+          rut:          cd.receptor.rut||'77777777-7',
+          razon_social: cd.receptor.razon_social||'EMPRESA LTDA',
+          giro:         cd.receptor.giro||'',
+          direccion:    cd.receptor.direccion||'',
+          comuna:       cd.receptor.comuna||'',
+          ciudad:       cd.receptor.ciudad||'',
+        } : {rut:'77777777-7',razon_social:'EMPRESA LTDA',giro:'',direccion:'',comuna:'',ciudad:''},
+        items: (cd.items||[]).map(it=>({
+          nombre:          it.nombre||'',
+          descripcion:     it.descripcion||it.nombre||'',
+          cantidad:        Number(it.cantidad)||0,
+          precio_unitario: Number(it.precio_unitario)||0,
+          descuento_pct:   Number(it.descuento_pct)||0,
+          exento:          Boolean(it.exento),
+          codigo:          it.codigo_val||'',
+          unidad:          it.unidad||'UN',
+        })),
+        referencias: (cd.referencias||[]).map(ref=>({
+          tipo_doc_ref: ref.tipo_doc_ref,
+          folio_ref:    Number(ref.folio_ref)||1,
+          fecha_ref:    ref.fecha_ref||new Date().toISOString().split('T')[0],
+          cod_ref:      ref.cod_ref||null,
+          razon_ref:    ref.razon_ref||'',
+        })),
+      };
+    });
+
+    const body = {
+      emisor_id: S.id,
+      set_key:   setKey,
+      sets: [{
+        natencion:     set.natencion,
+        label:         set.label||setKey,
+        fecha_emision: new Date().toISOString().split('T')[0],
+        casos,
+      }],
+    };
+
+    fetchOptions = {
+      method:  'POST',
+      headers: {'Content-Type':'application/json'},
+      body:    JSON.stringify(body),
+    };
+    log(`Enviando ${casos.length} casos al endpoint dinámico...`,'info');
+  } else {
+    // Libros y otros: POST simple con query param
+    const url2=base()+endpoint+'?emisor_id='+S.id;
+    fetchOptions = {method:'POST'};
+    // Usar URL con query param
+    const r2=await fetch(url2,fetchOptions);
+    if(!r2.ok){
+      const txt=await r2.text();
+      log('Error '+r2.status,'err');
+      res(5,false,'Error '+r2.status+': '+txt.slice(0,400));
+      btns.forEach(b=>{b.disabled=false;b.textContent='⚙️ Generar XML';});
+      return;
+    }
+    const cd2=r2.headers.get('Content-Disposition')||'';
+    const m2=cd2.match(/filename="([^"]+)"/);
+    S.xmlNombre=m2?m2[1]:`EnvioDTE_${setKey}_${natencion}.xml`;
+    S.xmlBlob=await r2.blob();
+    const casos2=r2.headers.get('X-Casos-Generados')||'?';
+    const err2=r2.headers.get('X-Casos-Error')||'0';
+    log(`✓ XML ${setKey} — ${casos2} docs`,'ok');
+    document.getElementById('dl_name5').textContent=S.xmlNombre;
+    document.getElementById('dlbox5').classList.add('show');
+    document.getElementById('sii_steps5').classList.add('show');
+    done(5,'✓ XML listo');
+    res(5,true,`EnvioDTE: ${S.xmlNombre}\n${casos2} docs firmados.`);
+    btns.forEach(b=>{b.disabled=false;b.textContent='⚙️ Generar XML';});
+    return;
+  }
+
   try{
-    const url=base()+endpoint+'?emisor_id='+S.id;
-    const r=await fetch(url,{method:'POST',headers:{
-      'X-Charset':'ISO-8859-1',  // hint al backend para encoding SII
-    }});
+    const url=base()+endpoint;
+    const r=await fetch(url,fetchOptions);
     if(!r.ok){
       const txt=await r.text();
       log('Error '+r.status,'err');
-      res(5,false,'Error '+r.status+': '+txt.slice(0,400));
+      res(5,false,'Error '+r.status+': '+txt.slice(0,600));
       return;
     }
     const cd=r.headers.get('Content-Disposition')||'';
@@ -1990,12 +2086,13 @@ async function generarXML(setKey, natencion){
     S.xmlBlob=await r.blob();
     const casos=r.headers.get('X-Casos-Generados')||'?';
     const errores=r.headers.get('X-Casos-Error')||'0';
-    log(`✓ XML ${setKey} — ${casos} docs firmados`+(errores!=='0'?` (${errores} error)`:''),'ok');
+    const detalleErr=r.headers.get('X-Errores-Detalle')||'';
+    log(`✓ XML ${setKey} N°${natencion} — ${casos} docs firmados`+(errores!=='0'?` (${errores} error: ${detalleErr})`:''),'ok');
     document.getElementById('dl_name5').textContent=S.xmlNombre;
     document.getElementById('dlbox5').classList.add('show');
     document.getElementById('sii_steps5').classList.add('show');
     done(5,'✓ XML listo');
-    res(5,true,`EnvioDTE generado: ${S.xmlNombre}\n${casos} documentos firmados.\nDescárgalo y súbelo en maullin.sii.cl`);
+    res(5,true,`EnvioDTE generado: ${S.xmlNombre}\n${casos} docs firmados.\n${errores!=='0'?'Errores: '+detalleErr:'Sin errores ✓'}\n\nDescárgalo y súbelo en maullin.sii.cl`);
   }catch(e){
     log('Error: '+e,'err');
     res(5,false,'Error: '+String(e));
