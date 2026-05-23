@@ -131,12 +131,12 @@ async def _emitir_set(fecha: str, service: DTEService, emisor_id: int):
     # ── CASO 5 — NC corrige giro (CodRef=2) → MntTotal=0 ──────
     # Los ítems deben corresponder a los de la FAC referenciada (Caso 1)
     # con precio=0 y forzar_monto_cero=True
+    # FIX: items=[] — xml_builder omite <Detalle> cuando forzar_monto_cero=True
+    # Antes: ítem con precio=0 → SII "valores no cuadran"
     if 1 in folios:
         await emitir(5, {
             "tipo_dte": 61, "fecha_emision": fecha, "receptor": RECEPTOR,
-            "items": [
-                {"nombre": "CORRIGE GIRO DEL RECEPTOR", "cantidad": 1, "precio_unitario": 0, "exento": False},
-            ],
+            "items": [],
             "forzar_monto_cero": True,
             "referencias": [
                 _ref_set(5, fecha),
@@ -173,20 +173,22 @@ async def _emitir_set(fecha: str, service: DTEService, emisor_id: int):
             ],
         })
 
-    # ── CASO 8 — ND anula NC5 (CodRef=1) → MntTotal=0 espejo ──
-    # Los ítems deben ser los mismos que la NC referenciada (Caso 5)
+    # ── CASO 8 — ND anula NC5 (CodRef=1) ─────────────────────────
+    # NC5 era CodRef=2 (corrige giro) → también sin ítems.
+    # ND que anula esa NC: sin Detalle, forzar_monto_cero=True.
+    # xml_builder omite <Detalle> automáticamente con forzar_monto_cero.
     if 5 in folios:
         await emitir(8, {
             "tipo_dte": 56, "fecha_emision": fecha, "receptor": RECEPTOR,
-            "items": [
-                {"nombre": "ANULA NOTA DE CREDITO ELECTRONICA", "cantidad": 1, "precio_unitario": 0, "exento": False},
-            ],
+            "items": [],            # Sin ítems — dte_service detecta sin_items → forzar_cero
             "forzar_monto_cero": True,
             "referencias": [
                 _ref_set(8, fecha),
                 _ref_doc(61, folios[5], fecha, 1, "ANULA NOTA DE CREDITO ELECTRONICA"),
             ],
         })
+    else:
+        errores.append("Caso 8: no se pudo emitir porque el Caso 5 (NC) falló")
 
     return xmls_firmados, folios, errores
 
