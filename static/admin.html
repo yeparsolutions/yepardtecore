@@ -1598,7 +1598,7 @@ function renderModalCaso(si,idx){
   function calcTots(items,tipo){let neto=0,exento=0;items.forEach(it=>{const base=(it.cantidad||0)*(it.precio_unitario||0);const d=base*(it.descuento_pct||0)/100;if(it.exento||tipo===34)exento+=base-d;else neto+=base-d;});const iva=tipo!==34?Math.round(neto*0.19):0;return{neto:Math.round(neto),exento:Math.round(exento),iva,total:Math.round(neto+iva+exento)};}
   const _warnMsg=warnDinamico(caso);
   const warnHtml=_warnMsg?`<div class="caso-warn"><div class="caso-warn-icon">⚠️</div><div class="caso-warn-txt">${_warnMsg}</div></div>`:'';
-  const indHtml=isGuia?`<div class="indicadores-box"><div class="ind-field"><div class="ind-label">IndTraslado</div><input class="ind-input" type="number" id="ind_traslado_${si}_${idx}" value="${cd.ind_traslado??''}" min="1" max="9" placeholder="1-9"><div class="ind-desc">1=Venta despacha, 2=Retira cliente, 5=Traslado interno</div></div><div class="ind-field"><div class="ind-label">IndDespacho</div><input class="ind-input" type="number" id="ind_despacho_${si}_${idx}" value="${cd.ind_despacho??''}" min="1" max="3" placeholder="vacío=sin despacho"><div class="ind-desc">Dejar vacío para traslado interno</div></div></div>`:'';
+  const indHtml=isGuia?`<div class="indicadores-box"><div class="ind-field"><div class="ind-label">IndTraslado</div><input class="ind-input" type="number" id="ind_traslado_${si}_${idx}" value="${cd.ind_traslado??''}" min="1" max="9" placeholder="1-9" onfocus="this.select()"><div class="ind-desc">1=Venta despacha, 2=Retira cliente, 5=Traslado interno</div></div><div class="ind-field"><div class="ind-label">IndDespacho</div><input class="ind-input" type="number" id="ind_despacho_${si}_${idx}" value="${cd.ind_despacho??''}" min="1" max="3" placeholder="vacío=sin despacho" onfocus="this.select()"><div class="ind-desc">Dejar vacío para traslado interno</div></div></div>`:'';
   // ── Panel del caso referenciado (siempre visible si hay ref a doc) ──
   const docRef=refs.find(r=>r.tipo_doc_ref!=='SET');
   const sinItems=cd.items.length===0;
@@ -1706,13 +1706,17 @@ function renderModalCaso(si,idx){
     onchange="updateItemField(${si},${idx},${ii},'unidad',this.value)"></td>
   <td><input class="item-input" type="number" value="${it.cantidad}" ${dis} min="0"
     style="font-size:13px;font-weight:600;color:var(--text);text-align:right;background:var(--bg)"
+    onfocus="this.select()"
     onchange="updateItem(${si},${idx},${ii},'cantidad',this.value)"></td>
-  <td><input class="item-input" type="number" value="${it.precio_unitario}" ${dis} min="0"
+  <td><input class="item-input" type="number" value="${it.precio_unitario||''}" ${dis} min="0"
+    placeholder="0"
     style="font-size:13px;font-weight:600;color:var(--text);text-align:right;background:var(--bg)"
+    onfocus="this.select()"
     onchange="updateItem(${si},${idx},${ii},'precio_unitario',this.value)"></td>
   <td><input class="item-input" type="number" value="${it.descuento_pct||''}" ${dis}
     min="0" max="100" placeholder="0"
     style="text-align:right"
+    onfocus="this.select()"
     onchange="updateItem(${si},${idx},${ii},'descuento_pct',this.value)"></td>
   <td style="text-align:center">
     <input type="checkbox" title="IndExe=1 — Línea exenta de IVA (sin IVA)"
