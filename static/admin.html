@@ -2637,6 +2637,18 @@ function generarXMLEjemplo(set, cd, caso, ci){
 
   // ── Detalle — orden XSD fiel al xml_builder.py ───────────────────────────
   itemsPreview.forEach((it, ii)=>{
+    xml += `    <Detalle>\n`;
+    xml += `      <NroLinDet>${ii+1}</NroLinDet>\n`;
+
+    // CodRef=2 (forzarCero): solo NroLinDet + NmbItem + MontoItem=0
+    // IndExe, QtyItem, PrcItem NO van — el SII los rechaza en este contexto
+    if(forzarCero){
+      xml += `      <NmbItem>${xmlEncodeText(it.nombre)}</NmbItem>\n`;
+      xml += `      <MontoItem>0</MontoItem>\n`;
+      xml += `    </Detalle>\n`;
+      return;
+    }
+
     const qty     = parseFloat(it.cantidad)||0;
     const prc     = parseFloat(it.precio_unitario)||0;
     const base    = qty * prc;
@@ -2644,12 +2656,9 @@ function generarXMLEjemplo(set, cd, caso, ci){
     // Sin descuento global: respetar descuento individual del ítem
     const descPct = hayDescGlobal ? 0 : (parseFloat(it.descuento_pct)||0);
     const descMnt = descPct ? Math.round(base*(descPct/100)) : 0;
-    const linea   = forzarCero ? 0 : Math.round(base - descMnt);
+    const linea   = Math.round(base - descMnt);
     const codVal  = (it.codigo_val||'').trim();
     const unmd    = (it.unidad||'').trim();
-
-    xml += `    <Detalle>\n`;
-    xml += `      <NroLinDet>${ii+1}</NroLinDet>\n`;
 
     // CdgItem: TpoCodigo="INT1" (igual que xml_builder.py)
     if(codVal){
@@ -2662,13 +2671,10 @@ function generarXMLEjemplo(set, cd, caso, ci){
     // IndExe ANTES de NmbItem (orden XSD correcto)
     if(it.exento||esExenta) xml += `      <IndExe>1</IndExe>\n`;
 
-    // [FIX-A] xmlEncodeText: & → &amp;, ó → &#243;, ñ → &#241; etc.
     xml += `      <NmbItem>${xmlEncodeText(it.nombre)}</NmbItem>\n`;
-    // [FIX-B] fmtQty: sin decimales cuando la cantidad es entera (80 en vez de 80.00)
     xml += `      <QtyItem>${fmtQty(qty)}</QtyItem>\n`;
     if(unmd) xml += `      <UnmdItem>${xmlEncodeText(unmd)}</UnmdItem>\n`;
-    // [FIX-1] PrcItem SIEMPRE presente, incluso cuando es 0
-    // Sin PrcItem el SII no puede validar QtyItem × PrcItem = MontoItem → rechaza
+    // PrcItem siempre presente (FIX-1)
     xml += `      <PrcItem>${Math.round(prc)}</PrcItem>\n`;
     if(descPct){
       xml += `      <DescuentoPct>${descPct.toFixed(2)}</DescuentoPct>\n`;
