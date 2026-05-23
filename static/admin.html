@@ -2319,142 +2319,172 @@ function generarDesdePreview(){
    No firma ni envía — solo para previsualización.
 ────────────────────────────────────────────────────────────────── */
 function generarXMLEjemplo(set, cd, caso, ci){
-  const folio   = cd.folio_asignado || 'PENDIENTE';
-  const tipo    = caso.tipo_doc || '?';
-  const fechaHoy= new Date().toISOString().split('T')[0];
-  const E       = S.emisor;
-  const recep   = cd.receptor || {};
+  const folio    = cd.folio_asignado || 'PENDIENTE';
+  const tipo     = caso.tipo_doc || '?';
+  const fechaHoy = new Date().toISOString().split('T')[0];
+  const E        = S.emisor;
+  const recep    = cd.receptor || {};
 
-  // Calcular totales
-  let mntNeto=0, mntExento=0, mntIVA=0, mntTotal=0, mntDesc=0;
+  // Calcular totales — igual que xml_builder.py _calcular_totales()
+  const TIPOS_BOLETA  = [39, 41];
+  const TIPO_EXENTA   = [34];
+  const esNota        = [56, 61].includes(tipo);
+  const esBoleta      = TIPOS_BOLETA.includes(tipo);
+  const esExenta      = TIPO_EXENTA.includes(tipo);
+  const forzarCero    = cd.items.length === 0 && esNota;
+
+  let subtotalAfecto = 0, subtotalExento = 0;
   cd.items.forEach(it=>{
-    const base = (it.cantidad||0)*(it.precio_unitario||0);
-    const desc = Math.round(base*(it.descuento_pct||0)/100);
-    const neto = base - desc;
-    mntDesc += desc;
-    if(it.exento||tipo===34) mntExento += neto;
-    else mntNeto += neto;
+    const bruto = (it.cantidad||0)*(it.precio_unitario||0);
+    const neto  = Math.round(bruto - bruto*(it.descuento_pct||0)/100);
+    if(it.exento||esExenta) subtotalExento += neto;
+    else subtotalAfecto += neto;
   });
-  mntNeto    = Math.round(mntNeto);
-  mntExento  = Math.round(mntExento);
-  mntIVA     = [33,52].includes(tipo) ? Math.round(mntNeto*0.19) : 0;
-  mntTotal   = mntNeto + mntIVA + mntExento;
+  let mntNeto=0, mntIVA=0, mntExento=0, mntTotal=0;
+  if(esExenta){
+    mntExento = Math.round(subtotalExento + subtotalAfecto);
+    mntTotal  = mntExento;
+  } else if(esBoleta){
+    mntNeto   = mntIVA>0 ? Math.round(subtotalAfecto/1.19) : 0;
+    mntIVA    = subtotalAfecto - mntNeto;
+    mntExento = Math.round(subtotalExento);
+    mntTotal  = Math.round(subtotalAfecto + subtotalExento);
+  } else {
+    mntNeto   = Math.round(subtotalAfecto);
+    mntIVA    = Math.round(subtotalAfecto * 0.19);
+    mntExento = Math.round(subtotalExento);
+    mntTotal  = mntNeto + mntIVA + mntExento;
+  }
+  if(forzarCero){ mntNeto=0; mntIVA=0; mntExento=0; mntTotal=0; }
 
-  // ── Tipos que llevan IndServicio ─────────────────────────────
-  // Solo facturas y guías, NUNCA NC (61) ni ND (56)
-  const llevaIndServicio = [33, 34, 52].includes(tipo);
-  // NC y ND: totales simplificados (solo MntTotal)
-  const esNotaCredDeb    = [61, 56].includes(tipo);
-
-  let xml = `<?xml version="1.0" encoding="ISO-8859-1" standalone="no"?>\n`;
+  // ── Declaración XML — SIN standalone (igual que xml_builder.py) ──────────
+  let xml = `<?xml version="1.0" encoding="ISO-8859-1"?>\n`;
   xml += `<DTE version="1.0">\n`;
-  xml += `  <Documento ID="F${folio}T${tipo}">\n`;
+  xml += `  <Documento ID="DTE-${tipo}-${folio}">\n`;
   xml += `    <Encabezado>\n`;
   xml += `      <IdDoc>\n`;
   xml += `        <TipoDTE>${tipo}</TipoDTE>\n`;
   xml += `        <Folio>${folio}</Folio>\n`;
   xml += `        <FchEmis>${fechaHoy}</FchEmis>\n`;
-  if(llevaIndServicio)
-    xml += `        <IndServicio>3</IndServicio>\n`;
+
+  // TipoDespacho e IndTraslado solo en guías (T52) — ANTES de IndServicio
   if(tipo===52){
-    if(cd.ind_traslado) xml += `        <IndTraslado>${cd.ind_traslado}</IndTraslado>\n`;
-    if(cd.ind_despacho) xml += `        <TipoDespacho>${cd.ind_despacho}</TipoDespacho>\n`;
+    if(cd.ind_despacho)  xml += `        <TipoDespacho>${cd.ind_despacho}</TipoDespacho>\n`;
+    xml += `        <IndTraslado>${cd.ind_traslado||1}</IndTraslado>\n`;
   }
+  // IndServicio SOLO en boletas (39, 41) — NO en facturas ni NC/ND
+  if(esBoleta) xml += `        <IndServicio>3</IndServicio>\n`;
+  // FmaPago solo en facturas T33 y T34
+  if([33,34].includes(tipo)) xml += `        <FmaPago>1</FmaPago>\n`;
   xml += `      </IdDoc>\n`;
 
-  // ── Emisor ───────────────────────────────────────────────────
+  // ── Emisor ───────────────────────────────────────────────────────────────
   xml += `      <Emisor>\n`;
   xml += `        <RUTEmisor>${E.rut||'RUT-EMISOR'}</RUTEmisor>\n`;
-  xml += `        <RznSoc>${E.razon_social||''}</RznSoc>\n`;
-  if(E.giro)      xml += `        <GiroEmis>${E.giro}</GiroEmis>\n`;
-  if(E.telefono)  xml += `        <Telefono>${E.telefono}</Telefono>\n`;
-  if(E.acteco)    xml += `        <Acteco>${E.acteco}</Acteco>\n`;
-  if(E.direccion) xml += `        <DirOrigen>${E.direccion}</DirOrigen>\n`;
-  if(E.comuna)    xml += `        <CmnaOrigen>${E.comuna}</CmnaOrigen>\n`;
-  if(E.ciudad)    xml += `        <CiudadOrigen>${E.ciudad}</CiudadOrigen>\n`;
+  if(esBoleta){
+    xml += `        <RznSocEmisor>${E.razon_social||''}</RznSocEmisor>\n`;
+    xml += `        <GiroEmisor>${E.giro||''}</GiroEmisor>\n`;
+  } else {
+    xml += `        <RznSoc>${E.razon_social||''}</RznSoc>\n`;
+    xml += `        <GiroEmis>${E.giro||''}</GiroEmis>\n`;
+    if(E.telefono) xml += `        <Telefono>${E.telefono}</Telefono>\n`;
+    xml += `        <Acteco>${E.acteco||'620200'}</Acteco>\n`;
+  }
+  xml += `        <DirOrigen>${E.direccion||''}</DirOrigen>\n`;
+  xml += `        <CmnaOrigen>${E.comuna||''}</CmnaOrigen>\n`;
+  xml += `        <CiudadOrigen>${E.ciudad||''}</CiudadOrigen>\n`;
   xml += `      </Emisor>\n`;
 
-  // ── Receptor ─────────────────────────────────────────────────
+  // ── Receptor ─────────────────────────────────────────────────────────────
   xml += `      <Receptor>\n`;
-  xml += `        <RUTRecep>${recep.rut||'<!-- Ingresa RUT receptor -->'}</RUTRecep>\n`;
-  if(recep.razon_social) xml += `        <RznSocRecep>${recep.razon_social}</RznSocRecep>\n`;
-  if(recep.giro)         xml += `        <GiroRecep>${recep.giro}</GiroRecep>\n`;
-  if(recep.direccion)    xml += `        <DirRecep>${recep.direccion}</DirRecep>\n`;
-  if(recep.comuna)       xml += `        <CmnaRecep>${recep.comuna}</CmnaRecep>\n`;
-  if(recep.ciudad)       xml += `        <CiudadRecep>${recep.ciudad}</CiudadRecep>\n`;
+  xml += `        <RUTRecep>${(recep.rut||'<!-- RUT receptor -->').replace(/\./g,'')}</RUTRecep>\n`;
+  xml += `        <RznSocRecep>${recep.razon_social||'<!-- Razón social -->'}</RznSocRecep>\n`;
+  if(recep.giro)      xml += `        <GiroRecep>${recep.giro}</GiroRecep>\n`;
+  if(!esBoleta){
+    xml += `        <DirRecep>${recep.direccion||'S/D'}</DirRecep>\n`;
+    xml += `        <CmnaRecep>${recep.comuna||'S/C'}</CmnaRecep>\n`;
+    xml += `        <CiudadRecep>${recep.ciudad||'S/C'}</CiudadRecep>\n`;
+  }
   xml += `      </Receptor>\n`;
 
-  // ── Totales ──────────────────────────────────────────────────
+  // ── Totales — orden fiel al xml_builder.py ───────────────────────────────
   xml += `      <Totales>\n`;
-  if(!esNotaCredDeb){
-    if(mntNeto)    xml += `        <MntNeto>${mntNeto}</MntNeto>\n`;
-    if(tipo!==34)  xml += `        <TasaIVA>19</TasaIVA>\n`;
-    if(mntIVA)     xml += `        <IVA>${mntIVA}</IVA>\n`;
-    if(mntExento)  xml += `        <MntExe>${mntExento}</MntExe>\n`;
-    if(mntDesc)    xml += `        <DescuentoMonto>${mntDesc}</DescuentoMonto>\n`;
+  if(esExenta){
+    xml += `        <MntExe>${mntExento}</MntExe>\n`;
+  } else if(esBoleta){
+    if(mntNeto>0)   xml += `        <MntNeto>${mntNeto}</MntNeto>\n`;
+    if(mntExento>0) xml += `        <MntExe>${mntExento}</MntExe>\n`;
+    if(mntIVA>0){ xml += `        <TasaIVA>19</TasaIVA>\n`; xml += `        <IVA>${mntIVA}</IVA>\n`; }
+  } else {
+    if(!forzarCero){
+      xml += `        <MntNeto>${mntNeto}</MntNeto>\n`;
+      if(mntExento>0) xml += `        <MntExe>${mntExento}</MntExe>\n`;
+      xml += `        <TasaIVA>19</TasaIVA>\n`;
+      xml += `        <IVA>${mntIVA}</IVA>\n`;
+    }
   }
   xml += `        <MntTotal>${mntTotal}</MntTotal>\n`;
   xml += `      </Totales>\n`;
   xml += `    </Encabezado>\n`;
 
-  // ── Detalle (ítems) — estructura completa fiel al XML real ───
+  // ── Detalle — orden XSD fiel al xml_builder.py ───────────────────────────
+  // Orden: NroLinDet → [CdgItem] → [IndExe] → NmbItem → QtyItem → [UnmdItem]
+  //        → [PrcItem si ≠0] → [DescuentoPct] → [DescuentoMonto] → MontoItem
   cd.items.forEach((it, ii)=>{
     const qty     = parseFloat(it.cantidad)||0;
     const prc     = parseFloat(it.precio_unitario)||0;
     const base    = qty * prc;
     const descPct = parseFloat(it.descuento_pct)||0;
     const descMnt = descPct ? Math.round(base*(descPct/100)) : 0;
-    const linea   = Math.round(base - descMnt);
+    const linea   = forzarCero ? 0 : Math.round(base - descMnt);
     const codVal  = (it.codigo_val||'').trim();
-    const dscItem = (it.descripcion||it.nombre||'').trim();
-    const unmd    = (it.unidad||'UN').trim();
+    const unmd    = (it.unidad||'').trim();
 
     xml += `    <Detalle>\n`;
     xml += `      <NroLinDet>${ii+1}</NroLinDet>\n`;
+
+    // CdgItem: TpoCodigo="INT1" (igual que xml_builder.py)
     if(codVal){
       xml += `      <CdgItem>\n`;
-      xml += `        <TpoCodigo>${it.codigo_tipo||'INT'}</TpoCodigo>\n`;
+      xml += `        <TpoCodigo>INT1</TpoCodigo>\n`;
       xml += `        <VlrCodigo>${codVal}</VlrCodigo>\n`;
       xml += `      </CdgItem>\n`;
     }
+
+    // IndExe ANTES de NmbItem (orden XSD correcto)
+    if(it.exento||esExenta) xml += `      <IndExe>1</IndExe>\n`;
+
     xml += `      <NmbItem>${it.nombre}</NmbItem>\n`;
-    xml += `      <DscItem>${dscItem}</DscItem>\n`;
-    xml += `      <QtyItem>${Math.round(qty)}</QtyItem>\n`;
-    xml += `      <UnmdItem>${unmd}</UnmdItem>\n`;
-    xml += `      <PrcItem>${Math.round(prc)}</PrcItem>\n`;
+    // QtyItem con 2 decimales — igual que xml_builder.py f"{cantidad:.2f}"
+    xml += `      <QtyItem>${qty.toFixed(2)}</QtyItem>\n`;
+    if(unmd) xml += `      <UnmdItem>${unmd}</UnmdItem>\n`;
+    // PrcItem: omitir si es 0 (ítem ficticio CodRef=2) — igual que xml_builder.py
+    if(Math.round(prc)!==0) xml += `      <PrcItem>${Math.round(prc)}</PrcItem>\n`;
     if(descPct){
-      xml += `      <DescuentoPct>${Math.round(descPct)}</DescuentoPct>\n`;
+      xml += `      <DescuentoPct>${descPct.toFixed(2)}</DescuentoPct>\n`;
       xml += `      <DescuentoMonto>${descMnt}</DescuentoMonto>\n`;
     }
-    if(it.exento||tipo===34) xml += `      <IndExe>1</IndExe>\n`;
     xml += `      <MontoItem>${linea}</MontoItem>\n`;
     xml += `    </Detalle>\n`;
   });
 
-  // ── Referencias — van DESPUÉS de los Detalle, ANTES del cierre ──
+  // ── Referencias — después de Detalle (orden XSD) ─────────────────────────
   (cd.referencias||[]).forEach((ref, ri)=>{
-    if(ref.tipo_doc_ref==='SET'){
-      xml += `    <Referencia>\n`;
-      xml += `      <NroLinRef>${ri+1}</NroLinRef>\n`;
-      xml += `      <TpoDocRef>SET</TpoDocRef>\n`;
-      xml += `      <FolioRef>${ref.folio_ref||ci+1}</FolioRef>\n`;
-      xml += `      <FchRef>${ref.fecha_ref||fechaHoy}</FchRef>\n`;
-      xml += `      <RazonRef>${ref.razon_ref||'CASO '+set.natencion+'-'+(ci+1)}</RazonRef>\n`;
-      xml += `    </Referencia>\n`;
-    } else {
-      xml += `    <Referencia>\n`;
-      xml += `      <NroLinRef>${ri+1}</NroLinRef>\n`;
-      xml += `      <TpoDocRef>${ref.tipo_doc_ref||'?'}</TpoDocRef>\n`;
-      xml += `      <FolioRef>${ref.folio_ref||'PENDIENTE'}</FolioRef>\n`;
-      xml += `      <FchRef>${ref.fecha_ref||fechaHoy}</FchRef>\n`;
-      if(ref.cod_ref) xml += `      <CodRef>${ref.cod_ref}</CodRef>\n`;
-      xml += `      <RazonRef>${ref.razon_ref||''}</RazonRef>\n`;
-      xml += `    </Referencia>\n`;
-    }
+    const esSet = ref.tipo_doc_ref==='SET';
+    xml += `    <Referencia>\n`;
+    xml += `      <NroLinRef>${ri+1}</NroLinRef>\n`;
+    xml += `      <TpoDocRef>${ref.tipo_doc_ref}</TpoDocRef>\n`;
+    xml += `      <FolioRef>${ref.folio_ref||ci+1}</FolioRef>\n`;
+    xml += `      <FchRef>${ref.fecha_ref||fechaHoy}</FchRef>\n`;
+    if(!esSet && ref.cod_ref && ['1','2','3'].includes(String(ref.cod_ref)))
+      xml += `      <CodRef>${ref.cod_ref}</CodRef>\n`;
+    if(ref.razon_ref) xml += `      <RazonRef>${ref.razon_ref}</RazonRef>\n`;
+    xml += `    </Referencia>\n`;
   });
 
-  xml += `    <TmstFirmaEnv>${new Date().toISOString()}</TmstFirmaEnv>\n`;
-  xml += `    <!-- Firma digital va aquí (generada por el servidor) -->\n`;
+  xml += `    <TED version="1.0"><DD/></TED>\n`;
+  xml += `    <TmstFirma>${new Date().toISOString()}</TmstFirma>\n`;
+  xml += `    <!-- Firma digital insertada por el servidor -->\n`;
   xml += `  </Documento>\n`;
   xml += `</DTE>`;
   return xml;
@@ -2478,27 +2508,25 @@ function toISO88591Entities(str){
 
 /* ── Syntax highlight con encoding ISO-8859-1 ─────────────────── */
 function highlightXML(xml){
-  // Paso 1: escapar < > & del XML para que el browser no los interprete
-  let escaped = xml
+  // Paso 1: convertir chars > 127 → entidad numérica ISO-8859-1
+  // Hacemos esto ANTES de escapar HTML para operar sobre el texto original
+  let iso = '';
+  for(let i=0; i<xml.length; i++){
+    const code = xml.charCodeAt(i);
+    iso += code > 127 ? `&#${code};` : xml[i];
+  }
+  // Ahora iso tiene: Pañuelo → Pa&#241;uelo, Ü → &#220;, etc.
+
+  // Paso 2: escapar para HTML — el & de las entidades &#NNN; también se escapa
+  // → &#241; → &amp;#241; — el browser renderiza esto como el TEXT "&#241;" ✓
+  let escaped = iso
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
-  // Paso 2: convertir chars > 127 a entidades numéricas VISIBLES
-  // Ej: ñ → &amp;#241; (así el browser muestra el texto "&#241;")
-  let iso = '';
-  for(let i=0; i<escaped.length; i++){
-    const code = escaped.charCodeAt(i);
-    if(code > 127){
-      iso += `&amp;#${code};`;  // se verá como &#241; en pantalla
-    } else {
-      iso += escaped[i];
-    }
-  }
-
-  // Paso 3: syntax highlight sobre el texto ya escapado+ISO
-  return iso
-    .replace(/&lt;(\/?)([\w:]+)([^&]*?)(\/?&gt;)/g,
+  // Paso 3: syntax highlight sobre el texto ya en ISO+escapado
+  return escaped
+    .replace(/&lt;(\/?)([\w:?!-]+)([^&<>]*?)(\/?&gt;)/g,
       (_, slash, tag, attrs, close)=>{
         const attrHL = attrs.replace(/([\w:]+)="([^"]*)"/g,
           `<span class="xa">$1</span>="<span class="xv">$2</span>"`);
