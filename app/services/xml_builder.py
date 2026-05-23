@@ -91,7 +91,9 @@ def _sanitizar_texto(texto: str, largo: int = 80) -> str:
     Referencia: soporte OML Soluciones - artículo 'Rechazado por error en firma'.
     """
     reemplazos = {
-        '&': ' y ',   # & → causa RFR definitivo en SII
+        # '&' NO se reemplaza — lxml lo escapa como &amp; automáticamente
+        # El SII decodifica &amp; → & correctamente. Reemplazar por 'y' causaba
+        # que 'Pintura B&W' llegara como 'Pintura B y W' → rechazo item no corresponde.
         "'": '',      # comilla simple
         '"': '',      # comilla doble
         '#': '',      # gato
@@ -173,9 +175,12 @@ class XMLBuilder:
 
         self._build_encabezado(doc_el)
 
-        for idx, item in enumerate(d.items, start=1):
-            self._build_detalle(doc_el, item, idx,
-                                forzar_monto_cero=d.forzar_monto_cero)
+        # FIX 2: NC/ND con forzar_monto_cero=True (CodRef=2 corrige giro/razón social)
+        # NO llevan <Detalle>. El SII rechaza "valores no cuadran" si hay
+        # Detalle con MontoItem=0. Se salta directo a <Referencia>.
+        if not d.forzar_monto_cero:
+            for idx, item in enumerate(d.items, start=1):
+                self._build_detalle(doc_el, item, idx, forzar_monto_cero=False)
 
         # DscRcgGlobal: DESPUES de Detalle, ANTES de Referencia (orden XSD)
         if self._desc_global_monto > 0:
