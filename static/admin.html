@@ -1406,15 +1406,38 @@ function parsearCasos(bloqueTxt, natencion){
       else if(/VENTA/i.test(m)) indTraslado=1;
     }
     if(traslLine){
-      if(/EMISOR/i.test(traslLine)) indDespacho=2;
-      else if(/CLIENTE/i.test(traslLine)) indDespacho=3;
+      // TipoDespacho según quién traslada físicamente:
+      // 1 = Cliente retira en dependencias del emisor   ← TRASLADO POR: CLIENTE
+      // 2 = Emisor despacha al domicilio del receptor   ← TRASLADO POR: EMISOR
+      // 3 = Emisor despacha a otras instalaciones (terceros/aduana) — caso especial
+      if(/EMISOR/i.test(traslLine))   indDespacho=2;
+      else if(/CLIENTE/i.test(traslLine)) indDespacho=1;
     }
 
-    const mDG=blockClean.match(/DESCUENTO\s+GLOBAL\s+ITEMES\s+AFECTOS\s+([\d.]+)%/i);
+    // ── Descuento global — parsear porcentaje, glosa y alcance ───────────
+    // El .txt del SII puede tener variantes:
+    //   "DESCUENTO GLOBAL ITEMES AFECTOS  24%"  → solo afectos
+    //   "DESCUENTO GLOBAL  24%"                 → todos los ítems
+    // La glosa (GlosaDR) viene en la misma línea o en una línea GLOSA siguiente
+    let descGlobalPct = null, descGlobalGlosa = 'Porcentaje Variable', descGlobalSoloAfectos = true;
+    const mDG = blockClean.match(/DESCUENTO\s+GLOBAL(?:\s+ITEMES\s+(AFECTOS|EXENTOS))?\s+([\d.]+)%/i);
+    if(mDG){
+      descGlobalPct          = parseFloat(mDG[2]);
+      descGlobalSoloAfectos  = !mDG[1] || /AFECTOS/i.test(mDG[1]);
+      // Intentar extraer glosa si viene en la misma línea después del %
+      const mGlosa = mDG[0].match(/%\s+(.+)/);
+      if(mGlosa && mGlosa[1].trim()) descGlobalGlosa = mGlosa[1].trim();
+    }
+    // Buscar línea GLOSA separada (formato tabular del .txt)
+    const mGlosaLine = blockClean.match(/GLOSA\s+DESC(?:UENTO)?\s*[:.]?\s*(.+)/i)
+                    || blockClean.match(/GLOSA\s+(?:DR|DESCUENTO)\s*[:.]?\s*(.+)/i);
+    if(mGlosaLine && mGlosaLine[1].trim()) descGlobalGlosa = mGlosaLine[1].trim();
 
     casos.push({
       caso:casoN, tipo_doc:tipoDoc, items, referencias,
-      desc_global: mDG?parseFloat(mDG[1]):null,
+      desc_global: descGlobalPct,
+      desc_global_glosa: descGlobalGlosa,
+      desc_global_solo_afectos: descGlobalSoloAfectos,
       ind_traslado: indTraslado, ind_despacho: indDespacho,
     });
   });
@@ -1579,7 +1602,7 @@ function renderModalCaso(si,idx){
   function calcTots(items,tipo){let neto=0,exento=0;items.forEach(it=>{const base=(it.cantidad||0)*(it.precio_unitario||0);const d=base*(it.descuento_pct||0)/100;if(it.exento||tipo===34)exento+=base-d;else neto+=base-d;});const iva=tipo!==34?Math.round(neto*0.19):0;return{neto:Math.round(neto),exento:Math.round(exento),iva,total:Math.round(neto+iva+exento)};}
   const _warnMsg=warnDinamico(caso);
   const warnHtml=_warnMsg?`<div class="caso-warn"><div class="caso-warn-icon">⚠️</div><div class="caso-warn-txt">${_warnMsg}</div></div>`:'';
-  const indHtml=isGuia?`<div class="indicadores-box"><div class="ind-field"><div class="ind-label">IndTraslado</div><input class="ind-input" type="number" id="ind_traslado_${si}_${idx}" value="${cd.ind_traslado??''}" min="1" max="9" placeholder="1-9"><div class="ind-desc">1=Venta despacha, 2=Retira cliente, 5=Traslado interno</div></div><div class="ind-field"><div class="ind-label">IndDespacho</div><input class="ind-input" type="number" id="ind_despacho_${si}_${idx}" value="${cd.ind_despacho??''}" min="1" max="3" placeholder="vacío=sin despacho"><div class="ind-desc">Dejar vacío para traslado interno</div></div></div>`:'';
+  const indHtml=isGuia?`<div class="indicadores-box"><div class="ind-field"><div class="ind-label">IndTraslado</div><input class="ind-input" type="number" id="ind_traslado_${si}_${idx}" value="${cd.ind_traslado??''}" min="1" max="9" placeholder="1-9" onfocus="this.select()"><div class="ind-desc">1=Venta despacha, 2=Retira cliente, 5=Traslado interno</div></div><div class="ind-field"><div class="ind-label">IndDespacho</div><input class="ind-input" type="number" id="ind_despacho_${si}_${idx}" value="${cd.ind_despacho??''}" min="1" max="3" placeholder="vacío=sin despacho" onfocus="this.select()"><div class="ind-desc">Dejar vacío para traslado interno</div></div></div>`:'';
   // ── Panel del caso referenciado (siempre visible si hay ref a doc) ──
   const docRef=refs.find(r=>r.tipo_doc_ref!=='SET');
   const sinItems=cd.items.length===0;
@@ -1687,13 +1710,17 @@ function renderModalCaso(si,idx){
     onchange="updateItemField(${si},${idx},${ii},'unidad',this.value)"></td>
   <td><input class="item-input" type="number" value="${it.cantidad}" ${dis} min="0"
     style="font-size:13px;font-weight:600;color:var(--text);text-align:right;background:var(--bg)"
+    onfocus="this.select()"
     onchange="updateItem(${si},${idx},${ii},'cantidad',this.value)"></td>
-  <td><input class="item-input" type="number" value="${it.precio_unitario}" ${dis} min="0"
+  <td><input class="item-input" type="number" value="${it.precio_unitario||''}" ${dis} min="0"
+    placeholder="0"
     style="font-size:13px;font-weight:600;color:var(--text);text-align:right;background:var(--bg)"
+    onfocus="this.select()"
     onchange="updateItem(${si},${idx},${ii},'precio_unitario',this.value)"></td>
   <td><input class="item-input" type="number" value="${it.descuento_pct||''}" ${dis}
     min="0" max="100" placeholder="0"
     style="text-align:right"
+    onfocus="this.select()"
     onchange="updateItem(${si},${idx},${ii},'descuento_pct',this.value)"></td>
   <td style="text-align:center">
     <input type="checkbox" title="IndExe=1 — Línea exenta de IVA (sin IVA)"
@@ -2009,6 +2036,8 @@ async function generarXML(setKey, natencion){
         indicador_traslado:   cd.ind_traslado||0,
         indicador_despacho:   cd.ind_despacho||0,
         descuento_global_pct: caso.desc_global||0,
+        glosa_descuento: caso.desc_global_glosa||'Porcentaje Variable',
+        desc_global_solo_afectos: caso.desc_global_solo_afectos!==false,
         receptor: cd.receptor ? {
           rut:          cd.receptor.rut||'77777777-7',
           razon_social: cd.receptor.razon_social||'EMPRESA LTDA',
@@ -2017,19 +2046,56 @@ async function generarXML(setKey, natencion){
           comuna:       cd.receptor.comuna||'',
           ciudad:       cd.receptor.ciudad||'',
         } : {rut:'77777777-7',razon_social:'EMPRESA LTDA',giro:'',direccion:'',comuna:'',ciudad:''},
-        // Si forzar_monto_cero (CodRef=2 o sin ítems en NC/ND),
-        // enviar items=[] para que xml_builder omita <Detalle> completamente
+        // items: CodRef=2 → un ítem descriptivo con MontoItem=0 (SII lo exige)
+        //        NC/ND sin ítems → lista vacía (forzar_monto_cero lo maneja)
+        //        resto → ítems normales
         items: (()=>{
           const refs=cd.referencias||[];
           const esCodRef2=refs.some(r=>r.tipo_doc_ref!=='SET'&&parseInt(r.cod_ref)===2);
           const sinItems=!cd.items||cd.items.length===0;
-          if(esCodRef2||(sinItems&&[56,61].includes(caso.tipo_doc))) return [];
+
+          if(esCodRef2){
+            // El SII exige al menos 1 ítem aunque sea corrección de texto.
+            // Si el usuario ya agregó ítems en el wizard → usarlos con monto 0.
+            // Si no → auto-generar uno con la razón de referencia como nombre.
+            const itemsExistentes = cd.items||[];
+            if(itemsExistentes.length > 0){
+              return itemsExistentes.map(it=>({
+                nombre:          it.nombre||'',
+                descripcion:     it.descripcion||it.nombre||'',
+                cantidad:        Number(it.cantidad)||1,
+                precio_unitario: 0,   // forzar_monto_cero=true → MontoItem=0
+                descuento_pct:   0,
+                exento:          true, // IndExe=1 es obligatorio cuando monto=0
+                codigo:          it.codigo_val||'',
+                unidad:          it.unidad||'UN',
+              }));
+            }
+            // Auto-generar ítem con la razón de la referencia CodRef=2
+            const refCodRef2 = refs.find(r=>r.tipo_doc_ref!=='SET'&&parseInt(r.cod_ref)===2);
+            const nombreItem = (refCodRef2?.razon_ref||'CORRECCION DATO').toUpperCase();
+            return [{
+              nombre:          nombreItem,
+              descripcion:     nombreItem,
+              cantidad:        1,
+              precio_unitario: 0,
+              descuento_pct:   0,
+              exento:          true,
+              codigo:          '',
+              unidad:          'UN',
+            }];
+          }
+
+          // NC/ND sin ítems y sin CodRef=2: lista vacía
+          if(sinItems&&[56,61].includes(caso.tipo_doc)) return [];
+
           return (cd.items||[]).map(it=>({
             nombre:          it.nombre||'',
             descripcion:     it.descripcion||it.nombre||'',
             cantidad:        Number(it.cantidad)||0,
             precio_unitario: Number(it.precio_unitario)||0,
-            descuento_pct:   Number(it.descuento_pct)||0,
+            // Si hay descuento global (DscRcgGlobal), ítems con precio COMPLETO
+            descuento_pct:   caso.desc_global ? 0 : Number(it.descuento_pct)||0,
             exento:          Boolean(it.exento),
             codigo:          it.codigo_val||'',
             unidad:          it.unidad||'UN',
@@ -2451,12 +2517,30 @@ function generarXMLEjemplo(set, cd, caso, ci){
   const esNota        = [56, 61].includes(tipo);
   const esBoleta      = TIPOS_BOLETA.includes(tipo);
   const esExenta      = TIPO_EXENTA.includes(tipo);
-  const forzarCero    = cd.items.length === 0 && esNota;
+  const hayDescGlobal = !!(caso.desc_global);
+
+  // Determinar la lista de ítems real que irá al XML
+  // (misma lógica que generarXML para que el preview sea fiel)
+  const refs       = cd.referencias||[];
+  const esCodRef2  = refs.some(r=>r.tipo_doc_ref!=='SET'&&parseInt(r.cod_ref)===2);
+  let itemsPreview = cd.items||[];
+  if(esCodRef2){
+    if(itemsPreview.length === 0){
+      const refCodRef2 = refs.find(r=>r.tipo_doc_ref!=='SET'&&parseInt(r.cod_ref)===2);
+      itemsPreview = [{
+        nombre:'('+((refCodRef2?.razon_ref||'CORRECCION DATO').toUpperCase())+')',
+        cantidad:1, precio_unitario:0, exento:true, descuento_pct:0,
+      }];
+    }
+  }
+  const forzarCero = esCodRef2 || (itemsPreview.length === 0 && esNota);
 
   let subtotalAfecto = 0, subtotalExento = 0;
-  cd.items.forEach(it=>{
+  itemsPreview.forEach(it=>{
     const bruto = (it.cantidad||0)*(it.precio_unitario||0);
-    const neto  = Math.round(bruto - bruto*(it.descuento_pct||0)/100);
+    // Con descuento global: usar precio completo. Sin él: respetar descuento del ítem.
+    const descItemPct = hayDescGlobal ? 0 : (it.descuento_pct||0);
+    const neto  = Math.round(bruto - bruto*descItemPct/100);
     if(it.exento||esExenta) subtotalExento += neto;
     else subtotalAfecto += neto;
   });
@@ -2474,6 +2558,14 @@ function generarXMLEjemplo(set, cd, caso, ci){
     mntIVA    = Math.round(subtotalAfecto * 0.19);
     mntExento = Math.round(subtotalExento);
     mntTotal  = mntNeto + mntIVA + mntExento;
+  }
+  // Aplicar descuento global a los totales (igual que xml_builder._calcular_totales)
+  // Los ítems ya van con precio completo — el descuento se aplica aquí una sola vez
+  if(hayDescGlobal && caso.desc_global > 0){
+    const descMnt   = Math.round(mntNeto * caso.desc_global / 100);
+    mntNeto         = mntNeto - descMnt;
+    mntIVA          = Math.round(mntNeto * 0.19);
+    mntTotal        = mntNeto + mntIVA + mntExento;
   }
   if(forzarCero){ mntNeto=0; mntIVA=0; mntExento=0; mntTotal=0; }
 
@@ -2502,28 +2594,28 @@ function generarXMLEjemplo(set, cd, caso, ci){
   xml += `      <Emisor>\n`;
   xml += `        <RUTEmisor>${E.rut||'RUT-EMISOR'}</RUTEmisor>\n`;
   if(esBoleta){
-    xml += `        <RznSocEmisor>${E.razon_social||''}</RznSocEmisor>\n`;
-    xml += `        <GiroEmisor>${E.giro||''}</GiroEmisor>\n`;
+    xml += `        <RznSocEmisor>${xmlEncodeText(E.razon_social||'')}</RznSocEmisor>\n`;
+    xml += `        <GiroEmisor>${xmlEncodeText(E.giro||'')}</GiroEmisor>\n`;
   } else {
-    xml += `        <RznSoc>${E.razon_social||''}</RznSoc>\n`;
-    xml += `        <GiroEmis>${E.giro||''}</GiroEmis>\n`;
-    if(E.telefono) xml += `        <Telefono>${E.telefono}</Telefono>\n`;
-    xml += `        <Acteco>${E.acteco||'620200'}</Acteco>\n`;
+    xml += `        <RznSoc>${xmlEncodeText(E.razon_social||'')}</RznSoc>\n`;
+    xml += `        <GiroEmis>${xmlEncodeText(E.giro||'')}</GiroEmis>\n`;
+    if(E.telefono) xml += `        <Telefono>${xmlEncodeText(E.telefono)}</Telefono>\n`;
+    xml += `        <Acteco>${xmlEncodeText(E.acteco||'620200')}</Acteco>\n`;
   }
-  xml += `        <DirOrigen>${E.direccion||''}</DirOrigen>\n`;
-  xml += `        <CmnaOrigen>${E.comuna||''}</CmnaOrigen>\n`;
-  xml += `        <CiudadOrigen>${E.ciudad||''}</CiudadOrigen>\n`;
+  xml += `        <DirOrigen>${xmlEncodeText(E.direccion||'')}</DirOrigen>\n`;
+  xml += `        <CmnaOrigen>${xmlEncodeText(E.comuna||'')}</CmnaOrigen>\n`;
+  xml += `        <CiudadOrigen>${xmlEncodeText(E.ciudad||'')}</CiudadOrigen>\n`;
   xml += `      </Emisor>\n`;
 
   // ── Receptor ─────────────────────────────────────────────────────────────
   xml += `      <Receptor>\n`;
   xml += `        <RUTRecep>${(recep.rut||'<!-- RUT receptor -->').replace(/\./g,'')}</RUTRecep>\n`;
-  xml += `        <RznSocRecep>${recep.razon_social||'<!-- Razón social -->'}</RznSocRecep>\n`;
-  if(recep.giro)      xml += `        <GiroRecep>${recep.giro}</GiroRecep>\n`;
+  xml += `        <RznSocRecep>${xmlEncodeText(recep.razon_social||'<!-- Razón social -->')}</RznSocRecep>\n`;
+  if(recep.giro)      xml += `        <GiroRecep>${xmlEncodeText(recep.giro)}</GiroRecep>\n`;
   if(!esBoleta){
-    xml += `        <DirRecep>${recep.direccion||'S/D'}</DirRecep>\n`;
-    xml += `        <CmnaRecep>${recep.comuna||'S/C'}</CmnaRecep>\n`;
-    xml += `        <CiudadRecep>${recep.ciudad||'S/C'}</CiudadRecep>\n`;
+    xml += `        <DirRecep>${xmlEncodeText(recep.direccion||'S/D')}</DirRecep>\n`;
+    xml += `        <CmnaRecep>${xmlEncodeText(recep.comuna||'S/C')}</CmnaRecep>\n`;
+    xml += `        <CiudadRecep>${xmlEncodeText(recep.ciudad||'S/C')}</CiudadRecep>\n`;
   }
   xml += `      </Receptor>\n`;
 
@@ -2537,10 +2629,14 @@ function generarXMLEjemplo(set, cd, caso, ci){
     if(mntIVA>0){ xml += `        <TasaIVA>19</TasaIVA>\n`; xml += `        <IVA>${mntIVA}</IVA>\n`; }
   } else {
     if(!forzarCero){
-      xml += `        <MntNeto>${mntNeto}</MntNeto>\n`;
+      // MntNeto solo si hay afectos — NC/ND exenta lo tiene en 0
+      if(mntNeto>0)   xml += `        <MntNeto>${mntNeto}</MntNeto>\n`;
       if(mntExento>0) xml += `        <MntExe>${mntExento}</MntExe>\n`;
-      xml += `        <TasaIVA>19</TasaIVA>\n`;
-      xml += `        <IVA>${mntIVA}</IVA>\n`;
+      // TasaIVA e IVA solo cuando hay IVA real — NO para NC/ND de docs exentos
+      if(mntIVA>0){
+        xml += `        <TasaIVA>19</TasaIVA>\n`;
+        xml += `        <IVA>${mntIVA}</IVA>\n`;
+      }
     }
   }
   xml += `        <MntTotal>${mntTotal}</MntTotal>\n`;
@@ -2548,38 +2644,46 @@ function generarXMLEjemplo(set, cd, caso, ci){
   xml += `    </Encabezado>\n`;
 
   // ── Detalle — orden XSD fiel al xml_builder.py ───────────────────────────
-  // Orden: NroLinDet → [CdgItem] → [IndExe] → NmbItem → QtyItem → [UnmdItem]
-  //        → [PrcItem si ≠0] → [DescuentoPct] → [DescuentoMonto] → MontoItem
-  cd.items.forEach((it, ii)=>{
+  itemsPreview.forEach((it, ii)=>{
+    xml += `    <Detalle>\n`;
+    xml += `      <NroLinDet>${ii+1}</NroLinDet>\n`;
+
+    // CodRef=2 (forzarCero): solo NroLinDet + NmbItem + MontoItem=0
+    // IndExe, QtyItem, PrcItem NO van — el SII los rechaza en este contexto
+    if(forzarCero){
+      xml += `      <NmbItem>${xmlEncodeText(it.nombre)}</NmbItem>\n`;
+      xml += `      <MontoItem>0</MontoItem>\n`;
+      xml += `    </Detalle>\n`;
+      return;
+    }
+
     const qty     = parseFloat(it.cantidad)||0;
     const prc     = parseFloat(it.precio_unitario)||0;
     const base    = qty * prc;
-    const descPct = parseFloat(it.descuento_pct)||0;
+    // Con descuento global: DescuentoPct NO va en el ítem, precio completo
+    // Sin descuento global: respetar descuento individual del ítem
+    const descPct = hayDescGlobal ? 0 : (parseFloat(it.descuento_pct)||0);
     const descMnt = descPct ? Math.round(base*(descPct/100)) : 0;
-    const linea   = forzarCero ? 0 : Math.round(base - descMnt);
+    const linea   = Math.round(base - descMnt);
     const codVal  = (it.codigo_val||'').trim();
     const unmd    = (it.unidad||'').trim();
-
-    xml += `    <Detalle>\n`;
-    xml += `      <NroLinDet>${ii+1}</NroLinDet>\n`;
 
     // CdgItem: TpoCodigo="INT1" (igual que xml_builder.py)
     if(codVal){
       xml += `      <CdgItem>\n`;
       xml += `        <TpoCodigo>INT1</TpoCodigo>\n`;
-      xml += `        <VlrCodigo>${codVal}</VlrCodigo>\n`;
+      xml += `        <VlrCodigo>${xmlEncodeText(codVal)}</VlrCodigo>\n`;
       xml += `      </CdgItem>\n`;
     }
 
     // IndExe ANTES de NmbItem (orden XSD correcto)
     if(it.exento||esExenta) xml += `      <IndExe>1</IndExe>\n`;
 
-    xml += `      <NmbItem>${it.nombre}</NmbItem>\n`;
-    // QtyItem con 2 decimales — igual que xml_builder.py f"{cantidad:.2f}"
-    xml += `      <QtyItem>${qty.toFixed(2)}</QtyItem>\n`;
-    if(unmd) xml += `      <UnmdItem>${unmd}</UnmdItem>\n`;
-    // PrcItem: omitir si es 0 (ítem ficticio CodRef=2) — igual que xml_builder.py
-    if(Math.round(prc)!==0) xml += `      <PrcItem>${Math.round(prc)}</PrcItem>\n`;
+    xml += `      <NmbItem>${xmlEncodeText(it.nombre)}</NmbItem>\n`;
+    xml += `      <QtyItem>${fmtQty(qty)}</QtyItem>\n`;
+    if(unmd) xml += `      <UnmdItem>${xmlEncodeText(unmd)}</UnmdItem>\n`;
+    // PrcItem siempre presente (FIX-1)
+    xml += `      <PrcItem>${Math.round(prc)}</PrcItem>\n`;
     if(descPct){
       xml += `      <DescuentoPct>${descPct.toFixed(2)}</DescuentoPct>\n`;
       xml += `      <DescuentoMonto>${descMnt}</DescuentoMonto>\n`;
@@ -2587,6 +2691,24 @@ function generarXMLEjemplo(set, cd, caso, ci){
     xml += `      <MontoItem>${linea}</MontoItem>\n`;
     xml += `    </Detalle>\n`;
   });
+
+  // ── DscRcgGlobal — solo si hay descuento global (después de Detalle) ────
+  // Mismo formato que pide el SII: GlosaDR, TpoValor=%, ValorDR sin decimales
+  if(caso.desc_global){
+    const pct       = caso.desc_global;
+    const glosa     = xmlEncodeText(caso.desc_global_glosa||'Porcentaje Variable');
+    const valorDR   = Number.isInteger(pct) ? String(pct) : pct.toFixed(2);
+    const soloAfect = caso.desc_global_solo_afectos !== false;
+    xml += `    <DscRcgGlobal>\n`;
+    xml += `      <NroLinDR>1</NroLinDR>\n`;
+    xml += `      <TpoMov>D</TpoMov>\n`;
+    xml += `      <GlosaDR>${glosa}</GlosaDR>\n`;
+    xml += `      <TpoValor>%</TpoValor>\n`;
+    xml += `      <ValorDR>${valorDR}</ValorDR>\n`;
+    // IndExeDR=1 solo cuando aplica también a exentos (no solo afectos)
+    if(!soloAfect) xml += `      <IndExeDR>1</IndExeDR>\n`;
+    xml += `    </DscRcgGlobal>\n`;
+  }
 
   // ── Referencias — después de Detalle (orden XSD) ─────────────────────────
   (cd.referencias||[]).forEach((ref, ri)=>{
@@ -2598,7 +2720,7 @@ function generarXMLEjemplo(set, cd, caso, ci){
     xml += `      <FchRef>${ref.fecha_ref||fechaHoy}</FchRef>\n`;
     if(!esSet && ref.cod_ref && ['1','2','3'].includes(String(ref.cod_ref)))
       xml += `      <CodRef>${ref.cod_ref}</CodRef>\n`;
-    if(ref.razon_ref) xml += `      <RazonRef>${ref.razon_ref}</RazonRef>\n`;
+    if(ref.razon_ref) xml += `      <RazonRef>${xmlEncodeText(ref.razon_ref)}</RazonRef>\n`;
     xml += `    </Referencia>\n`;
   });
 
@@ -2610,20 +2732,31 @@ function generarXMLEjemplo(set, cd, caso, ci){
   return xml;
 }
 
-/* ── Conversión a ISO-8859-1 (entidades XML numéricas) ──────── */
-// Caracteres fuera del rango ASCII básico (>127) que no son
-// válidos en ISO-8859-1 como texto plano → &#NNN;
-function toISO88591Entities(str){
+/* ── Encoding para nodos de texto XML (ISO-8859-1 + escape XML) ─
+   Reemplaza toISO88591Entities(). Diferencia clave:
+   - Antes: solo convertía chars > 127 (ó ñ Ü...)
+   - Ahora: TAMBIÉN escapa & → &amp; (ASCII 38, no > 127)
+     sin esto "Pintura B&W" genera XML inválido en el preview.
+   Orden obligatorio: & primero, luego chars > 127.           ── */
+function xmlEncodeText(str){
+  if(!str) return '';
+  // PASO 1: & primero — es ASCII (38) así que el loop de abajo no lo captura
+  let s = String(str).replace(/&/g, '&amp;');
+  // PASO 2: chars no-ASCII → entidades numéricas ISO-8859-1
   let out = '';
-  for(let i=0; i<str.length; i++){
-    const code = str.charCodeAt(i);
-    if(code > 127){
-      out += `&#${code};`;  // ñ→&#241; á→&#225; é→&#233; etc.
-    } else {
-      out += str[i];
-    }
+  for(let i=0; i<s.length; i++){
+    const code = s.charCodeAt(i);
+    out += code > 127 ? `&#${code};` : s[i];  // ñ→&#241; á→&#225; Ü→&#220; etc.
   }
   return out;
+}
+
+/* ── Formato de cantidad sin decimales innecesarios ─────────── */
+// Antes: qty.toFixed(2) → "80.00", "1.00"
+// Ahora: fmtQty(qty)    → "80",    "1"   (o "1.50" si decimal real)
+function fmtQty(qty){
+  const n = parseFloat(qty) || 0;
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
 /* ── Syntax highlight con encoding ISO-8859-1 ─────────────────── */
