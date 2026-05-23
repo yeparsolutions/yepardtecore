@@ -1410,11 +1410,30 @@ function parsearCasos(bloqueTxt, natencion){
       else if(/CLIENTE/i.test(traslLine)) indDespacho=3;
     }
 
-    const mDG=blockClean.match(/DESCUENTO\s+GLOBAL\s+ITEMES\s+AFECTOS\s+([\d.]+)%/i);
+    // ── Descuento global — parsear porcentaje, glosa y alcance ───────────
+    // El .txt del SII puede tener variantes:
+    //   "DESCUENTO GLOBAL ITEMES AFECTOS  24%"  → solo afectos
+    //   "DESCUENTO GLOBAL  24%"                 → todos los ítems
+    // La glosa (GlosaDR) viene en la misma línea o en una línea GLOSA siguiente
+    let descGlobalPct = null, descGlobalGlosa = 'Porcentaje Variable', descGlobalSoloAfectos = true;
+    const mDG = blockClean.match(/DESCUENTO\s+GLOBAL(?:\s+ITEMES\s+(AFECTOS|EXENTOS))?\s+([\d.]+)%/i);
+    if(mDG){
+      descGlobalPct          = parseFloat(mDG[2]);
+      descGlobalSoloAfectos  = !mDG[1] || /AFECTOS/i.test(mDG[1]);
+      // Intentar extraer glosa si viene en la misma línea después del %
+      const mGlosa = mDG[0].match(/%\s+(.+)/);
+      if(mGlosa && mGlosa[1].trim()) descGlobalGlosa = mGlosa[1].trim();
+    }
+    // Buscar línea GLOSA separada (formato tabular del .txt)
+    const mGlosaLine = blockClean.match(/GLOSA\s+DESC(?:UENTO)?\s*[:.]?\s*(.+)/i)
+                    || blockClean.match(/GLOSA\s+(?:DR|DESCUENTO)\s*[:.]?\s*(.+)/i);
+    if(mGlosaLine && mGlosaLine[1].trim()) descGlobalGlosa = mGlosaLine[1].trim();
 
     casos.push({
       caso:casoN, tipo_doc:tipoDoc, items, referencias,
-      desc_global: mDG?parseFloat(mDG[1]):null,
+      desc_global: descGlobalPct,
+      desc_global_glosa: descGlobalGlosa,
+      desc_global_solo_afectos: descGlobalSoloAfectos,
       ind_traslado: indTraslado, ind_despacho: indDespacho,
     });
   });
@@ -2009,6 +2028,8 @@ async function generarXML(setKey, natencion){
         indicador_traslado:   cd.ind_traslado||0,
         indicador_despacho:   cd.ind_despacho||0,
         descuento_global_pct: caso.desc_global||0,
+        glosa_descuento: caso.desc_global_glosa||'Porcentaje Variable',
+        desc_global_solo_afectos: caso.desc_global_solo_afectos!==false,
         receptor: cd.receptor ? {
           rut:          cd.receptor.rut||'77777777-7',
           razon_social: cd.receptor.razon_social||'EMPRESA LTDA',
@@ -2589,6 +2610,24 @@ function generarXMLEjemplo(set, cd, caso, ci){
     xml += `      <MontoItem>${linea}</MontoItem>\n`;
     xml += `    </Detalle>\n`;
   });
+
+  // ── DscRcgGlobal — solo si hay descuento global (después de Detalle) ────
+  // Mismo formato que pide el SII: GlosaDR, TpoValor=%, ValorDR sin decimales
+  if(caso.desc_global){
+    const pct       = caso.desc_global;
+    const glosa     = xmlEncodeText(caso.desc_global_glosa||'Porcentaje Variable');
+    const valorDR   = Number.isInteger(pct) ? String(pct) : pct.toFixed(2);
+    const soloAfect = caso.desc_global_solo_afectos !== false;
+    xml += `    <DscRcgGlobal>\n`;
+    xml += `      <NroLinDR>1</NroLinDR>\n`;
+    xml += `      <TpoMov>D</TpoMov>\n`;
+    xml += `      <GlosaDR>${glosa}</GlosaDR>\n`;
+    xml += `      <TpoValor>%</TpoValor>\n`;
+    xml += `      <ValorDR>${valorDR}</ValorDR>\n`;
+    // IndExeDR=1 solo cuando aplica también a exentos (no solo afectos)
+    if(!soloAfect) xml += `      <IndExeDR>1</IndExeDR>\n`;
+    xml += `    </DscRcgGlobal>\n`;
+  }
 
   // ── Referencias — después de Detalle (orden XSD) ─────────────────────────
   (cd.referencias||[]).forEach((ref, ri)=>{
