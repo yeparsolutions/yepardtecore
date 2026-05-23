@@ -1,4 +1,5 @@
 # app/api/v1/router.py
+# Agregar certificacion_dinamica a los imports y al router
 
 from fastapi import APIRouter
 from app.api.v1.endpoints import (
@@ -19,6 +20,7 @@ from app.api.v1.endpoints import (
     certificacion_libro_ventas,
     certificacion_libro_compras,
     certificacion_libro_guias,
+    certificacion_dinamica,   # ← NUEVO
 )
 
 api_router = APIRouter()
@@ -37,13 +39,14 @@ api_router.include_router(certificados.router)
 api_router.include_router(sii_auth.router)
 
 # ── Certificación Sets de Prueba ──────────────────────────────
-api_router.include_router(certificacion.router)           # Legacy
-api_router.include_router(certificacion_facturas.router)  # Set 4839621 ✅ APROBADO
-api_router.include_router(certificacion_facturas2.router) # Set 4841543
-api_router.include_router(certificacion_boletas.router)   # Set Boletas
-api_router.include_router(certificacion_exentas.router)   # Set 4841548
-api_router.include_router(certificacion_guia.router)      # Set 4841546
-api_router.include_router(certificacion_notas.router)        # Notas legacy
-api_router.include_router(certificacion_libro_ventas.router)  # Libro Ventas 4841544
-api_router.include_router(certificacion_libro_compras.router) # Libro Compras 4841545
-api_router.include_router(certificacion_libro_guias.router)   # Libro Guías  4841547
+api_router.include_router(certificacion.router)
+api_router.include_router(certificacion_facturas.router)
+api_router.include_router(certificacion_facturas2.router)
+api_router.include_router(certificacion_boletas.router)
+api_router.include_router(certificacion_exentas.router)
+api_router.include_router(certificacion_guia.router)
+api_router.include_router(certificacion_notas.router)
+api_router.include_router(certificacion_libro_ventas.router)
+api_router.include_router(certificacion_libro_compras.router)
+api_router.include_router(certificacion_libro_guias.router)
+api_router.include_router(certificacion_dinamica.router)   # ← NUEVO
