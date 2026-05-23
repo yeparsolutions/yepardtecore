@@ -318,6 +318,15 @@ class XMLBuilder:
         det = etree.SubElement(parent, f"{{{NS}}}Detalle")
         etree.SubElement(det, f"{{{NS}}}NroLinDet").text = str(numero_linea)
 
+        # ── CodRef=2 (corrige texto / giro): formato mínimo ──────────────────
+        # El SII solo acepta NroLinDet + NmbItem + MontoItem=0.
+        # IndExe, QtyItem, PrcItem NO deben ir — el SII los rechaza en este contexto.
+        if forzar_monto_cero:
+            etree.SubElement(det, f"{{{NS}}}NmbItem").text = _sanitizar_texto(item.nombre, 80)
+            etree.SubElement(det, f"{{{NS}}}MontoItem").text = "0"
+            return
+        # ─────────────────────────────────────────────────────────────────────
+
         if item.codigo:
             cod = etree.SubElement(det, f"{{{NS}}}CdgItem")
             etree.SubElement(cod, f"{{{NS}}}TpoCodigo").text = "INT1"
@@ -335,15 +344,8 @@ class XMLBuilder:
         if item.unidad:
             etree.SubElement(det, f"{{{NS}}}UnmdItem").text = item.unidad
 
-        # ── [FIX-1] PrcItem: siempre incluir, incluso cuando es 0 ────────────
-        # ANTES: solo se agregaba si precio != 0, excepto elif tipo==52
-        # PROBLEMA: sin PrcItem el SII no puede validar QtyItem × PrcItem = MontoItem
-        #           → rechaza con "Los Valores de la Linea X del Detalle No Cuadran"
-        # AFECTA: T52 traslado interno (IndTraslado=5), NC CodRef=2, ND CodRef=1
-        #
-        # AHORA: siempre se incluye PrcItem (0 si el precio es cero)
+        # [FIX-1] PrcItem siempre presente (incluso cuando es 0)
         etree.SubElement(det, f"{{{NS}}}PrcItem").text = str(round(item.precio_unitario))
-        # ─────────────────────────────────────────────────────────────────────
 
         if item.descuento_pct > 0:
             etree.SubElement(det, f"{{{NS}}}DescuentoPct").text   = f"{item.descuento_pct:.2f}"
@@ -351,7 +353,7 @@ class XMLBuilder:
                 round(item.cantidad * item.precio_unitario * item.descuento_pct / 100)
             )
 
-        etree.SubElement(det, f"{{{NS}}}MontoItem").text = "0" if forzar_monto_cero else str(item.monto_item)
+        etree.SubElement(det, f"{{{NS}}}MontoItem").text = str(item.monto_item)
 
     def _build_referencia(self, parent, ref, numero: int):
         NS = self.NAMESPACE
