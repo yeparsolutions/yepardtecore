@@ -2436,12 +2436,26 @@ function toISO88591Entities(str){
 
 /* ── Syntax highlight con encoding ISO-8859-1 ─────────────────── */
 function highlightXML(xml){
-  // Primero convertir a ISO-8859-1 (entidades numéricas)
-  const isoXml = toISO88591Entities(xml);
-  // Luego escapar HTML y aplicar colores
-  return isoXml
-    .replace(/&(?!#\d+;)/g,'&amp;')  // & que no sean entidades ya
-    .replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  // Paso 1: escapar < > & del XML para que el browser no los interprete
+  let escaped = xml
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // Paso 2: convertir chars > 127 a entidades numéricas VISIBLES
+  // Ej: ñ → &amp;#241; (así el browser muestra el texto "&#241;")
+  let iso = '';
+  for(let i=0; i<escaped.length; i++){
+    const code = escaped.charCodeAt(i);
+    if(code > 127){
+      iso += `&amp;#${code};`;  // se verá como &#241; en pantalla
+    } else {
+      iso += escaped[i];
+    }
+  }
+
+  // Paso 3: syntax highlight sobre el texto ya escapado+ISO
+  return iso
     .replace(/&lt;(\/?)([\w:]+)([^&]*?)(\/?&gt;)/g,
       (_, slash, tag, attrs, close)=>{
         const attrHL = attrs.replace(/([\w:]+)="([^"]*)"/g,
