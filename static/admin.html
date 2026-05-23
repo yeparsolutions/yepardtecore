@@ -2502,28 +2502,28 @@ function generarXMLEjemplo(set, cd, caso, ci){
   xml += `      <Emisor>\n`;
   xml += `        <RUTEmisor>${E.rut||'RUT-EMISOR'}</RUTEmisor>\n`;
   if(esBoleta){
-    xml += `        <RznSocEmisor>${E.razon_social||''}</RznSocEmisor>\n`;
-    xml += `        <GiroEmisor>${E.giro||''}</GiroEmisor>\n`;
+    xml += `        <RznSocEmisor>${xmlEncodeText(E.razon_social||'')}</RznSocEmisor>\n`;
+    xml += `        <GiroEmisor>${xmlEncodeText(E.giro||'')}</GiroEmisor>\n`;
   } else {
-    xml += `        <RznSoc>${E.razon_social||''}</RznSoc>\n`;
-    xml += `        <GiroEmis>${E.giro||''}</GiroEmis>\n`;
-    if(E.telefono) xml += `        <Telefono>${E.telefono}</Telefono>\n`;
-    xml += `        <Acteco>${E.acteco||'620200'}</Acteco>\n`;
+    xml += `        <RznSoc>${xmlEncodeText(E.razon_social||'')}</RznSoc>\n`;
+    xml += `        <GiroEmis>${xmlEncodeText(E.giro||'')}</GiroEmis>\n`;
+    if(E.telefono) xml += `        <Telefono>${xmlEncodeText(E.telefono)}</Telefono>\n`;
+    xml += `        <Acteco>${xmlEncodeText(E.acteco||'620200')}</Acteco>\n`;
   }
-  xml += `        <DirOrigen>${E.direccion||''}</DirOrigen>\n`;
-  xml += `        <CmnaOrigen>${E.comuna||''}</CmnaOrigen>\n`;
-  xml += `        <CiudadOrigen>${E.ciudad||''}</CiudadOrigen>\n`;
+  xml += `        <DirOrigen>${xmlEncodeText(E.direccion||'')}</DirOrigen>\n`;
+  xml += `        <CmnaOrigen>${xmlEncodeText(E.comuna||'')}</CmnaOrigen>\n`;
+  xml += `        <CiudadOrigen>${xmlEncodeText(E.ciudad||'')}</CiudadOrigen>\n`;
   xml += `      </Emisor>\n`;
 
   // ── Receptor ─────────────────────────────────────────────────────────────
   xml += `      <Receptor>\n`;
   xml += `        <RUTRecep>${(recep.rut||'<!-- RUT receptor -->').replace(/\./g,'')}</RUTRecep>\n`;
-  xml += `        <RznSocRecep>${recep.razon_social||'<!-- Razón social -->'}</RznSocRecep>\n`;
-  if(recep.giro)      xml += `        <GiroRecep>${recep.giro}</GiroRecep>\n`;
+  xml += `        <RznSocRecep>${xmlEncodeText(recep.razon_social||'<!-- Razón social -->')}</RznSocRecep>\n`;
+  if(recep.giro)      xml += `        <GiroRecep>${xmlEncodeText(recep.giro)}</GiroRecep>\n`;
   if(!esBoleta){
-    xml += `        <DirRecep>${recep.direccion||'S/D'}</DirRecep>\n`;
-    xml += `        <CmnaRecep>${recep.comuna||'S/C'}</CmnaRecep>\n`;
-    xml += `        <CiudadRecep>${recep.ciudad||'S/C'}</CiudadRecep>\n`;
+    xml += `        <DirRecep>${xmlEncodeText(recep.direccion||'S/D')}</DirRecep>\n`;
+    xml += `        <CmnaRecep>${xmlEncodeText(recep.comuna||'S/C')}</CmnaRecep>\n`;
+    xml += `        <CiudadRecep>${xmlEncodeText(recep.ciudad||'S/C')}</CiudadRecep>\n`;
   }
   xml += `      </Receptor>\n`;
 
@@ -2567,19 +2567,21 @@ function generarXMLEjemplo(set, cd, caso, ci){
     if(codVal){
       xml += `      <CdgItem>\n`;
       xml += `        <TpoCodigo>INT1</TpoCodigo>\n`;
-      xml += `        <VlrCodigo>${codVal}</VlrCodigo>\n`;
+      xml += `        <VlrCodigo>${xmlEncodeText(codVal)}</VlrCodigo>\n`;
       xml += `      </CdgItem>\n`;
     }
 
     // IndExe ANTES de NmbItem (orden XSD correcto)
     if(it.exento||esExenta) xml += `      <IndExe>1</IndExe>\n`;
 
-    xml += `      <NmbItem>${it.nombre}</NmbItem>\n`;
-    // QtyItem con 2 decimales — igual que xml_builder.py f"{cantidad:.2f}"
-    xml += `      <QtyItem>${qty.toFixed(2)}</QtyItem>\n`;
-    if(unmd) xml += `      <UnmdItem>${unmd}</UnmdItem>\n`;
-    // PrcItem: omitir si es 0 (ítem ficticio CodRef=2) — igual que xml_builder.py
-    if(Math.round(prc)!==0) xml += `      <PrcItem>${Math.round(prc)}</PrcItem>\n`;
+    // [FIX-A] xmlEncodeText: & → &amp;, ó → &#243;, ñ → &#241; etc.
+    xml += `      <NmbItem>${xmlEncodeText(it.nombre)}</NmbItem>\n`;
+    // [FIX-B] fmtQty: sin decimales cuando la cantidad es entera (80 en vez de 80.00)
+    xml += `      <QtyItem>${fmtQty(qty)}</QtyItem>\n`;
+    if(unmd) xml += `      <UnmdItem>${xmlEncodeText(unmd)}</UnmdItem>\n`;
+    // [FIX-1] PrcItem SIEMPRE presente, incluso cuando es 0
+    // Sin PrcItem el SII no puede validar QtyItem × PrcItem = MontoItem → rechaza
+    xml += `      <PrcItem>${Math.round(prc)}</PrcItem>\n`;
     if(descPct){
       xml += `      <DescuentoPct>${descPct.toFixed(2)}</DescuentoPct>\n`;
       xml += `      <DescuentoMonto>${descMnt}</DescuentoMonto>\n`;
@@ -2598,7 +2600,7 @@ function generarXMLEjemplo(set, cd, caso, ci){
     xml += `      <FchRef>${ref.fecha_ref||fechaHoy}</FchRef>\n`;
     if(!esSet && ref.cod_ref && ['1','2','3'].includes(String(ref.cod_ref)))
       xml += `      <CodRef>${ref.cod_ref}</CodRef>\n`;
-    if(ref.razon_ref) xml += `      <RazonRef>${ref.razon_ref}</RazonRef>\n`;
+    if(ref.razon_ref) xml += `      <RazonRef>${xmlEncodeText(ref.razon_ref)}</RazonRef>\n`;
     xml += `    </Referencia>\n`;
   });
 
@@ -2610,20 +2612,31 @@ function generarXMLEjemplo(set, cd, caso, ci){
   return xml;
 }
 
-/* ── Conversión a ISO-8859-1 (entidades XML numéricas) ──────── */
-// Caracteres fuera del rango ASCII básico (>127) que no son
-// válidos en ISO-8859-1 como texto plano → &#NNN;
-function toISO88591Entities(str){
+/* ── Encoding para nodos de texto XML (ISO-8859-1 + escape XML) ─
+   Reemplaza toISO88591Entities(). Diferencia clave:
+   - Antes: solo convertía chars > 127 (ó ñ Ü...)
+   - Ahora: TAMBIÉN escapa & → &amp; (ASCII 38, no > 127)
+     sin esto "Pintura B&W" genera XML inválido en el preview.
+   Orden obligatorio: & primero, luego chars > 127.           ── */
+function xmlEncodeText(str){
+  if(!str) return '';
+  // PASO 1: & primero — es ASCII (38) así que el loop de abajo no lo captura
+  let s = String(str).replace(/&/g, '&amp;');
+  // PASO 2: chars no-ASCII → entidades numéricas ISO-8859-1
   let out = '';
-  for(let i=0; i<str.length; i++){
-    const code = str.charCodeAt(i);
-    if(code > 127){
-      out += `&#${code};`;  // ñ→&#241; á→&#225; é→&#233; etc.
-    } else {
-      out += str[i];
-    }
+  for(let i=0; i<s.length; i++){
+    const code = s.charCodeAt(i);
+    out += code > 127 ? `&#${code};` : s[i];  // ñ→&#241; á→&#225; Ü→&#220; etc.
   }
   return out;
+}
+
+/* ── Formato de cantidad sin decimales innecesarios ─────────── */
+// Antes: qty.toFixed(2) → "80.00", "1.00"
+// Ahora: fmtQty(qty)    → "80",    "1"   (o "1.50" si decimal real)
+function fmtQty(qty){
+  const n = parseFloat(qty) || 0;
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
 /* ── Syntax highlight con encoding ISO-8859-1 ─────────────────── */
