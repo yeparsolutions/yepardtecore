@@ -86,6 +86,12 @@ class InputDTE:
     descuento_global_pct: float = 0.0
     descuento_global_monto: int = 0
     forzar_monto_cero: bool = False
+    # Descuento global: glosa y alcance
+    # glosa_descuento: texto que va en GlosaDR — el SII usa "Porcentaje Variable"
+    # desc_global_solo_afectos: True = aplica solo a ítems afectos (sin IndExeDR)
+    #                           False = aplica a TODOS los ítems incluyendo exentos (IndExeDR=1)
+    glosa_descuento: str = "Porcentaje Variable"
+    desc_global_solo_afectos: bool = True
 
 
 def _sanitizar_texto(texto: str, largo: int = 80) -> str:
@@ -194,11 +200,21 @@ class XMLBuilder:
 
         if self._desc_global_monto > 0:
             dscto = etree.SubElement(doc_el, f"{{{NS}}}DscRcgGlobal")
-            etree.SubElement(dscto, f"{{{NS}}}NroLinDR").text  = "1"
-            etree.SubElement(dscto, f"{{{NS}}}TpoMov").text    = "D"
-            etree.SubElement(dscto, f"{{{NS}}}GlosaDR").text   = "Descuento Global"
-            etree.SubElement(dscto, f"{{{NS}}}TpoValor").text  = "%"
-            etree.SubElement(dscto, f"{{{NS}}}ValorDR").text   = f"{d.descuento_global_pct:.2f}"
+            etree.SubElement(dscto, f"{{{NS}}}NroLinDR").text = "1"
+            etree.SubElement(dscto, f"{{{NS}}}TpoMov").text   = "D"
+            # GlosaDR: texto del .txt del SII — por defecto "Porcentaje Variable"
+            glosa = _sanitizar_texto(d.glosa_descuento or "Porcentaje Variable", 45)
+            etree.SubElement(dscto, f"{{{NS}}}GlosaDR").text  = glosa
+            etree.SubElement(dscto, f"{{{NS}}}TpoValor").text = "%"
+            # ValorDR sin decimales innecesarios: 24 no 24.00
+            pct = d.descuento_global_pct
+            etree.SubElement(dscto, f"{{{NS}}}ValorDR").text  = (
+                str(int(pct)) if pct == int(pct) else f"{pct:.2f}"
+            )
+            # IndExeDR=1 solo cuando el descuento aplica también a ítems exentos
+            # Si es "ITEMES AFECTOS" (solo afectos), NO se incluye IndExeDR
+            if not d.desc_global_solo_afectos:
+                etree.SubElement(dscto, f"{{{NS}}}IndExeDR").text = "1"
 
         for idx, ref in enumerate(d.referencias, start=1):
             self._build_referencia(doc_el, ref, idx)
