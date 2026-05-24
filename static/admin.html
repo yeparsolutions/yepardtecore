@@ -2347,6 +2347,9 @@ async function generarXML(setKey, natencion){
           fecha_ref:    ref.fecha_ref||new Date().toISOString().split('T')[0],
           cod_ref:      ref.cod_ref||null,
           razon_ref:    ref.razon_ref||'',
+          // num_caso_ref: el backend lo usa para resolver el folio real del caso referenciado
+          // Esto evita REF-3-750 por folio_ref desactualizado del frontend
+          num_caso_ref: ref.num_caso_ref||null,
         })),
       };
     });
