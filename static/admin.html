@@ -2010,6 +2010,14 @@ async function generarXML(setKey, natencion){
   const endpoint=getEndpointMap()[setKey];
   if(!endpoint){res(5,false,'No hay endpoint configurado para el set: '+setKey);return;}
 
+  // Refrescar CAFs y reasignar folios ANTES de generar
+  // Esto evita el error REF-3-750 causado por FolioRef desactualizados
+  // cuando se generan múltiples intentos (el folio_actual del CAF avanza con cada intento)
+  const amb = document.getElementById('e_amb')?.value || 'certificacion';
+  await cargarCAFs(S.id, amb);
+  asignarFolios();
+  log('Folios reasignados desde CAF actual antes de generar','info');
+
   const btns=document.querySelectorAll('#gen_tabs .bp');
   btns.forEach(b=>{if(b.textContent.includes('Generar')){b.disabled=true;b.textContent='Generando...';}});
   log(`Generando ${setKey} N° ${natencion}...`,'info');
