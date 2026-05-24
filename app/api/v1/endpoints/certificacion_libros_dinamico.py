@@ -138,7 +138,9 @@ def _construir_libro_xml(
     # Convertir DTEs a dicts para el resumen y detalle
     docs = []
     for dte in dtes:
-        fecha_str = str(dte.fecha_emision)[:10] if dte.fecha_emision else periodo + "-01"
+        # El modelo DTE no tiene fecha_emision — usar created_at como fecha del documento
+        fecha_raw = getattr(dte, 'fecha_emision', None) or getattr(dte, 'created_at', None)
+        fecha_str = str(fecha_raw)[:10] if fecha_raw else periodo + "-01"
         rut_doc   = (dte.rut_receptor or "66666666-6").replace(".", "")
         razon_doc = (dte.nombre_receptor or "Consumidor Final")[:50]
         docs.append({
