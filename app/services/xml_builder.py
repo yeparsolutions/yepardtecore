@@ -97,13 +97,16 @@ class InputDTE:
 def _sanitizar_texto(texto: str, largo: int = 80) -> str:
     """
     Elimina caracteres que el SII rechaza en campos de texto.
-    El & es el principal causante de RFR 'No hay estadísticas'.
+    NOTA: & NO se reemplaza — lxml lo escapa como &amp; y el SII lo lee como &,
+    comparándolo exactamente con el .txt del set de certificación.
+    Si se reemplaza & por ' y ', el nombre cambia y el SII rechaza con
+    'El Item No Corresponde a lo Especificado'.
     """
     reemplazos = {
-        '&': ' y ',   # & → causa RFR definitivo en SII (aunque lxml lo escape, SII falla)
-        "'": '',
-        '"': '',
-        '#': '',
+        # '&': NO → lxml lo maneja como &amp; correctamente
+        "'": '',   # comilla simple
+        '"': '',   # comilla doble
+        '#': '',   # gato
     }
     resultado = texto
     for char, reemplazo in reemplazos.items():
@@ -336,10 +339,12 @@ class XMLBuilder:
             etree.SubElement(cod, f"{{{NS}}}TpoCodigo").text = "INT1"
             etree.SubElement(cod, f"{{{NS}}}VlrCodigo").text = item.codigo
 
-        if item.exento:
+        # IndExe=1 solo para ítems exentos dentro de documentos AFECTOS (T33, T56, T61)
+        # Para T34 (Factura Exenta), el documento completo es exento — IndExe en ítems
+        # es redundante y el validador SII lo rechaza con "Los Valores No Cuadran"
+        if item.exento and self.datos.tipo_dte not in TIPOS_FACTURA_EXENTA:
             etree.SubElement(det, f"{{{NS}}}IndExe").text = "1"
 
-        # Sanitizar nombre antes de insertar: & ' " # causan RFR en SII
         etree.SubElement(det, f"{{{NS}}}NmbItem").text = _sanitizar_texto(item.nombre, 80)
 
         # [FIX-2] QtyItem sin decimales cuando la cantidad es entera
