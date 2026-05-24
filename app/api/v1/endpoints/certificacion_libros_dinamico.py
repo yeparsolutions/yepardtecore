@@ -76,7 +76,9 @@ async def _obtener_dtes(
             DTE.emisor_id == emisor_id,
             DTE.tipo_dte.in_(tipos),
             DTE.ambiente == "certificacion",
-            DTE.estado.notin_(["ANULADO", "BORRADOR"]),
+            # Incluir BORRADOR y PENDIENTE_ENVIO — son DTEs válidos de certificación
+            # Solo excluir ANULADO
+            DTE.estado.notin_(["ANULADO"]),
         ).order_by(DTE.tipo_dte, DTE.folio)
     )
     dtes = result.scalars().all()
