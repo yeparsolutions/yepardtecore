@@ -1404,17 +1404,32 @@ function parsearCasos(bloqueTxt, natencion){
     const razonLine = lines.find(l=>/^RAZON\s+REFERENCIA\b/i.test(l.trim()));
     const razonTexto = razonLine ? razonLine.split('\t').pop().trim() : '';
 
-    // Items — después de la línea "ITEM ... CANTIDAD ..."
+    // Deducir si el documento referenciado es exento (T34) para marcar ítems como exentos
+    // Esto es crítico para NC/ND que corrigen facturas exentas: sus ítems DEBEN ser exentos
+    let refTipoEsExenta = false;
+    if(refLine){
+      const refText = refLine.split('\t').slice(1).join(' ').trim().toUpperCase();
+      refTipoEsExenta = /EXENTA|NO AFECTA/i.test(refText);
+    }
+
+    // Items — después de la línea "ITEM ..."
+    // El .txt del SII tiene dos formatos:
+    //   1. Facturas:   "ITEM  CANTIDAD  UNIDAD MEDIDA  VALOR UNITARIO" → hasCantidad=true, hasUnidad=maybe
+    //   2. NC/ND:      "ITEM  VALOR UNITARIO"           → hasCantidad=false, qty=1 por defecto
     const items=[];
     let enItems=false;
-    let hasPrice=false; // ¿la cabecera tiene PRECIO UNITARIO?
+    let hasPrice=false;   // ¿la cabecera tiene PRECIO/VALOR?
+    let hasCantidad=false; // ¿la cabecera tiene CANTIDAD?
+    let hasUnidad=false;   // ¿la cabecera tiene UNIDAD MEDIDA? (e.g. "Hora")
     for(const linea of lines){
       const l=linea.trim();
       if(!l) continue;
-      // Detectar cabecera de items
-      if(/^ITEM\b/i.test(l) && /CANTIDAD/i.test(l)){
+      // Detectar cabecera de items — con o sin CANTIDAD
+      if(/^ITEM\b/i.test(l) && (/CANTIDAD/i.test(l) || /VALOR\s+UNITARIO/i.test(l))){
         enItems=true;
-        hasPrice=/PRECIO|VALOR/i.test(l);
+        hasPrice    = /PRECIO|VALOR/i.test(l);
+        hasCantidad = /CANTIDAD/i.test(l);
+        hasUnidad   = /UNIDAD\s*MEDIDA/i.test(l);  // ← nuevo: detectar columna unidad
         continue;
       }
       // Parar en líneas de control
@@ -1426,21 +1441,43 @@ function parsearCasos(bloqueTxt, natencion){
         const parts = linea.split('\t').map(p=>p.trim()).filter(p=>p!=='');
         if(parts.length >= 1 && !/^(DESCUENTO|REFERENCIA|RAZON)/i.test(parts[0])){
           const nombre  = parts[0];
-          // Extraer números: quitar puntos de miles y % 
+
+          // Extraer unidad cuando la cabecera tiene "UNIDAD MEDIDA"
+          // Formato: [nombre, cantidad, unidad, precio]
+          // La unidad es el único token no-numérico entre cantidad y precio
+          let unidad = 'UN';
+          if(hasCantidad && hasUnidad && parts.length >= 4){
+            // Buscar el primer token no-numérico después de nombre (ignorar el primero = nombre)
+            const unidadToken = parts.slice(1).find(p=>isNaN(Number(p.replace(/\./g,'').replace(',','.'))));
+            if(unidadToken) unidad = unidadToken;
+          }
+
           const nums = parts.slice(1)
             .map(p=>p.replace(/\./g,'').replace(',','.').replace(/[^0-9.]/g,''))
             .filter(p=>p!=='')
             .map(Number);
-          const cantidad = nums[0]||0;
-          const precio   = hasPrice ? (nums[1]||0) : 0;
           const descPct  = parts.find(p=>/^\d+%$/.test(p.trim()))
                           ? parseFloat(parts.find(p=>/\d+%/.test(p))):null;
-          if(cantidad>0||(!hasPrice&&nombre)){
+
+          let cantidad, precio;
+          if(hasCantidad){
+            // Formato con CANTIDAD: nums[0]=cantidad, nums[1]=precio
+            cantidad = nums[0]||0;
+            precio   = hasPrice ? (nums[1]||0) : 0;
+          } else {
+            // Formato sin CANTIDAD (NC/ND): qty=1, nums[0]=precio unitario
+            cantidad = 1;
+            precio   = hasPrice ? (nums[0]||0) : 0;
+          }
+
+          if(cantidad>0||nombre){
             items.push({
               nombre,
+              unidad,   // ← ahora incluye "Hora", "KG", etc. cuando el .txt lo especifica
               cantidad: cantidad||1,
               precio_unitario: precio,
-              exento: tipoDoc===34 || /EXENTO|EXENTA/i.test(nombre),
+              // Exento si: doc es T34, o referencia a T34/exenta, o nombre contiene EXENTO
+              exento: tipoDoc===34 || refTipoEsExenta || /EXENTO|EXENTA/i.test(nombre),
               descuento_pct: descPct
             });
           }
@@ -1738,7 +1775,7 @@ function renderModalCaso(si,idx){
           : docRef.cod_ref===2?
             `Corrige giro: el ítem debe tener precio 0 y monto 0. La razón "${docRef.razon_ref||''}" vendrá como texto del ítem.`
           : docRef.cod_ref===3?
-            `Modifica CASO ${docRef.natencion_ref}-${docRef.num_caso_ref}: agrega los ítems con los valores corregidos.`
+            `Modifica CASO ${docRef.natencion_ref}-${docRef.num_caso_ref}: usa el MISMO nombre de ítem del documento original (no la razón de referencia) con el valor corregido. Ej: si el original dice "HORAS PROGRAMADOR 5187", el ítem debe ser "HORAS PROGRAMADOR 648".`
           : `Agrega los ítems según el set del SII.`}
         </div>
         <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
