@@ -171,19 +171,28 @@ async def _emitir_casos(
     # Obtenemos el folio_actual de cada tipo de DTE y simulamos la secuencia
     # para saber qué folio recibirá cada caso, sin consumirlos aún.
     # Esto permite actualizar las referencias cruzadas antes de generar.
-    from app.services.caf_service import get_active_caf
+    from app.models.caf import CAF
 
-    tipo_next: dict[int, int] = {}   # {tipo_dte: proximo_folio}
-    folio_por_caso: dict[int, int] = {}  # {numero_caso: folio_que_le_tocara}
+    tipo_next: dict[int, int] = {}     # {tipo_dte: proximo_folio_disponible}
+    folio_por_caso: dict[int, int] = {}  # {numero_caso: folio_predicho}
 
     for caso in casos:
         tipo = caso.tipo_dte
         if tipo not in tipo_next:
             try:
-                caf = await get_active_caf(service.db, emisor_id, tipo, "certificacion")
-                tipo_next[tipo] = caf.folio_actual
+                resultado = await service.db.execute(
+                    select(CAF).where(
+                        CAF.emisor_id == emisor_id,
+                        CAF.tipo_dte  == tipo,
+                        CAF.activo    == True,
+                        CAF.ambiente  == "certificacion",
+                    ).order_by(CAF.folio_desde.asc())
+                )
+                cafs = resultado.scalars().all()
+                caf_disp = next((c for c in cafs if not c.esta_agotado), None)
+                tipo_next[tipo] = caf_disp.folio_actual if caf_disp else 0
             except Exception:
-                tipo_next[tipo] = 0  # sin CAF — se manejará el error en pass 2
+                tipo_next[tipo] = 0
         if tipo_next[tipo]:
             folio_por_caso[caso.numero_caso] = tipo_next[tipo]
             tipo_next[tipo] += 1
