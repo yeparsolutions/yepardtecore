@@ -2699,7 +2699,9 @@ function generarXMLEjemplo(set, cd, caso, ci){
     }
 
     // IndExe ANTES de NmbItem (orden XSD correcto)
-    if(it.exento||esExenta) xml += `      <IndExe>1</IndExe>\n`;
+    // IndExe=1 solo para ítems exentos dentro de docs AFECTOS (T33, T56, T61)
+    // T34 (Factura Exenta): el doc completo es exento → IndExe en ítems causa "No Cuadran"
+    if(it.exento && !esExenta) xml += `      <IndExe>1</IndExe>\n`;
 
     xml += `      <NmbItem>${xmlEncodeText(it.nombre)}</NmbItem>\n`;
     xml += `      <QtyItem>${fmtQty(qty)}</QtyItem>\n`;
