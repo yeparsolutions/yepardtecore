@@ -348,8 +348,11 @@ class XMLBuilder:
         if item.unidad:
             etree.SubElement(det, f"{{{NS}}}UnmdItem").text = item.unidad
 
-        # [FIX-1] PrcItem siempre presente (incluso cuando es 0)
-        etree.SubElement(det, f"{{{NS}}}PrcItem").text = str(round(item.precio_unitario))
+        # PrcItem: solo incluir cuando el precio es mayor que 0
+        # El XSD del SII define PrcItem con minInclusive=0.000001 → PrcItem=0 es inválido
+        # Para T52 traslado interno (precio=0) y otros casos sin precio → omitir PrcItem
+        if round(item.precio_unitario) > 0:
+            etree.SubElement(det, f"{{{NS}}}PrcItem").text = str(round(item.precio_unitario))
 
         if item.descuento_pct > 0:
             etree.SubElement(det, f"{{{NS}}}DescuentoPct").text   = f"{item.descuento_pct:.2f}"
