@@ -110,13 +110,19 @@ def _construir_libro_xml(
 
     tmst = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
+    # El Libro de Guías usa elemento raíz y schema distintos al LibroCompraVenta
+    # LibroGuia_v10.xsd SÍ acepta TpoDoc=52 — LibroCV_v10.xsd NO lo acepta
+    es_guias     = (tipo_envio_id == "LibroGuias")
+    root_tag     = "LibroGuia"     if es_guias else "LibroCompraVenta"
+    schema_file  = "LibroGuia_v10.xsd" if es_guias else "LibroCV_v10.xsd"
+
     root = etree.Element(
-        f"{{{NS}}}LibroCompraVenta",
+        f"{{{NS}}}{root_tag}",
         nsmap={None: NS, "xsi": "http://www.w3.org/2001/XMLSchema-instance"},
         attrib={
             "version": "1.0",
             "{http://www.w3.org/2001/XMLSchema-instance}schemaLocation":
-                f"{NS} LibroCV_v10.xsd",
+                f"{NS} {schema_file}",
         }
     )
 
