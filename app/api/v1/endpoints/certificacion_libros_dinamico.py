@@ -13,7 +13,7 @@
 import logging
 from datetime import date, datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -61,37 +61,51 @@ async def _obtener_dtes(
     db: AsyncSession,
 ) -> list[DTE]:
     """
-    Obtiene los DTEs emitidos del período dado.
-    periodo formato: "AAAA-MM"
+    Obtiene los DTEs emitidos del período dado — SIN duplicados.
+    Cada regeneración crea nuevos registros en la BD con el mismo folio.
+    Usamos MAX(id) por (tipo_dte, folio) para quedarnos solo con el más reciente.
     """
-    año, mes = int(periodo[:4]), int(periodo[5:7])
+    from sqlalchemy import func as _func
     from datetime import date as _date
     import calendar
-    ultimo_dia = calendar.monthrange(año, mes)[1]
-    fecha_desde = _date(año, mes, 1)
-    fecha_hasta = _date(año, mes, ultimo_dia)
 
-    result = await db.execute(
-        select(DTE).where(
+    # Subquery: id más reciente por (tipo_dte, folio)
+    sub = (
+        select(_func.max(DTE.id).label("max_id"))
+        .where(
             DTE.emisor_id == emisor_id,
             DTE.tipo_dte.in_(tipos),
             DTE.ambiente == "certificacion",
-            # Incluir BORRADOR y PENDIENTE_ENVIO — son DTEs válidos de certificación
-            # Solo excluir ANULADO
             DTE.estado.notin_(["ANULADO"]),
-        ).order_by(DTE.tipo_dte, DTE.folio)
+        )
+        .group_by(DTE.tipo_dte, DTE.folio)
+        .subquery()
+    )
+
+    result = await db.execute(
+        select(DTE)
+        .where(DTE.id.in_(select(sub.c.max_id)))
+        .order_by(DTE.tipo_dte, DTE.folio)
     )
     dtes = result.scalars().all()
 
-    # Filtrar por período si tienen fecha_emision
+    # Filtrar por período si tienen created_at
+    año, mes   = int(periodo[:4]), int(periodo[5:7])
+    fecha_desde = _date(año, mes, 1)
+    fecha_hasta = _date(año, mes, calendar.monthrange(año, mes)[1])
+
     dtes_periodo = []
     for dte in dtes:
-        if hasattr(dte, 'fecha_emision') and dte.fecha_emision:
-            fe = dte.fecha_emision if isinstance(dte.fecha_emision, _date) else _date.fromisoformat(str(dte.fecha_emision)[:10])
-            if fecha_desde <= fe <= fecha_hasta:
+        fecha_raw = getattr(dte, 'fecha_emision', None) or getattr(dte, 'created_at', None)
+        if fecha_raw:
+            try:
+                fe = fecha_raw if isinstance(fecha_raw, _date) else _date.fromisoformat(str(fecha_raw)[:10])
+                if fecha_desde <= fe <= fecha_hasta:
+                    dtes_periodo.append(dte)
+            except Exception:
                 dtes_periodo.append(dte)
         else:
-            dtes_periodo.append(dte)  # si no tiene fecha, incluir igual
+            dtes_periodo.append(dte)
 
     return dtes_periodo
 
@@ -110,11 +124,9 @@ def _construir_libro_xml(
 
     tmst = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
-    # El Libro de Guías usa elemento raíz y schema distintos al LibroCompraVenta
-    # LibroGuia_v10.xsd SÍ acepta TpoDoc=52 — LibroCV_v10.xsd NO lo acepta
-    es_guias     = (tipo_envio_id == "LibroGuias")
-    root_tag     = "LibroGuia"     if es_guias else "LibroCompraVenta"
-    schema_file  = "LibroGuia_v10.xsd" if es_guias else "LibroCV_v10.xsd"
+    es_guias    = (tipo_envio_id == "LibroGuias")
+    root_tag    = "LibroGuia"         if es_guias else "LibroCompraVenta"
+    schema_file = "LibroGuia_v10.xsd" if es_guias else "LibroCV_v10.xsd"
 
     root = etree.Element(
         f"{{{NS}}}{root_tag}",
@@ -129,19 +141,27 @@ def _construir_libro_xml(
     envio = etree.SubElement(root, f"{{{NS}}}EnvioLibro")
     envio.set("ID", tipo_envio_id)
 
-    # Carátula
+    # ── Carátula ─────────────────────────────────────────────────────────────
+    # IMPORTANTE: en LibroGuia_v10.xsd el orden es TipoLibro → TipoOperacion
+    # En LibroCV_v10.xsd es TipoOperacion → TipoLibro (diferente al XSD de guías)
     car = etree.SubElement(envio, f"{{{NS}}}Caratula")
     etree.SubElement(car, f"{{{NS}}}RutEmisorLibro").text   = emisor.rut
-    etree.SubElement(car, f"{{{NS}}}RutEnvia").text          = emisor.rut  # emisor mismo envía
+    etree.SubElement(car, f"{{{NS}}}RutEnvia").text         = emisor.rut
     etree.SubElement(car, f"{{{NS}}}PeriodoTributario").text = periodo
-    etree.SubElement(car, f"{{{NS}}}FchResol").text          = fch_resol
-    etree.SubElement(car, f"{{{NS}}}NroResol").text          = nro_resol
-    etree.SubElement(car, f"{{{NS}}}TipoOperacion").text     = tipo_libro
-    etree.SubElement(car, f"{{{NS}}}TipoLibro").text         = "ESPECIAL"
-    etree.SubElement(car, f"{{{NS}}}TipoEnvio").text         = "TOTAL"
-    etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = natencion  # dinámico ✓
+    etree.SubElement(car, f"{{{NS}}}FchResol").text         = fch_resol
+    etree.SubElement(car, f"{{{NS}}}NroResol").text         = nro_resol
+    if es_guias:
+        # LibroGuia: TipoLibro PRIMERO
+        etree.SubElement(car, f"{{{NS}}}TipoLibro").text       = "ESPECIAL"
+        etree.SubElement(car, f"{{{NS}}}TipoOperacion").text   = tipo_libro
+    else:
+        # LibroCV: TipoOperacion PRIMERO
+        etree.SubElement(car, f"{{{NS}}}TipoOperacion").text   = tipo_libro
+        etree.SubElement(car, f"{{{NS}}}TipoLibro").text       = "ESPECIAL"
+    etree.SubElement(car, f"{{{NS}}}TipoEnvio").text        = "TOTAL"
+    etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = natencion
 
-    # Convertir DTEs a dicts para el resumen y detalle
+    # ── Convertir DTEs a dicts ────────────────────────────────────────────────
     docs = []
     for dte in dtes:
         # El modelo DTE no tiene fecha_emision — usar created_at como fecha del documento
@@ -161,35 +181,72 @@ def _construir_libro_xml(
             "total": int(dte.monto_total or 0),
         })
 
-    # ResumenPeriodo — ANTES de Detalle (orden XSD)
+    # ── ResumenPeriodo ────────────────────────────────────────────────────────
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
-    for tipo_doc in sorted(set(d["tipo"] for d in docs)):
-        docs_t = [d for d in docs if d["tipo"] == tipo_doc]
-        tot = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
-        etree.SubElement(tot, f"{{{NS}}}TpoDoc").text      = str(tipo_doc)
-        etree.SubElement(tot, f"{{{NS}}}TotDoc").text      = str(len(docs_t))
-        etree.SubElement(tot, f"{{{NS}}}TotMntExe").text   = str(sum(d["exe"]   for d in docs_t))
-        etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text  = str(sum(d["neto"]  for d in docs_t))
-        etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text   = str(sum(d["iva"]   for d in docs_t))
-        etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in docs_t))
 
-    # Detalle — uno por DTE
+    if es_guias:
+        # LibroGuia_v10.xsd: estructura propia — NO usa TotalesPeriodo
+        # TotFolAnulado: folios anulados (0 en certificación)
+        # TotGuiaAnulada: guías anuladas (0 en certificación)
+        # TotGuiaVenta: número de guías de venta (con monto > 0)
+        # TotMntGuiaVta: suma de MntTotal de guías de venta
+        guias_venta  = [d for d in docs if d["total"] > 0]
+        tot_mnt_vta  = sum(d["total"] for d in guias_venta)
+        etree.SubElement(resumen, f"{{{NS}}}TotFolAnulado").text  = "0"
+        etree.SubElement(resumen, f"{{{NS}}}TotGuiaAnulada").text = "0"
+        etree.SubElement(resumen, f"{{{NS}}}TotGuiaVenta").text   = str(len(guias_venta))
+        if tot_mnt_vta > 0:
+            etree.SubElement(resumen, f"{{{NS}}}TotMntGuiaVta").text = str(tot_mnt_vta)
+    else:
+        # LibroCV_v10.xsd: TotalesPeriodo por tipo de documento
+        for tipo_doc in sorted(set(d["tipo"] for d in docs)):
+            docs_t = [d for d in docs if d["tipo"] == tipo_doc]
+            tot = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
+            etree.SubElement(tot, f"{{{NS}}}TpoDoc").text      = str(tipo_doc)
+            etree.SubElement(tot, f"{{{NS}}}TotDoc").text      = str(len(docs_t))
+            etree.SubElement(tot, f"{{{NS}}}TotMntExe").text   = str(sum(d["exe"]   for d in docs_t))
+            etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text  = str(sum(d["neto"]  for d in docs_t))
+            etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text   = str(sum(d["iva"]   for d in docs_t))
+            etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in docs_t))
+
+    # ── Detalle ───────────────────────────────────────────────────────────────
     for doc in docs:
         det = etree.SubElement(envio, f"{{{NS}}}Detalle")
-        etree.SubElement(det, f"{{{NS}}}TpoDoc").text  = str(doc["tipo"])
-        etree.SubElement(det, f"{{{NS}}}NroDoc").text  = str(doc["folio"])
-        etree.SubElement(det, f"{{{NS}}}TasaImp").text = "19"
-        etree.SubElement(det, f"{{{NS}}}FchDoc").text  = doc["fecha"]
-        etree.SubElement(det, f"{{{NS}}}RUTDoc").text  = doc["rut"]
-        etree.SubElement(det, f"{{{NS}}}RznSoc").text  = doc["razon"]
-        if doc["exe"] != 0:
-            etree.SubElement(det, f"{{{NS}}}MntExe").text = str(doc["exe"])
-        etree.SubElement(det, f"{{{NS}}}MntNeto").text = str(doc["neto"])
-        # MntIVA: el SII exige al menos uno de [MntIVA, MntIVANoRec, IVAUsoComun]
-        # Para T56 (ND) siempre incluir MntIVA aunque sea 0 — de lo contrario LBR-3
-        if doc["iva"] != 0 or doc["tipo"] == 56:
-            etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
-        etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
+
+        if es_guias:
+            # LibroGuia_v10.xsd: Folio → Anulado → [IndTraslado] → FchDoc → RUTDoc → RznSoc
+            #                    → [MntNeto] → [TasaIVA] → [IVA] → [MntExe] → MntTotal
+            etree.SubElement(det, f"{{{NS}}}Folio").text   = str(doc["folio"])
+            etree.SubElement(det, f"{{{NS}}}Anulado").text = "NO"
+            # IndTraslado: no está en el modelo DTE — omitir (campo opcional en XSD)
+            etree.SubElement(det, f"{{{NS}}}FchDoc").text  = doc["fecha"]
+            if doc["rut"]:
+                etree.SubElement(det, f"{{{NS}}}RUTDoc").text = doc["rut"]
+            if doc["razon"]:
+                etree.SubElement(det, f"{{{NS}}}RznSoc").text = doc["razon"]
+            if doc["neto"] != 0:
+                etree.SubElement(det, f"{{{NS}}}MntNeto").text = str(doc["neto"])
+            if doc["iva"] != 0:
+                etree.SubElement(det, f"{{{NS}}}TasaIVA").text = "19"
+                etree.SubElement(det, f"{{{NS}}}IVA").text     = str(doc["iva"])
+            if doc["exe"] != 0:
+                etree.SubElement(det, f"{{{NS}}}MntExe").text  = str(doc["exe"])
+            etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
+        else:
+            # LibroCV_v10.xsd: TpoDoc → NroDoc → TasaImp → FchDoc → RUTDoc → RznSoc
+            #                  → [MntExe] → MntNeto → [MntIVA] → MntTotal
+            etree.SubElement(det, f"{{{NS}}}TpoDoc").text  = str(doc["tipo"])
+            etree.SubElement(det, f"{{{NS}}}NroDoc").text  = str(doc["folio"])
+            etree.SubElement(det, f"{{{NS}}}TasaImp").text = "19"
+            etree.SubElement(det, f"{{{NS}}}FchDoc").text  = doc["fecha"]
+            etree.SubElement(det, f"{{{NS}}}RUTDoc").text  = doc["rut"]
+            etree.SubElement(det, f"{{{NS}}}RznSoc").text  = doc["razon"]
+            if doc["exe"] != 0:
+                etree.SubElement(det, f"{{{NS}}}MntExe").text = str(doc["exe"])
+            etree.SubElement(det, f"{{{NS}}}MntNeto").text = str(doc["neto"])
+            if doc["iva"] != 0 or doc["tipo"] in (56, 61):
+                etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
+            etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
 
     etree.SubElement(envio, f"{{{NS}}}TmstFirma").text = tmst
 
@@ -296,5 +353,170 @@ async def generar_libro_dinamico(
             "X-Periodo":           periodo,
             "X-TipoLibro":         tipo_libro,
             "X-DTEs-Incluidos":    str(len(dtes)),
+        },
+    )
+
+
+# ── Endpoint 2: Libro desde XMLs de EnvioDTE subidos ─────────────────────────
+# Permite generar el libro a partir de los XML aceptados por el SII,
+# sin depender de la BD. Resuelve el problema de duplicados y de DTEs
+# rechazados que quedan en BD.
+
+def _parsear_dtes_desde_xml(contenido: bytes) -> list[dict]:
+    """
+    Extrae los datos de cada DTE desde un EnvioDTE XML firmado.
+    Retorna lista de dicts con los campos que necesita _construir_libro_xml.
+    """
+    NS = "http://www.sii.cl/SiiDte"
+    try:
+        root = etree.fromstring(contenido)
+    except Exception as e:
+        raise ValueError(f"XML inválido: {e}")
+
+    dtes = []
+    for doc in root.findall(f'.//{{{NS}}}Documento'):
+        tipo  = doc.findtext(f'.//{{{NS}}}TipoDTE')
+        folio = doc.findtext(f'.//{{{NS}}}Folio')
+        fecha = doc.findtext(f'.//{{{NS}}}FchEmis')
+        rut   = doc.findtext(f'.//{{{NS}}}RUTRecep') or doc.findtext(f'.//{{{NS}}}RUTDoc') or "66666666-6"
+        razon = doc.findtext(f'.//{{{NS}}}RznSocRecep') or doc.findtext(f'.//{{{NS}}}RznSoc') or "Consumidor Final"
+
+        neto  = doc.findtext(f'.//{{{NS}}}MntNeto')  or "0"
+        iva   = doc.findtext(f'.//{{{NS}}}IVA')       or "0"
+        exe   = doc.findtext(f'.//{{{NS}}}MntExe')   or "0"
+        total = doc.findtext(f'.//{{{NS}}}MntTotal')
+
+        if not tipo or not folio or not total:
+            continue
+
+        dtes.append({
+            "tipo_dte":       int(tipo),
+            "folio":          int(folio),
+            "fecha_emision":  fecha or "",
+            "rut_receptor":   rut.replace(".", ""),
+            "nombre_receptor": razon[:50],
+            "monto_neto":     int(neto),
+            "monto_iva":      int(iva),
+            "monto_total":    int(total),
+            "monto_exe":      int(exe),
+        })
+    return dtes
+
+
+class _DTEFake:
+    """Objeto DTE liviano para pasar a _construir_libro_xml sin BD."""
+    def __init__(self, d: dict):
+        self.tipo_dte        = d["tipo_dte"]
+        self.folio           = d["folio"]
+        self.fecha_emision   = d.get("fecha_emision") or None
+        self.created_at      = d.get("fecha_emision") or None
+        self.rut_receptor    = d.get("rut_receptor",    "66666666-6")
+        self.nombre_receptor = d.get("nombre_receptor", "Consumidor Final")
+        self.monto_neto      = d.get("monto_neto",  0)
+        self.monto_iva       = d.get("monto_iva",   0)
+        self.monto_total     = d.get("monto_total", 0)
+        self.estado          = "ACEPTADO"
+        self.ambiente        = "certificacion"
+
+
+@router.post(
+    "/desde-xml",
+    summary="Genera libro desde XMLs de EnvioDTE (sin BD)",
+    description="""
+Genera el libro a partir de los XML de EnvioDTE YA ACEPTADOS por el SII.
+No usa la BD — evita duplicados y DTEs rechazados.
+
+Útil cuando se generó el set múltiples veces o cuando la BD tiene datos sucios.
+Subir los XML exactos que el SII aceptó.
+    """,
+)
+async def generar_libro_desde_xml(
+    emisor_id:  int           = Form(...),
+    tipo_libro: str           = Form(...),   # ventas | compras | guias
+    natencion:  str           = Form(...),
+    periodo:    str           = Form(...),   # AAAA-MM
+    archivos:   list[UploadFile] = File(...),  # uno o más EnvioDTE XML
+    fch_resol:  str           = Form("2026-04-19"),
+    nro_resol:  str           = Form("0"),
+    db: AsyncSession = Depends(get_db),
+):
+    if tipo_libro not in ("ventas", "compras", "guias"):
+        raise HTTPException(400, "tipo_libro debe ser: ventas | compras | guias")
+
+    # Cargar emisor y certificado
+    emisor = await db.get(Emisor, emisor_id)
+    if not emisor:
+        raise HTTPException(404, f"Emisor {emisor_id} no encontrado")
+
+    cert_result = await db.execute(
+        select(Certificado).where(Certificado.emisor_id == emisor_id)
+    )
+    cert = cert_result.scalars().first()
+    if not cert:
+        raise HTTPException(400, "Sin certificado .p12 cargado")
+
+    # Parsear todos los XMLs subidos
+    todos_dtes: list[_DTEFake] = []
+    folios_vistos: set = set()
+
+    for archivo in archivos:
+        contenido = await archivo.read()
+        try:
+            dtes_xml = _parsear_dtes_desde_xml(contenido)
+        except ValueError as e:
+            raise HTTPException(400, f"Error en {archivo.filename}: {e}")
+
+        for d in dtes_xml:
+            key = (d["tipo_dte"], d["folio"])
+            if key not in folios_vistos:          # deduplicar si suben mismo DTE dos veces
+                folios_vistos.add(key)
+                todos_dtes.append(_DTEFake(d))
+
+    if not todos_dtes:
+        raise HTTPException(404, "No se encontraron DTEs válidos en los XMLs subidos")
+
+    todos_dtes.sort(key=lambda x: (x.tipo_dte, x.folio))
+
+    libro_meta = {
+        "ventas":  ("VENTA",  "LibroVentas",  "Ventas"),
+        "compras": ("COMPRA", "LibroCompras", "Compras"),
+        "guias":   ("VENTA",  "LibroGuias",   "Guías"),
+    }
+    tipo_op, libro_id, label = libro_meta[tipo_libro]
+
+    logger.info(
+        f"[LIBRO DESDE-XML] {label} emisor={emisor.rut} "
+        f"natencion={natencion} archivos={len(archivos)} dtes={len(todos_dtes)}"
+    )
+
+    xml_str = _construir_libro_xml(
+        emisor        = emisor,
+        dtes          = todos_dtes,
+        tipo_libro    = tipo_op,
+        tipo_envio_id = libro_id,
+        natencion     = natencion,
+        periodo       = periodo,
+        fch_resol     = fch_resol,
+        nro_resol     = nro_resol,
+    )
+
+    firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
+    try:
+        xml_firmado = await firma.firmar_libro(xml_str)
+    except Exception as e:
+        raise HTTPException(500, f"Error al firmar el libro: {e}")
+
+    rut_limpio = emisor.rut.replace(".", "").replace("-", "")
+    nombre = f"Libro{tipo_libro.capitalize()}_{natencion}_{rut_limpio}_{periodo}.xml"
+
+    return Response(
+        content    = xml_firmado.encode("ISO-8859-1"),
+        media_type = "application/octet-stream",
+        headers    = {
+            "Content-Disposition": f'attachment; filename="{nombre}"',
+            "X-NroAtencion":       natencion,
+            "X-Periodo":           periodo,
+            "X-TipoLibro":         tipo_libro,
+            "X-DTEs-Incluidos":    str(len(todos_dtes)),
         },
     )
