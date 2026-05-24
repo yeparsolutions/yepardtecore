@@ -787,7 +787,11 @@ function vRut(r){const c=r.replace(/[.\s-]/g,'').toUpperCase();if(c.length<2)ret
 function onRut(inp,hid){const h=document.getElementById(hid);if(!inp.value){inp.className='mono';h.textContent='RUT sin puntos con guion';h.className='hint';return;}const ok=vRut(inp.value);inp.classList.toggle('valid',ok);inp.classList.toggle('invalid',!ok);if(ok){h.textContent='✓ SII recibirá: '+rutSII(inp.value);h.className='hint ok';}else{h.textContent='✗ Dígito verificador inválido';h.className='hint bad';}}
 function log(msg,t='info'){const b=document.getElementById('conb');const now=new Date().toLocaleTimeString('es-CL',{hour12:false});const d=document.createElement('div');d.className='lg '+t;d.innerHTML='<span class="lgt">'+now+'</span>'+msg;b.appendChild(d);b.scrollTop=b.scrollHeight;}
 function clrLog(){document.getElementById('conb').innerHTML='';}
-function base(){return(document.getElementById('apiUrl').value||'').trim().replace(/\/$/,'');}
+function base(){
+  const v=(document.getElementById('apiUrl').value||'').trim().replace(/\/$/,'');
+  // Si el input está vacío (usuario lo borró o aún no cargó), usar el origen actual
+  return v || window.location.origin;
+}
 async function api(path,opts={}){
   log((opts.method||'GET')+' '+path,'info');
   const r=await fetch(base()+path,opts);
