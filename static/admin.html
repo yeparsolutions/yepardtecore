@@ -668,40 +668,6 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
         <div id="casos_sel_grid" style="display:flex;flex-wrap:wrap;gap:6px"></div>
       </div>
 
-      <!-- ── FEATURE A: Libro desde XMLs aceptados ──────────────────── -->
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:12px">
-        <div style="font-size:12px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">
-          📚 Generar Libro desde XMLs aceptados por el SII
-        </div>
-        <p style="font-size:12px;color:var(--text3);margin-bottom:10px">
-          Sube los XMLs de EnvioDTE que el SII ya aceptó. El libro se construye desde esos datos exactos — sin depender de la BD ni tener duplicados.
-        </p>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-          <div class="f">
-            <label>Tipo de Libro</label>
-            <select id="libro_tipo">
-              <option value="ventas">Libro de Ventas</option>
-              <option value="compras">Libro de Compras</option>
-              <option value="guias">Libro de Guías</option>
-            </select>
-          </div>
-          <div class="f">
-            <label>N° Atención del Libro</label>
-            <input type="text" id="libro_natencion" class="mono" placeholder="4841544">
-          </div>
-        </div>
-        <div class="uzone" id="z_libro_xml" ondragover="dOv(event,'z_libro_xml')" ondragleave="dLv('z_libro_xml')" ondrop="dpLibroXML(event)" style="margin-bottom:10px">
-          <input type="file" id="f_libro_xml" accept=".xml" multiple onchange="addLibroXML(this.files)">
-          <div class="uicon">📄</div>
-          <div class="utxt"><strong>Arrastra los XMLs de EnvioDTE aquí</strong>Puedes subir varios (ej: SetBasico + SetExentas para ventas)</div>
-        </div>
-        <div id="libro_xml_chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
-        <button class="btn bp" onclick="generarLibroDesdeXML()" id="btn_libro_xml" disabled style="width:100%;padding:11px">
-          📚 Generar Libro desde XMLs
-        </button>
-        <div class="result" id="r_libro_xml"><div class="rlbl" id="r_libro_xml_l"></div><div class="rbody" id="r_libro_xml_c"></div></div>
-      </div>
-
       <!-- Configuración de endpoints -->
       <div class="ep-config" id="epConfig">
         <div class="ep-config-hdr" onclick="toggleEpConfig()">
@@ -724,6 +690,57 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
         <div class="sii-step"><div class="sii-num">4</div><div class="sii-txt">Sube el XML — el SII entregará un <strong style="color:var(--accent)">Track ID</strong> para consultar el resultado</div></div>
       </div>
       <div class="result" id="r5"><div class="rlbl" id="r5l"></div><div class="rbody" id="r5c"></div></div>
+    </div>
+  </div>
+
+  <!-- ── TARJETA LIBROS — siempre visible, fuera del flujo de pasos ── -->
+  <div class="card active" id="c_libros" style="border-color:rgba(16,185,129,.35)">
+    <div class="ch" onclick="tgl_libros()">
+      <div class="sn">📚</div>
+      <div class="ct">Generar Libro desde XMLs aceptados</div>
+      <span class="badge ok">siempre disponible</span>
+    </div>
+    <div id="cb_libros" style="padding:22px">
+      <p style="font-size:13px;color:var(--text3);margin-bottom:14px">
+        Sube los EnvioDTE que el SII ya <strong style="color:var(--accent)">aceptó</strong>.
+        El libro se construye desde esos datos exactos — sin BD, sin duplicados, sin necesitar regenerar sets.
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div class="f">
+          <label>Tipo de Libro</label>
+          <select id="libro_tipo">
+            <option value="ventas">Libro de Ventas</option>
+            <option value="compras">Libro de Compras</option>
+            <option value="guias">Libro de Guías</option>
+          </select>
+        </div>
+        <div class="f">
+          <label>N° Atención del Libro</label>
+          <input type="text" id="libro_natencion" class="mono" placeholder="ej: 4841544">
+        </div>
+      </div>
+      <div class="uzone" id="z_libro_xml"
+           ondragover="dOv(event,'z_libro_xml')"
+           ondragleave="dLv('z_libro_xml')"
+           ondrop="dpLibroXML(event)"
+           style="margin-bottom:10px">
+        <input type="file" id="f_libro_xml" accept=".xml" multiple
+               onchange="addLibroXML(this.files)">
+        <div class="uicon">📑</div>
+        <div class="utxt">
+          <strong>Arrastra los EnvioDTE aquí o haz clic</strong>
+          Puedes subir varios — ej: SetBasico + SetExentas para el Libro de Ventas
+        </div>
+      </div>
+      <div id="libro_xml_chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
+      <button class="btn bp bfull" onclick="generarLibroDesdeXML()"
+              id="btn_libro_xml" disabled style="padding:13px">
+        📚 Generar Libro
+      </button>
+      <div class="result" id="r_libro_xml">
+        <div class="rlbl" id="r_libro_xml_l"></div>
+        <div class="rbody" id="r_libro_xml_c"></div>
+      </div>
     </div>
   </div>
 
@@ -3061,6 +3078,7 @@ function renderFoliosPorTipo(containerEl, si){
    UI HELPERS
 ══════════════════════════════════════════════════════ */
 function tgl(n){const c=document.getElementById('c'+n);if(c.classList.contains('locked'))return;const b=c.querySelector('.cb');b.style.display=b.style.display==='none'?'block':'none';}
+function tgl_libros(){const b=document.getElementById('cb_libros');b.style.display=b.style.display==='none'?'block':'none';}
 function unlock(n){const c=document.getElementById('c'+n);c.classList.remove('locked');c.classList.add('active');c.querySelector('.cb').style.display='block';c.scrollIntoView({behavior:'smooth',block:'nearest'});}
 function done(n,txt){document.getElementById('c'+n).classList.replace('active','done');const b=document.getElementById('b'+n);b.textContent=txt;b.className='badge ok';}
 function dOv(e,id){e.preventDefault();document.getElementById(id).classList.add('over');}
