@@ -2030,12 +2030,15 @@ async function generarXML(setKey, natencion){
         numero_caso:          ci+1,
         tipo_dte:             caso.tipo_doc,
         fecha_emision:        new Date().toISOString().split('T')[0],
-        // forzar_monto_cero si no hay ítems O si alguna ref tiene CodRef=2
-        // El dte_service lo detecta y omite <Detalle> en el XML
+        // forzar_monto_cero: CodRef=2 siempre, NC/ND sin ítems originales también
+        // (ahora generamos placeholder pero el monto debe ser 0)
         forzar_monto_cero: (()=>{
-          if(cd.items&&cd.items.length===0&&[56,61].includes(caso.tipo_doc)) return true;
           const refs=cd.referencias||[];
-          return refs.some(r=>r.tipo_doc_ref!=='SET'&&parseInt(r.cod_ref)===2);
+          const esCodRef2=refs.some(r=>r.tipo_doc_ref!=='SET'&&parseInt(r.cod_ref)===2);
+          if(esCodRef2) return true;
+          // NC/ND que originalmente no tenían ítems → placeholder con monto 0
+          if((!cd.items||cd.items.length===0)&&[56,61].includes(caso.tipo_doc)) return true;
+          return false;
         })(),
         indicador_traslado:   cd.ind_traslado||0,
         indicador_despacho:   cd.ind_despacho||0,
@@ -2090,8 +2093,23 @@ async function generarXML(setKey, natencion){
             }];
           }
 
-          // NC/ND sin ítems y sin CodRef=2: lista vacía
-          if(sinItems&&[56,61].includes(caso.tipo_doc)) return [];
+          // NC/ND sin ítems (CodRef=1 u otro): el XSD exige al menos 1 <Detalle>
+          // Sin Detalle el sobre es rechazado por schema inválido (línea donde empieza Referencia)
+          // Generar ítem placeholder con la razón de referencia y forzar_monto_cero
+          if(sinItems&&[56,61].includes(caso.tipo_doc)){
+            const refDoc = refs.find(r=>r.tipo_doc_ref!=='SET');
+            const nombreItem = (refDoc?.razon_ref||'ANULA DOCUMENTO').toUpperCase();
+            return [{
+              nombre:          nombreItem,
+              descripcion:     nombreItem,
+              cantidad:        1,
+              precio_unitario: 0,
+              descuento_pct:   0,
+              exento:          true,
+              codigo:          '',
+              unidad:          'UN',
+            }];
+          }
 
           return (cd.items||[]).map(it=>({
             nombre:          it.nombre||'',
@@ -2686,8 +2704,9 @@ function generarXMLEjemplo(set, cd, caso, ci){
     xml += `      <NmbItem>${xmlEncodeText(it.nombre)}</NmbItem>\n`;
     xml += `      <QtyItem>${fmtQty(qty)}</QtyItem>\n`;
     if(unmd) xml += `      <UnmdItem>${xmlEncodeText(unmd)}</UnmdItem>\n`;
-    // PrcItem siempre presente (FIX-1)
-    xml += `      <PrcItem>${Math.round(prc)}</PrcItem>\n`;
+    // PrcItem solo si > 0 — el XSD del SII exige minInclusive=0.000001
+    // T52 traslado interno y placeholders con precio=0: omitir PrcItem
+    if(Math.round(prc) > 0) xml += `      <PrcItem>${Math.round(prc)}</PrcItem>\n`;
     if(descPct){
       xml += `      <DescuentoPct>${descPct.toFixed(2)}</DescuentoPct>\n`;
       xml += `      <DescuentoMonto>${descMnt}</DescuentoMonto>\n`;
