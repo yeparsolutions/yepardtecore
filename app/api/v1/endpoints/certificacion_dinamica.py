@@ -45,6 +45,9 @@ class ReferenciaInput(BaseModel):
     fecha_ref:    str         # YYYY-MM-DD
     cod_ref:      int | None  = None   # 1=anula, 2=corrige giro, 3=corrige montos
     razon_ref:    str         = ""
+    # num_caso_ref: caso del MISMO set al que apunta esta referencia
+    # Si está presente, el backend lo resuelve al folio real DESPUÉS de generarlos todos
+    num_caso_ref: int | None  = None
 
 class ReceptorInput(BaseModel):
     rut:          str = "66666666-6"
@@ -151,16 +154,55 @@ async def _emitir_casos(
     emisor_id: int,
     natencion: str,
 ) -> tuple[list, dict, list]:
-    """Emite todos los casos de un set dinámicamente."""
+    """
+    Emite todos los casos de un set dinámicamente.
+
+    TWO-PASS para referencias cruzadas correctas:
+    - Pass 1: pre-asignar folios a cada caso (peek del CAF sin consumir)
+    - Pass 2: generar DTEs con folio_ref actualizado al folio real de cada caso
+
+    Esto resuelve REF-3-750 causado por folio_ref desactualizado del frontend.
+    """
     xmls_firmados: list[str] = []
     folios: dict[int, int] = {}
     errores: list[str] = []
 
-    # Primera pasada: resolver referencias cruzadas que usan folio_ref=0
-    # (el admin puede enviar folio_ref=null para NC/ND que referencian casos del mismo set)
-    # Se resuelven en una segunda pasada después de emitir todos los casos.
+    # ── Pass 1: pre-asignar folios ───────────────────────────────────────────
+    # Obtenemos el folio_actual de cada tipo de DTE y simulamos la secuencia
+    # para saber qué folio recibirá cada caso, sin consumirlos aún.
+    # Esto permite actualizar las referencias cruzadas antes de generar.
+    from app.services.caf_service import get_active_caf
+
+    tipo_next: dict[int, int] = {}   # {tipo_dte: proximo_folio}
+    folio_por_caso: dict[int, int] = {}  # {numero_caso: folio_que_le_tocara}
 
     for caso in casos:
+        tipo = caso.tipo_dte
+        if tipo not in tipo_next:
+            try:
+                caf = await get_active_caf(service.db, emisor_id, tipo, "certificacion")
+                tipo_next[tipo] = caf.folio_actual
+            except Exception:
+                tipo_next[tipo] = 0  # sin CAF — se manejará el error en pass 2
+        if tipo_next[tipo]:
+            folio_por_caso[caso.numero_caso] = tipo_next[tipo]
+            tipo_next[tipo] += 1
+
+    logger.info(
+        f"[CERT DIN] Pass1 N°{natencion}: folios previstos por caso → {folio_por_caso}"
+    )
+
+    # ── Pass 2: generar DTEs con referencias cruzadas resueltas ─────────────
+    for caso in casos:
+        # Actualizar folio_ref de referencias que apuntan a otro caso del set
+        for ref in caso.referencias:
+            if ref.num_caso_ref and ref.num_caso_ref in folio_por_caso:
+                ref.folio_ref = folio_por_caso[ref.num_caso_ref]
+                logger.info(
+                    f"[CERT DIN] Caso {caso.numero_caso} ref→caso {ref.num_caso_ref} "
+                    f"folio_ref resuelto a {ref.folio_ref}"
+                )
+
         datos = _caso_a_datos(caso, fecha)
         try:
             r = await service.emitir(
