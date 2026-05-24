@@ -183,10 +183,12 @@ def _construir_libro_xml(
         etree.SubElement(det, f"{{{NS}}}RUTDoc").text  = doc["rut"]
         etree.SubElement(det, f"{{{NS}}}RznSoc").text  = doc["razon"]
         if doc["exe"] != 0:
-            etree.SubElement(det, f"{{{NS}}}MntExe").text  = str(doc["exe"])
-        etree.SubElement(det, f"{{{NS}}}MntNeto").text  = str(doc["neto"])
-        if doc["iva"] != 0:
-            etree.SubElement(det, f"{{{NS}}}MntIVA").text  = str(doc["iva"])
+            etree.SubElement(det, f"{{{NS}}}MntExe").text = str(doc["exe"])
+        etree.SubElement(det, f"{{{NS}}}MntNeto").text = str(doc["neto"])
+        # MntIVA: el SII exige al menos uno de [MntIVA, MntIVANoRec, IVAUsoComun]
+        # Para T56 (ND) siempre incluir MntIVA aunque sea 0 — de lo contrario LBR-3
+        if doc["iva"] != 0 or doc["tipo"] == 56:
+            etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
         etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
 
     etree.SubElement(envio, f"{{{NS}}}TmstFirma").text = tmst
