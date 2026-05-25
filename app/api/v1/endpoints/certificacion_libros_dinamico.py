@@ -175,18 +175,26 @@ def _construir_libro_xml(
         rut_doc   = (dte.rut_receptor or "66666666-6").replace(".", "")
         razon_doc = (dte.nombre_receptor or "Consumidor Final")[:50]
         docs.append({
-            "tipo":          dte.tipo_dte,
-            "folio":         dte.folio,
-            "fecha":         fecha_str,
-            "rut":           rut_doc,
-            "razon":         razon_doc,
-            "neto":          int(dte.monto_neto  or 0),
-            "iva":           int(dte.monto_iva   or 0),
-            "exe":           int((dte.monto_total or 0) - (dte.monto_neto or 0) - (dte.monto_iva or 0)),
-            "total":         int(dte.monto_total or 0),
-            "anulado":       getattr(dte, 'anulado', False),
-            "ind_traslado":  getattr(dte, 'ind_traslado', None),
-            "tipo_despacho": getattr(dte, 'tipo_despacho', None),
+            "tipo":           dte.tipo_dte,
+            "folio":          dte.folio,
+            "fecha":          fecha_str,
+            "rut":            rut_doc,
+            "razon":          razon_doc,
+            "neto":           int(dte.monto_neto  or 0),
+            "iva":            int(dte.monto_iva   or 0),
+            # Usar monto_exe directo — NO recalcular (rompe casos de IVA especial)
+            "exe":            int(getattr(dte, 'monto_exe', 0) or 0),
+            "total":          int(dte.monto_total or 0),
+            "anulado":        getattr(dte, 'anulado', False),
+            "ind_traslado":   getattr(dte, 'ind_traslado', None),
+            "tipo_despacho":  getattr(dte, 'tipo_despacho', None),
+            # Campos especiales IVA (LibroCompras)
+            "tipo_especial":  getattr(dte, 'tipo_especial', ''),
+            "iva_uso_comun":  getattr(dte, 'iva_uso_comun', 0),
+            "fct_prop":       getattr(dte, 'fct_prop', '0.60'),
+            "iva_no_rec":     getattr(dte, 'iva_no_rec', 0),
+            "cod_iva_no_rec": getattr(dte, 'cod_iva_no_rec', 9),
+            "iva_ret_total":  getattr(dte, 'iva_ret_total', 0),
         })
 
     # ── ResumenPeriodo ────────────────────────────────────────────────────────
@@ -211,9 +219,30 @@ def _construir_libro_xml(
             tot = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
             etree.SubElement(tot, f"{{{NS}}}TpoDoc").text      = str(tipo_doc)
             etree.SubElement(tot, f"{{{NS}}}TotDoc").text      = str(len(docs_t))
-            etree.SubElement(tot, f"{{{NS}}}TotMntExe").text   = str(sum(d["exe"]   for d in docs_t))
+            # TotMntExe: solo exento real (no incluir IVA uso común ni IVA no rec)
+            t_exe = sum(d["exe"] for d in docs_t)
+            etree.SubElement(tot, f"{{{NS}}}TotMntExe").text   = str(t_exe)
             etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text  = str(sum(d["neto"]  for d in docs_t))
             etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text   = str(sum(d["iva"]   for d in docs_t))
+            # IVA No Recuperable
+            t_nr = sum(d.get("iva_no_rec", 0) for d in docs_t)
+            if t_nr:
+                inr = etree.SubElement(tot, f"{{{NS}}}TotIVANoRec")
+                etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text    = str(docs_t[0].get("cod_iva_no_rec", 9))
+                etree.SubElement(inr, f"{{{NS}}}TotOpIVANoRec").text  = str(sum(1 for d in docs_t if d.get("iva_no_rec", 0)))
+                etree.SubElement(inr, f"{{{NS}}}TotMntIVANoRec").text = str(t_nr)
+            # IVA Uso Común
+            t_uc = sum(d.get("iva_uso_comun", 0) for d in docs_t)
+            if t_uc:
+                fct = docs_t[0].get("fct_prop", "0.60")
+                etree.SubElement(tot, f"{{{NS}}}TotIVAUsoComun").text    = str(t_uc)
+                etree.SubElement(tot, f"{{{NS}}}FctProp").text            = fct
+                etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(fct)))
+            # IVA Retención Total
+            t_ret = sum(d.get("iva_ret_total", 0) for d in docs_t)
+            if t_ret:
+                etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in docs_t if d.get("iva_ret_total", 0)))
+                etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_ret)
             etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in docs_t))
 
     # ── Detalle ───────────────────────────────────────────────────────────────
@@ -245,7 +274,7 @@ def _construir_libro_xml(
             etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
         else:
             # LibroCV_v10.xsd: TpoDoc → NroDoc → TasaImp → FchDoc → RUTDoc → RznSoc
-            #                  → [MntExe] → MntNeto → [MntIVA] → MntTotal
+            #                  → [MntExe] → MntNeto → [MntIVA/IVAUsoComun/IVANoRec/IVARetTotal] → MntTotal
             etree.SubElement(det, f"{{{NS}}}TpoDoc").text  = str(doc["tipo"])
             etree.SubElement(det, f"{{{NS}}}NroDoc").text  = str(doc["folio"])
             etree.SubElement(det, f"{{{NS}}}TasaImp").text = "19"
@@ -255,8 +284,23 @@ def _construir_libro_xml(
             if doc["exe"] != 0:
                 etree.SubElement(det, f"{{{NS}}}MntExe").text = str(doc["exe"])
             etree.SubElement(det, f"{{{NS}}}MntNeto").text = str(doc["neto"])
-            if doc["iva"] != 0 or doc["tipo"] in (56, 61):
-                etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
+            # MntIVA / campos especiales IVA
+            te = doc.get("tipo_especial", "")
+            if te == "iva_uso_comun":
+                etree.SubElement(det, f"{{{NS}}}MntIVA").text      = "0"
+                etree.SubElement(det, f"{{{NS}}}IVAUsoComun").text = str(doc["iva_uso_comun"])
+            elif te == "iva_no_rec":
+                etree.SubElement(det, f"{{{NS}}}MntIVA").text = "0"
+                inr = etree.SubElement(det, f"{{{NS}}}IVANoRec")
+                etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc.get("cod_iva_no_rec", 9))
+                etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
+            elif te == "iva_ret_total":
+                etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
+                etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
+            else:
+                # Normal o T56/T61: siempre emitir MntIVA
+                if doc["iva"] != 0 or doc["tipo"] in (56, 61):
+                    etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
             etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
 
     etree.SubElement(envio, f"{{{NS}}}TmstFirma").text = tmst
@@ -433,11 +477,19 @@ class _DTEFake:
         self.monto_neto      = d.get("monto_neto",  0)
         self.monto_iva       = d.get("monto_iva",   0)
         self.monto_total     = d.get("monto_total", 0)
+        self.monto_exe       = d.get("monto_exe",   0)   # exento real (no recalcular)
         self.estado          = "ACEPTADO"
         self.ambiente        = "certificacion"
         self.anulado         = bool(d.get("anulado", False))
-        self.ind_traslado    = d.get("ind_traslado")   # LibroGuías: 1=venta, 5=traslado
-        self.tipo_despacho   = d.get("tipo_despacho")  # LibroGuías: tipo de despacho
+        self.ind_traslado    = d.get("ind_traslado")
+        self.tipo_despacho   = d.get("tipo_despacho")
+        # Campos especiales IVA para LibroCompras
+        self.tipo_especial   = d.get("tipo_especial", "")   # iva_uso_comun | iva_no_rec | iva_ret_total
+        self.iva_uso_comun   = d.get("iva_uso_comun",  0)
+        self.fct_prop        = d.get("fct_prop",  "0.60")
+        self.iva_no_rec      = d.get("iva_no_rec",     0)
+        self.cod_iva_no_rec  = d.get("cod_iva_no_rec", 9)
+        self.iva_ret_total   = d.get("iva_ret_total",  0)
 
 
 @router.post(
@@ -611,6 +663,12 @@ async def generar_libro_manual(
             "monto_iva":       d.monto_iva,
             "monto_total":     d.monto_total,
             "monto_exe":       d.monto_exe,
+            # Campos especiales IVA — críticos para LibroCompras
+            "tipo_especial":   d.tipo_especial,
+            "iva_uso_comun":   d.iva_uso_comun,
+            "fct_prop":        d.fct_prop,
+            "iva_no_rec":      d.iva_no_rec,
+            "iva_ret_total":   d.iva_ret_total,
         })
         todos_dtes.append(fake)
 
