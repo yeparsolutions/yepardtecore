@@ -754,10 +754,18 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
           </div>
         </div>
         <div id="libro_xml_chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
-        <button class="btn bp bfull" onclick="generarLibroDesdeXML()"
-                id="btn_libro_xml" disabled style="padding:13px">
-          📚 Generar Libro desde XMLs
-        </button>
+        <div style="display:grid;grid-template-columns:1fr auto;gap:8px">
+          <button class="btn bp bfull" onclick="generarLibroDesdeXML()"
+                  id="btn_libro_xml" disabled style="padding:13px">
+            📚 Generar Libro
+          </button>
+          <button class="btn" onclick="previewLibroXML()"
+                  id="btn_preview_xml" disabled
+                  title="Ver XML sin firmar antes de generar"
+                  style="padding:13px 14px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:16px">
+            🔍
+          </button>
+        </div>
       </div>
 
       <!-- MODO MANUAL (Compras — documentos del .txt) -->
@@ -2227,7 +2235,51 @@ function getFilasCompra(){
   }).filter(r=>r.folio>0);
 }
 
-async function generarLibroComprasDedicado(){
+async function previewLibroXML(){
+  if(!S.id){ log('Carga el emisor primero','warn'); return; }
+  if(_libroXMLFiles.length===0){ log('Sube al menos un XML primero','warn'); return; }
+  const tipo = document.getElementById('libro_tipo').value;
+  const nat  = document.getElementById('libro_natencion').value.trim();
+  if(!nat){ log('Ingresa el N° de atención','warn'); return; }
+
+  const btn = document.getElementById('btn_preview_xml');
+  btn.disabled=true; btn.textContent='⏳';
+  const periodoHoy = new Date().toISOString().slice(0,7);
+  const fd = new FormData();
+  fd.append('emisor_id', S.id); fd.append('tipo_libro', tipo);
+  fd.append('natencion', nat);  fd.append('periodo', periodoHoy);
+  for(const f of _libroXMLFiles) fd.append('archivos', f);
+  const folios = document.getElementById('guias_folios_anulados')?.value.trim()||'';
+  if(folios) fd.append('folios_anulados', folios);
+
+  try{
+    const r = await fetch(base()+'/v1/certificacion-libros/preview', {method:'POST', body:fd});
+    if(!r.ok){ log('Error '+r.status,'err'); return; }
+    const xml = await r.text();
+    // Mostrar en modal
+    let modal = document.getElementById('xml_preview_modal');
+    if(!modal){
+      modal = document.createElement('div');
+      modal.id = 'xml_preview_modal';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+      modal.innerHTML = `
+        <div style="background:var(--bg);border-radius:12px;width:100%;max-width:900px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden">
+          <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+            <span style="font-weight:600;font-size:14px">🔍 Preview XML sin firmar</span>
+            <button onclick="document.getElementById('xml_preview_modal').remove()"
+              style="background:transparent;border:none;color:var(--text3);font-size:20px;cursor:pointer;line-height:1">×</button>
+          </div>
+          <pre id="xml_preview_content"
+            style="margin:0;padding:16px;overflow:auto;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text);background:var(--bg2);flex:1;white-space:pre"></pre>
+        </div>`;
+      document.body.appendChild(modal);
+    }
+    document.getElementById('xml_preview_content').textContent = xml;
+    modal.style.display='flex';
+    log('Preview XML listo','ok');
+  }catch(e){ log('Error: '+e,'err'); }
+  finally{ btn.disabled=false; btn.textContent='🔍'; }
+}
   if(!S.id){ log('Carga el emisor primero','warn'); return; }
   const nat = document.getElementById('libro_natencion').value.trim() || '4841545';
   log(`Generando Libro de Compras N°${nat} con datos del set de certificación...`,'info');
@@ -2303,7 +2355,9 @@ function addLibroXML(files){
     _libroXMLFiles.push(f);
   }
   renderLibroXMLChips();
-  document.getElementById('btn_libro_xml').disabled = _libroXMLFiles.length === 0;
+  const dis = _libroXMLFiles.length === 0;
+  document.getElementById('btn_libro_xml').disabled   = dis;
+  document.getElementById('btn_preview_xml').disabled = dis;
 }
 
 function renderLibroXMLChips(){
@@ -2318,7 +2372,9 @@ function renderLibroXMLChips(){
 function removeLibroXML(i){
   _libroXMLFiles.splice(i,1);
   renderLibroXMLChips();
-  document.getElementById('btn_libro_xml').disabled = _libroXMLFiles.length === 0;
+  const dis = _libroXMLFiles.length === 0;
+  document.getElementById('btn_libro_xml').disabled   = dis;
+  document.getElementById('btn_preview_xml').disabled = dis;
 }
 
 async function generarLibroDesdeXML(){
