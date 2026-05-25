@@ -2251,6 +2251,8 @@ async function generarLibroComprasDedicado(){
   }catch(e){ log('Error: '+e,'err'); }
   finally{ if(btn){ btn.disabled=false; btn.textContent='⚡ Generar con datos del Set 4841545 (automático)'; } }
 }
+
+async function generarLibroManual(){
   if(!S.id){ log('Carga el emisor primero','warn'); return; }
   const nat = document.getElementById('libro_natencion').value.trim();
   if(!nat){ log('Ingresa el N° de atención del libro','warn'); return; }
