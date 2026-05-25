@@ -791,7 +791,10 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
           Tipos: 33=Factura Elect. · 34=Fact.Exenta Elect. · 46=Fact.Compra Elect. · 56=ND Elect. · 61=NC Elect. · 29=Factura papel · 55=ND papel · 60=NC papel
         </div>
         <button class="btn bp bfull" onclick="generarLibroManual()" style="padding:13px">
-          📚 Generar Libro de Compras
+          📚 Generar Libro de Compras (ingreso manual)
+        </button>
+        <button class="btn" onclick="generarLibroComprasDedicado()" style="padding:11px;margin-top:8px;width:100%;background:rgba(16,185,129,.1);border:1px solid var(--accent);color:var(--accent)">
+          ⚡ Generar con datos del Set 4841545 (automático)
         </button>
       </div>
 
@@ -2224,7 +2227,30 @@ function getFilasCompra(){
   }).filter(r=>r.folio>0);
 }
 
-async function generarLibroManual(){
+async function generarLibroComprasDedicado(){
+  if(!S.id){ log('Carga el emisor primero','warn'); return; }
+  const nat = document.getElementById('libro_natencion').value.trim() || '4841545';
+  log(`Generando Libro de Compras N°${nat} con datos del set de certificación...`,'info');
+  const btn = document.querySelector('#modo_manual_section .btn:last-child');
+  if(btn){ btn.disabled=true; btn.textContent='Generando...'; }
+  try{
+    const r = await fetch(`${base()}/v1/certificacion-libro-compras/generar-xml?emisor_id=${S.id}&natencion=${nat}`, {method:'POST'});
+    if(!r.ok){ const t=await r.text(); log('Error '+r.status+': '+t.slice(0,300),'err'); return; }
+    const cd = r.headers.get('Content-Disposition')||'';
+    const m  = cd.match(/filename="([^"]+)"/);
+    S.xmlNombre = m ? m[1] : `LibroCompras_${nat}.xml`;
+    S.xmlBlob   = await r.blob();
+    document.getElementById('dl_libro_nombre').textContent = S.xmlNombre;
+    document.getElementById('dl_libro_box').style.display  = 'block';
+    log(`✓ Libro de Compras generado: ${S.xmlNombre}`,'ok');
+    const box=document.getElementById('r_libro_xml');
+    box.className='result show ok';
+    document.getElementById('r_libro_xml_l').textContent='✓ libro generado';
+    document.getElementById('r_libro_xml_l').className='rlbl ok';
+    document.getElementById('r_libro_xml_c').textContent=S.xmlNombre;
+  }catch(e){ log('Error: '+e,'err'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='⚡ Generar con datos del Set 4841545 (automático)'; } }
+}
   if(!S.id){ log('Carga el emisor primero','warn'); return; }
   const nat = document.getElementById('libro_natencion').value.trim();
   if(!nat){ log('Ingresa el N° de atención del libro','warn'); return; }
@@ -2302,8 +2328,6 @@ async function generarLibroDesdeXML(){
 
   const btn = document.getElementById('btn_libro_xml');
   btn.disabled = true; btn.textContent = 'Generando...';
-  const foliosAnulados = document.getElementById('guias_folios_anulados')?.value.trim() || '';
-  if(foliosAnulados) fd.append('folios_anulados', foliosAnulados);
   log(`Generando Libro ${tipo} N° ${nat} desde ${_libroXMLFiles.length} XML(s)...`,'info');
 
   // Auto-detectar período desde los XMLs o usar mes actual
@@ -2315,6 +2339,9 @@ async function generarLibroDesdeXML(){
   fd.append('natencion',  nat);
   fd.append('periodo',    periodoHoy);
   for(const f of _libroXMLFiles) fd.append('archivos', f);
+  // Folios anulados — LibroGuías: marca guías anuladas con Anulado=2
+  const foliosAnulados = document.getElementById('guias_folios_anulados')?.value.trim() || '';
+  if(foliosAnulados) fd.append('folios_anulados', foliosAnulados);
 
   try{
     const r = await fetch(base()+'/v1/certificacion-libros/desde-xml', { method:'POST', body:fd });
