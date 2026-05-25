@@ -736,6 +736,9 @@ async def preview_libro_manual(
         "fecha_emision": d.fecha_emision, "rut_receptor": d.rut_receptor,
         "nombre_receptor": d.nombre_receptor, "monto_neto": d.monto_neto,
         "monto_iva": d.monto_iva, "monto_total": d.monto_total, "monto_exe": d.monto_exe,
+        # Campos especiales IVA — críticos para LibroCompras
+        "tipo_especial": d.tipo_especial, "iva_uso_comun": d.iva_uso_comun,
+        "fct_prop": d.fct_prop, "iva_no_rec": d.iva_no_rec, "iva_ret_total": d.iva_ret_total,
     }) for d in body.dtes]
     todos_dtes.sort(key=lambda x: (x.tipo_dte, x.folio))
 
