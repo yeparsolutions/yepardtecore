@@ -196,11 +196,13 @@ def _construir_libro_xml(
         # Solo inferir si las columnas no existen o están vacías (compatibilidad)
         if not tipo_especial and not iva_uso_comun and not iva_no_rec and not iva_ret_total:
             if dte.tipo_dte == 46 and monto_iva > 0:
-                # Doc 46: IVA retenido total. MntIVA se mantiene, IVARetTotal mismo valor.
-                # MntTotal = solo el neto (el IVA fue retenido, no lo paga el comprador).
+                # Doc 46: IVA retenido total.
+                # MntIVA = IVA del documento (se mantiene).
+                # IVARetTotal = mismo valor, informa que fue retenido.
+                # MntTotal = neto + IVA (total del documento emitido por el proveedor).
                 tipo_especial = "iva_ret_total"
                 iva_ret_total = monto_iva
-                monto_total   = monto_neto  # total económico real sin IVA retenido
+                # monto_total se mantiene como viene de BD (neto + iva)
             elif dte.tipo_dte == 33 and monto_iva > 0 and monto_neto > 0:
                 # Doc 33 con IVA no recuperable (entrega gratuita, art. 23 N°5 DL825).
                 # El set de compras SII lo marca como "ENTREGA GRATUITA DEL PROVEEDOR".
@@ -350,8 +352,10 @@ def _construir_libro_xml(
                 etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
                 etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
             else:
-                # Normal o T56/T61: siempre emitir MntIVA
-                if doc["iva"] != 0 or doc["tipo"] in (56, 61):
+                # Normal: emitir MntIVA
+                # Tipo 60 (NC física) y 55 (ND física) exigen MntIVA siempre presente,
+                # aunque sea 0, porque el schema no acepta detalle sin campo IVA.
+                if doc["iva"] != 0 or doc["tipo"] in (55, 56, 60, 61):
                     etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
             etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
 
