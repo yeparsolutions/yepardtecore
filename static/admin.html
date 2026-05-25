@@ -1782,7 +1782,10 @@ function renderMultiSetOverview(sets){
           <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text3);margin-top:2px">${set.casos.length} casos${set.esLibro?' · <span style="color:#f59e0b">📚 generado desde el set principal</span>':' · <span id="val_count_'+si+'">'+validados+'/'+set.casos.length+' validados</span>'}</div>
         </div>
         ${set.esLibro
-          ? `<span style="font-size:11px;color:var(--text4);padding:4px 8px;border:1px solid var(--border);border-radius:6px">Se genera automáticamente</span>`
+          ? `<button class="btn" onclick="abrirLibroDesdePanel('${set.key}','${set.natencion}')"
+               style="font-size:12px;padding:6px 12px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);color:#f59e0b;border-radius:6px;cursor:pointer">
+               📚 Revisar y generar
+             </button>`
           : `<button class="btn bg" onclick="abrirWizardSet(${si})" style="font-size:12px;padding:6px 12px">✏️ Revisar casos</button>`
         }
       </div>
@@ -3719,6 +3722,49 @@ function renderFoliosPorTipo(containerEl, si){
    UI HELPERS
 ══════════════════════════════════════════════════════ */
 function tgl(n){const c=document.getElementById('c'+n);if(c.classList.contains('locked'))return;const b=c.querySelector('.cb');b.style.display=b.style.display==='none'?'block':'none';}
+function abrirLibroDesdePanel(key, natencion){
+  // Mapear key del set al tipo de libro
+  const tipoMap = { ventas:'ventas', compras:'compras', libro_guias:'guias' };
+  const tipo = tipoMap[key] || 'ventas';
+
+  // Pre-llenar el selector y natencion en la tarjeta de libros
+  const sel = document.getElementById('libro_tipo');
+  const nat = document.getElementById('libro_natencion');
+  if(sel) sel.value = tipo;
+  if(nat) nat.value = natencion;
+
+  // Disparar el cambio de tipo para mostrar la sección correcta
+  onLibroTipoChange();
+
+  // Scroll hacia la tarjeta de libros
+  const card = document.getElementById('c_libros');
+  if(card) card.scrollIntoView({behavior:'smooth', block:'start'});
+
+  // Para LibroCompras: abrir el wizard automáticamente
+  if(tipo === 'compras'){
+    setTimeout(()=>abrirLibroWizard('compras'), 300);
+  } else {
+    // Para Ventas y Guías: resaltar la zona de upload
+    setTimeout(()=>{
+      const zona = document.getElementById('z_libro_xml');
+      if(zona){
+        zona.style.border = '2px solid var(--accent)';
+        zona.style.boxShadow = '0 0 0 3px rgba(16,185,129,.2)';
+        setTimeout(()=>{
+          zona.style.border='';
+          zona.style.boxShadow='';
+        }, 2500);
+      }
+      // Mostrar hint específico
+      const hint = document.getElementById('utxt_hint');
+      if(hint){
+        if(tipo==='ventas') hint.innerHTML = '<strong>Sube el XML del Set Básico aceptado</strong> · Solo Set Básico (no Exentas)';
+        if(tipo==='guias')  hint.innerHTML = '<strong>Sube el XML del Set Guías aceptado</strong> · Luego indica los folios anulados';
+      }
+    }, 400);
+  }
+}
+
 function tgl_libros(){const b=document.getElementById('cb_libros');b.style.display=b.style.display==='none'?'block':'none';}
 function unlock(n){const c=document.getElementById('c'+n);c.classList.remove('locked');c.classList.add('active');c.querySelector('.cb').style.display='block';c.scrollIntoView({behavior:'smooth',block:'nearest'});}
 function done(n,txt){document.getElementById('c'+n).classList.replace('active','done');const b=document.getElementById('b'+n);b.textContent=txt;b.className='badge ok';}
