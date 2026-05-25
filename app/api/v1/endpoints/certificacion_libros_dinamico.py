@@ -142,23 +142,26 @@ def _construir_libro_xml(
     envio.set("ID", tipo_envio_id)
 
     # ── Carátula ─────────────────────────────────────────────────────────────
-    # IMPORTANTE: en LibroGuia_v10.xsd el orden es TipoLibro → TipoOperacion
-    # En LibroCV_v10.xsd es TipoOperacion → TipoLibro (diferente al XSD de guías)
+    # LibroGuia_v10.xsd:  RutEmisorLibro → ... → NroResol → TipoLibro → TipoEnvio → FolioNotificacion
+    #                     NO tiene TipoOperacion (campo exclusivo de LibroCV)
+    # LibroCV_v10.xsd:    RutEmisorLibro → ... → NroResol → TipoOperacion → TipoLibro → TipoEnvio → ...
     car = etree.SubElement(envio, f"{{{NS}}}Caratula")
-    etree.SubElement(car, f"{{{NS}}}RutEmisorLibro").text   = emisor.rut
-    etree.SubElement(car, f"{{{NS}}}RutEnvia").text         = emisor.rut
+    etree.SubElement(car, f"{{{NS}}}RutEmisorLibro").text    = emisor.rut
+    # RutEnvia: RUT del firmante del certificado (puede diferir del RUT del emisor)
+    # El SII valida que RutEnvia coincida con el RUT del certificado usado en el upload
+    rut_envia = (cert.rut_firmante or emisor.rut) if cert else emisor.rut
+    etree.SubElement(car, f"{{{NS}}}RutEnvia").text          = rut_envia
     etree.SubElement(car, f"{{{NS}}}PeriodoTributario").text = periodo
-    etree.SubElement(car, f"{{{NS}}}FchResol").text         = fch_resol
-    etree.SubElement(car, f"{{{NS}}}NroResol").text         = nro_resol
+    etree.SubElement(car, f"{{{NS}}}FchResol").text          = fch_resol
+    etree.SubElement(car, f"{{{NS}}}NroResol").text          = nro_resol
     if es_guias:
-        # LibroGuia: TipoLibro PRIMERO
-        etree.SubElement(car, f"{{{NS}}}TipoLibro").text       = "ESPECIAL"
-        etree.SubElement(car, f"{{{NS}}}TipoOperacion").text   = tipo_libro
+        # LibroGuia: TipoLibro directo, sin TipoOperacion
+        etree.SubElement(car, f"{{{NS}}}TipoLibro").text = "ESPECIAL"
     else:
-        # LibroCV: TipoOperacion PRIMERO
-        etree.SubElement(car, f"{{{NS}}}TipoOperacion").text   = tipo_libro
-        etree.SubElement(car, f"{{{NS}}}TipoLibro").text       = "ESPECIAL"
-    etree.SubElement(car, f"{{{NS}}}TipoEnvio").text        = "TOTAL"
+        # LibroCV: TipoOperacion → TipoLibro
+        etree.SubElement(car, f"{{{NS}}}TipoOperacion").text = tipo_libro
+        etree.SubElement(car, f"{{{NS}}}TipoLibro").text     = "ESPECIAL"
+    etree.SubElement(car, f"{{{NS}}}TipoEnvio").text         = "TOTAL"
     etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = natencion
 
     # ── Convertir DTEs a dicts ────────────────────────────────────────────────
@@ -214,11 +217,13 @@ def _construir_libro_xml(
         det = etree.SubElement(envio, f"{{{NS}}}Detalle")
 
         if es_guias:
-            # LibroGuia_v10.xsd: Folio → Anulado → [IndTraslado] → FchDoc → RUTDoc → RznSoc
-            #                    → [MntNeto] → [TasaIVA] → [IVA] → [MntExe] → MntTotal
+            # LibroGuia_v10.xsd: Folio → Anulado(int) → [IndTraslado] → FchDoc
+            #                    → [RUTDoc] → [RznSoc] → [MntNeto] → [TasaImp] → [IVA]
+            #                    → [MntExe] → MntTotal
             etree.SubElement(det, f"{{{NS}}}Folio").text   = str(doc["folio"])
-            etree.SubElement(det, f"{{{NS}}}Anulado").text = "NO"
-            # IndTraslado: no está en el modelo DTE — omitir (campo opcional en XSD)
+            # Anulado: integer 0=vigente 1=anulada (NO usar string "NO"/"YES")
+            etree.SubElement(det, f"{{{NS}}}Anulado").text = "0"
+            # IndTraslado: no está en el modelo DTE — omitir (campo opcional)
             etree.SubElement(det, f"{{{NS}}}FchDoc").text  = doc["fecha"]
             if doc["rut"]:
                 etree.SubElement(det, f"{{{NS}}}RUTDoc").text = doc["rut"]
@@ -227,7 +232,8 @@ def _construir_libro_xml(
             if doc["neto"] != 0:
                 etree.SubElement(det, f"{{{NS}}}MntNeto").text = str(doc["neto"])
             if doc["iva"] != 0:
-                etree.SubElement(det, f"{{{NS}}}TasaIVA").text = "19"
+                # TasaImp (no TasaIVA) — nombre distinto al LibroCV
+                etree.SubElement(det, f"{{{NS}}}TasaImp").text = "19"
                 etree.SubElement(det, f"{{{NS}}}IVA").text     = str(doc["iva"])
             if doc["exe"] != 0:
                 etree.SubElement(det, f"{{{NS}}}MntExe").text  = str(doc["exe"])
