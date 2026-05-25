@@ -222,8 +222,9 @@ def _construir_libro_xml(
             #                    → [RUTDoc] → [RznSoc] → [MntNeto] → [TasaImp] → [IVA]
             #                    → [MntExe] → MntTotal
             etree.SubElement(det, f"{{{NS}}}Folio").text   = str(doc["folio"])
-            # Anulado: integer 0=vigente 1=anulada (NO usar string "NO"/"YES")
-            etree.SubElement(det, f"{{{NS}}}Anulado").text = "0"
+            # Anulado: enum [1,2,3] — 1=vigente, 2=anulada, 3=no despachada
+            # (NO usar 0 — el XSD de LibroGuia solo acepta enteros 1,2,3)
+            etree.SubElement(det, f"{{{NS}}}Anulado").text = "1"
             # IndTraslado: no está en el modelo DTE — omitir (campo opcional)
             etree.SubElement(det, f"{{{NS}}}FchDoc").text  = doc["fecha"]
             if doc["rut"]:
@@ -526,6 +527,108 @@ async def generar_libro_desde_xml(
             "X-NroAtencion":       natencion,
             "X-Periodo":           periodo,
             "X-TipoLibro":         tipo_libro,
+            "X-DTEs-Incluidos":    str(len(todos_dtes)),
+        },
+    )
+
+
+# ── Endpoint 3: Libro desde datos manuales (para LibroCompras de certificación) ─
+# El LibroCompras de certificación contiene documentos RECIBIDOS de proveedores.
+# Esos documentos no existen como EnvioDTE emitido — el usuario los ingresa
+# manualmente desde el .txt del SII.
+
+class DTEManualInput(BaseModel):
+    tipo_dte:        int
+    folio:           int
+    fecha_emision:   str           # AAAA-MM-DD
+    rut_receptor:    str   = "66666666-6"
+    nombre_receptor: str   = "Proveedor"
+    monto_neto:      int   = 0
+    monto_iva:       int   = 0
+    monto_total:     int   = 0
+    monto_exe:       int   = 0
+
+class LibroManualRequest(BaseModel):
+    emisor_id:  int
+    tipo_libro: str          # ventas | compras | guias
+    natencion:  str
+    periodo:    str          # AAAA-MM
+    dtes:       list[DTEManualInput]
+    fch_resol:  str  = "2026-04-19"
+    nro_resol:  str  = "0"
+
+@router.post(
+    "/manual",
+    summary="Genera libro desde datos manuales (para LibroCompras de certificación)",
+)
+async def generar_libro_manual(
+    body: LibroManualRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    if body.tipo_libro not in ("ventas", "compras", "guias"):
+        raise HTTPException(400, "tipo_libro debe ser: ventas | compras | guias")
+
+    emisor, cert = await _get_emisor_y_cert(body.emisor_id, db)
+
+    # Convertir DTEManualInput en _DTEFake para reutilizar _construir_libro_xml
+    todos_dtes = []
+    for d in body.dtes:
+        fake = _DTEFake({
+            "tipo_dte":        d.tipo_dte,
+            "folio":           d.folio,
+            "fecha_emision":   d.fecha_emision,
+            "rut_receptor":    d.rut_receptor,
+            "nombre_receptor": d.nombre_receptor,
+            "monto_neto":      d.monto_neto,
+            "monto_iva":       d.monto_iva,
+            "monto_total":     d.monto_total,
+            "monto_exe":       d.monto_exe,
+        })
+        todos_dtes.append(fake)
+
+    todos_dtes.sort(key=lambda x: (x.tipo_dte, x.folio))
+
+    libro_meta = {
+        "ventas":  ("VENTA",  "LibroVentas",  "Ventas"),
+        "compras": ("COMPRA", "LibroCompras", "Compras"),
+        "guias":   ("VENTA",  "LibroGuias",   "Guías"),
+    }
+    tipo_op, libro_id, label = libro_meta[body.tipo_libro]
+
+    logger.info(
+        f"[LIBRO MANUAL] {label} emisor={emisor.rut} "
+        f"natencion={body.natencion} dtes={len(todos_dtes)}"
+    )
+
+    xml_str = _construir_libro_xml(
+        emisor        = emisor,
+        dtes          = todos_dtes,
+        tipo_libro    = tipo_op,
+        tipo_envio_id = libro_id,
+        natencion     = body.natencion,
+        periodo       = body.periodo,
+        fch_resol     = body.fch_resol,
+        nro_resol     = body.nro_resol,
+        rut_envia     = cert.rut_firmante or emisor.rut,
+    )
+
+    firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
+    try:
+        xml_firmado = await firma.firmar_libro(xml_str)
+    except Exception as e:
+        raise HTTPException(500, f"Error al firmar el libro: {e}")
+
+    rut_limpio = emisor.rut.replace(".", "").replace("-", "")
+    nombre = f"Libro{body.tipo_libro.capitalize()}_{body.natencion}_{rut_limpio}_{body.periodo}.xml"
+
+    return Response(
+        content    = xml_firmado.encode("ISO-8859-1"),
+        media_type = "application/octet-stream",
+        headers    = {
+            "Content-Disposition": f'attachment; filename="{nombre}"',
+            "X-NroAtencion":       body.natencion,
+            "X-Periodo":           body.periodo,
+            "X-TipoLibro":         body.tipo_libro,
             "X-DTEs-Incluidos":    str(len(todos_dtes)),
         },
     )
