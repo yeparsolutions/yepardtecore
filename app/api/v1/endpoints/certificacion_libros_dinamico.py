@@ -194,12 +194,10 @@ def _construir_libro_xml(
 
     if es_guias:
         # LibroGuia_v10.xsd: TotFolAnulado, TotGuiaAnulada, TotGuiaVenta van DIRECTO
-        # en ResumenPeriodo — NO dentro de TotalesPeriodo
-        # TotGuiaVenta: guías vigentes (Anulado=1) con IndTraslado en [1,2,3,4] (no traslado interno=5)
-        guias_venta  = [d for d in docs
-                        if not d.get("anulado")
-                        and d.get("ind_traslado") not in (None, 5)]
+        # en ResumenPeriodo. El SII valida: TotGuiaVenta + TotGuiaAnulada = total Detalles
+        # TotGuiaVenta = count(Anulado=1) — TODOS los vigentes, incl. traslados
         guias_anuld  = [d for d in docs if d.get("anulado")]
+        guias_venta  = [d for d in docs if not d.get("anulado")]   # todos vigentes
         tot_mnt_vta  = sum(d["total"] for d in guias_venta)
         etree.SubElement(resumen, f"{{{NS}}}TotFolAnulado").text  = str(len(guias_anuld))
         etree.SubElement(resumen, f"{{{NS}}}TotGuiaAnulada").text = str(len(guias_anuld))
@@ -227,13 +225,10 @@ def _construir_libro_xml(
             #                    → [RUTDoc] → [RznSoc] → [MntNeto] → [TasaImp] → [IVA]
             #                    → [MntExe] → MntTotal
             etree.SubElement(det, f"{{{NS}}}Folio").text   = str(doc["folio"])
-            # Anulado: 1=vigente, 2=anulada (según campo marcado por el usuario)
+            # Anulado: 1=vigente, 2=anulada
             etree.SubElement(det, f"{{{NS}}}Anulado").text = "2" if doc.get("anulado") else "1"
-            # TipoDespacho e IndTraslado — obligatorios para que el SII calcule TotGuiaVenta
-            if doc.get("tipo_despacho"):
-                etree.SubElement(det, f"{{{NS}}}TipoDespacho").text = str(doc["tipo_despacho"])
-            if doc.get("ind_traslado"):
-                etree.SubElement(det, f"{{{NS}}}IndTraslado").text  = str(doc["ind_traslado"])
+            # NOTA: IndTraslado y TipoDespacho NO son campos del LibroGuia_v10.xsd Detalle
+            # El schema espera: Folio → Anulado → [Operacion] → [TpoOper] → FchDoc → ...
             etree.SubElement(det, f"{{{NS}}}FchDoc").text  = doc["fecha"]
             if doc["rut"]:
                 etree.SubElement(det, f"{{{NS}}}RUTDoc").text = doc["rut"]
@@ -657,5 +652,81 @@ async def generar_libro_manual(
             "X-Periodo":           body.periodo,
             "X-TipoLibro":         body.tipo_libro,
             "X-DTEs-Incluidos":    str(len(todos_dtes)),
+        },
+    )
+
+
+# ── Endpoint Preview: XML sin firmar para inspección ─────────────────────────
+@router.post(
+    "/preview",
+    summary="Preview del libro XML sin firmar",
+    description="Retorna el XML del libro SIN firma — solo para inspección antes de enviarlo.",
+    response_class=Response,
+)
+async def preview_libro_xml(
+    emisor_id:  int           = Form(...),
+    tipo_libro: str           = Form(...),
+    natencion:  str           = Form(...),
+    periodo:    str           = Form(...),
+    archivos:   list[UploadFile] = File(...),
+    fch_resol:  str           = Form("2026-04-19"),
+    nro_resol:  str           = Form("0"),
+    folios_anulados: str      = Form(""),
+    db: AsyncSession = Depends(get_db),
+):
+    if tipo_libro not in ("ventas", "compras", "guias"):
+        raise HTTPException(400, "tipo_libro debe ser: ventas | compras | guias")
+
+    emisor, cert = await _get_emisor_y_cert(emisor_id, db)
+
+    folios_anulados_set: set[int] = {
+        int(f.strip()) for f in (folios_anulados or "").split(",")
+        if f.strip().isdigit()
+    }
+
+    todos_dtes: list[_DTEFake] = []
+    folios_vistos: set = set()
+    for archivo in archivos:
+        contenido = await archivo.read()
+        try:
+            dtes_xml = _parsear_dtes_desde_xml(contenido)
+        except ValueError as e:
+            raise HTTPException(400, f"Error en {archivo.filename}: {e}")
+        for d in dtes_xml:
+            key = (d["tipo_dte"], d["folio"])
+            if key not in folios_vistos:
+                folios_vistos.add(key)
+                d["anulado"] = d["folio"] in folios_anulados_set
+                todos_dtes.append(_DTEFake(d))
+
+    if not todos_dtes:
+        raise HTTPException(404, "No se encontraron DTEs válidos en los XMLs subidos")
+
+    todos_dtes.sort(key=lambda x: (x.tipo_dte, x.folio))
+    libro_meta = {
+        "ventas":  ("VENTA",  "LibroVentas",  "Ventas"),
+        "compras": ("COMPRA", "LibroCompras", "Compras"),
+        "guias":   ("VENTA",  "LibroGuias",   "Guías"),
+    }
+    tipo_op, libro_id, _ = libro_meta[tipo_libro]
+
+    xml_str = _construir_libro_xml(
+        emisor        = emisor,
+        dtes          = todos_dtes,
+        tipo_libro    = tipo_op,
+        tipo_envio_id = libro_id,
+        natencion     = natencion,
+        periodo       = periodo,
+        fch_resol     = fch_resol,
+        nro_resol     = nro_resol,
+        rut_envia     = cert.rut_firmante or emisor.rut,
+    )
+
+    return Response(
+        content    = xml_str.encode("UTF-8"),
+        media_type = "application/xml",
+        headers    = {
+            "Content-Disposition": f'inline; filename="preview_{tipo_libro}_{natencion}.xml"',
+            "X-Preview": "unsigned",
         },
     )
