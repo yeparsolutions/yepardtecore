@@ -2661,31 +2661,6 @@ async function generarLibroManual(){
   }catch(e){ log('Error: '+e,'err'); }
   finally{ btn.disabled=false; btn.textContent='📚 Generar Libro de Compras'; }
 }
-  const btn = document.querySelector('#modo_manual_section .btn');
-  btn.disabled=true; btn.textContent='Generando...';
-  log(`Generando Libro de Compras manual con ${filas.length} documentos...`,'info');
-  try{
-    const r = await fetch(base()+'/v1/certificacion-libros/manual', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(body),
-    });
-    if(!r.ok){ const t=await r.text(); log('Error '+r.status+': '+t.slice(0,300),'err'); return; }
-    const cd = r.headers.get('Content-Disposition')||'';
-    const m  = cd.match(/filename="([^"]+)"/);
-    S.xmlNombre = m ? m[1] : `LibroCompras_${nat}.xml`;
-    S.xmlBlob   = await r.blob();
-    document.getElementById('dl_libro_nombre').textContent = S.xmlNombre;
-    document.getElementById('dl_libro_box').style.display  = 'block';
-    log(`✓ Libro de Compras generado — ${filas.length} documentos`,'ok');
-    const box=document.getElementById('r_libro_xml');
-    box.className='result show ok';
-    document.getElementById('r_libro_xml_l').className='rlbl ok';
-    document.getElementById('r_libro_xml_l').textContent='✓ libro generado';
-    document.getElementById('r_libro_xml_c').textContent=`${S.xmlNombre}\n${filas.length} documentos ingresados manualmente.`;
-  }catch(e){ log('Error: '+e,'err'); }
-  finally{ btn.disabled=false; btn.textContent='📚 Generar Libro de Compras'; }
-}
 const _libroXMLFiles = [];
 
 function dpLibroXML(e){ e.preventDefault(); dLv('z_libro_xml'); addLibroXML(e.dataTransfer.files); }
