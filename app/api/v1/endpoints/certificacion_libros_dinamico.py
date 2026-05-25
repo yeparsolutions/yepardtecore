@@ -175,16 +175,18 @@ def _construir_libro_xml(
         rut_doc   = (dte.rut_receptor or "66666666-6").replace(".", "")
         razon_doc = (dte.nombre_receptor or "Consumidor Final")[:50]
         docs.append({
-            "tipo":    dte.tipo_dte,
-            "folio":   dte.folio,
-            "fecha":   fecha_str,
-            "rut":     rut_doc,
-            "razon":   razon_doc,
-            "neto":    int(dte.monto_neto  or 0),
-            "iva":     int(dte.monto_iva   or 0),
-            "exe":     int((dte.monto_total or 0) - (dte.monto_neto or 0) - (dte.monto_iva or 0)),
-            "total":   int(dte.monto_total or 0),
-            "anulado": getattr(dte, 'anulado', False),
+            "tipo":          dte.tipo_dte,
+            "folio":         dte.folio,
+            "fecha":         fecha_str,
+            "rut":           rut_doc,
+            "razon":         razon_doc,
+            "neto":          int(dte.monto_neto  or 0),
+            "iva":           int(dte.monto_iva   or 0),
+            "exe":           int((dte.monto_total or 0) - (dte.monto_neto or 0) - (dte.monto_iva or 0)),
+            "total":         int(dte.monto_total or 0),
+            "anulado":       getattr(dte, 'anulado', False),
+            "ind_traslado":  getattr(dte, 'ind_traslado', None),
+            "tipo_despacho": getattr(dte, 'tipo_despacho', None),
         })
 
     # ── ResumenPeriodo ────────────────────────────────────────────────────────
@@ -192,8 +194,11 @@ def _construir_libro_xml(
 
     if es_guias:
         # LibroGuia_v10.xsd: TotFolAnulado, TotGuiaAnulada, TotGuiaVenta van DIRECTO
-        # en ResumenPeriodo — NO dentro de TotalesPeriodo (ese es el wrapper de LibroCV)
-        guias_venta  = [d for d in docs if d["total"] > 0 and not d.get("anulado")]
+        # en ResumenPeriodo — NO dentro de TotalesPeriodo
+        # TotGuiaVenta: guías vigentes (Anulado=1) con IndTraslado en [1,2,3,4] (no traslado interno=5)
+        guias_venta  = [d for d in docs
+                        if not d.get("anulado")
+                        and d.get("ind_traslado") not in (None, 5)]
         guias_anuld  = [d for d in docs if d.get("anulado")]
         tot_mnt_vta  = sum(d["total"] for d in guias_venta)
         etree.SubElement(resumen, f"{{{NS}}}TotFolAnulado").text  = str(len(guias_anuld))
@@ -224,7 +229,11 @@ def _construir_libro_xml(
             etree.SubElement(det, f"{{{NS}}}Folio").text   = str(doc["folio"])
             # Anulado: 1=vigente, 2=anulada (según campo marcado por el usuario)
             etree.SubElement(det, f"{{{NS}}}Anulado").text = "2" if doc.get("anulado") else "1"
-            # IndTraslado: no está en el modelo DTE — omitir (campo opcional)
+            # TipoDespacho e IndTraslado — obligatorios para que el SII calcule TotGuiaVenta
+            if doc.get("tipo_despacho"):
+                etree.SubElement(det, f"{{{NS}}}TipoDespacho").text = str(doc["tipo_despacho"])
+            if doc.get("ind_traslado"):
+                etree.SubElement(det, f"{{{NS}}}IndTraslado").text  = str(doc["ind_traslado"])
             etree.SubElement(det, f"{{{NS}}}FchDoc").text  = doc["fecha"]
             if doc["rut"]:
                 etree.SubElement(det, f"{{{NS}}}RUTDoc").text = doc["rut"]
@@ -394,6 +403,10 @@ def _parsear_dtes_desde_xml(contenido: bytes) -> list[dict]:
         exe   = doc.findtext(f'.//{{{NS}}}MntExe')   or "0"
         total = doc.findtext(f'.//{{{NS}}}MntTotal')
 
+        # Campos específicos de Guías de Despacho — necesarios para LibroGuías
+        ind_traslado   = doc.findtext(f'.//{{{NS}}}IndTraslado')
+        tipo_despacho  = doc.findtext(f'.//{{{NS}}}TipoDespacho')
+
         if not tipo or not folio or not total:
             continue
 
@@ -407,6 +420,8 @@ def _parsear_dtes_desde_xml(contenido: bytes) -> list[dict]:
             "monto_iva":      int(iva),
             "monto_total":    int(total),
             "monto_exe":      int(exe),
+            "ind_traslado":   int(ind_traslado) if ind_traslado else None,
+            "tipo_despacho":  int(tipo_despacho) if tipo_despacho else None,
         })
     return dtes
 
@@ -426,6 +441,8 @@ class _DTEFake:
         self.estado          = "ACEPTADO"
         self.ambiente        = "certificacion"
         self.anulado         = bool(d.get("anulado", False))
+        self.ind_traslado    = d.get("ind_traslado")   # LibroGuías: 1=venta, 5=traslado
+        self.tipo_despacho   = d.get("tipo_despacho")  # LibroGuías: tipo de despacho
 
 
 @router.post(
