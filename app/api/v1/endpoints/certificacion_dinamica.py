@@ -201,16 +201,27 @@ async def _emitir_casos(
         f"[CERT DIN] Pass1 N°{natencion}: folios previstos por caso → {folio_por_caso}"
     )
 
-    # ── Pass 2: generar DTEs con referencias cruzadas resueltas ─────────────
+    # ── Pass 2: generar DTEs con referencias resueltas ───────────────────────
     for caso in casos:
-        # Actualizar folio_ref de referencias que apuntan a otro caso del set
         for ref in caso.referencias:
-            if ref.num_caso_ref and ref.num_caso_ref in folio_por_caso:
-                ref.folio_ref = folio_por_caso[ref.num_caso_ref]
+            tpo = str(ref.tipo_doc_ref).upper()
+            if tpo == "SET":
+                # Referencia al set (auto-referencia): folio = el propio DTE
+                # El frontend envía el valor predicho en asignarFolios() que puede
+                # estar desfasado si el CAF avanzó entre la carga y la generación.
+                # Lo corregimos aquí con el folio_actual real leído en Pass 1.
+                if caso.numero_caso in folio_por_caso:
+                    ref.folio_ref = folio_por_caso[caso.numero_caso]
+                    logger.info(
+                        f"[CERT DIN] Caso {caso.numero_caso} SET FolioRef corregido → {ref.folio_ref}"
+                    )
+            elif ref.num_caso_ref and ref.num_caso_ref in folio_por_caso:
+                # Referencia cruzada a otro caso del set
                 logger.info(
                     f"[CERT DIN] Caso {caso.numero_caso} ref→caso {ref.num_caso_ref} "
-                    f"folio_ref resuelto a {ref.folio_ref}"
+                    f"folio_ref resuelto a {folio_por_caso[ref.num_caso_ref]}"
                 )
+                ref.folio_ref = folio_por_caso[ref.num_caso_ref]
 
         datos = _caso_a_datos(caso, fecha)
         try:
