@@ -196,11 +196,12 @@ def _construir_libro_xml(
         # Solo inferir si las columnas no existen o están vacías (compatibilidad)
         if not tipo_especial and not iva_uso_comun and not iva_no_rec and not iva_ret_total:
             if dte.tipo_dte == 46 and monto_iva > 0:
-                # Doc 46 (Factura de Compra): el IVA siempre es retención total.
-                # El comprador NO tiene crédito fiscal — lo retiene y entera al fisco.
+                # Doc 46 (Factura de Compra): IVA retenido total.
+                # En LibroCompras MntIVA SE MANTIENE con el valor del IVA del doc,
+                # e IVARetTotal informa que ese monto fue retenido (mismo valor).
+                # NO poner monto_iva=0: el SII valida que detalle cuadre con resumen.
                 tipo_especial = "iva_ret_total"
                 iva_ret_total = monto_iva
-                monto_iva     = 0   # MntIVA=0 en el detalle del libro
 
         docs.append({
             "tipo":           dte.tipo_dte,
@@ -322,8 +323,9 @@ def _construir_libro_xml(
                 etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc.get("cod_iva_no_rec", 9))
                 etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
             elif te == "iva_ret_total":
-                # MntIVA=0: el IVA retenido NO es crédito fiscal del comprador
-                etree.SubElement(det, f"{{{NS}}}MntIVA").text      = "0"
+                # MntIVA = valor real del IVA del doc (el SII valida neto*tasa)
+                # IVARetTotal = mismo valor, informa que fue retenido
+                etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
                 etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
             else:
                 # Normal o T56/T61: siempre emitir MntIVA
