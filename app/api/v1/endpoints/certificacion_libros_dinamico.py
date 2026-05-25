@@ -119,6 +119,7 @@ def _construir_libro_xml(
     periodo: str,          # "AAAA-MM"
     fch_resol: str = "2026-04-19",
     nro_resol: str = "0",
+    rut_envia: str | None = None,   # RUT firmante del cert; si None usa emisor.rut
 ) -> str:
     """Construye el XML del Libro dinámicamente desde los DTEs de BD."""
 
@@ -149,8 +150,8 @@ def _construir_libro_xml(
     etree.SubElement(car, f"{{{NS}}}RutEmisorLibro").text    = emisor.rut
     # RutEnvia: RUT del firmante del certificado (puede diferir del RUT del emisor)
     # El SII valida que RutEnvia coincida con el RUT del certificado usado en el upload
-    rut_envia = (cert.rut_firmante or emisor.rut) if cert else emisor.rut
-    etree.SubElement(car, f"{{{NS}}}RutEnvia").text          = rut_envia
+    rut_env = rut_envia or emisor.rut
+    etree.SubElement(car, f"{{{NS}}}RutEnvia").text          = rut_env
     etree.SubElement(car, f"{{{NS}}}PeriodoTributario").text = periodo
     etree.SubElement(car, f"{{{NS}}}FchResol").text          = fch_resol
     etree.SubElement(car, f"{{{NS}}}NroResol").text          = nro_resol
@@ -338,6 +339,7 @@ async def generar_libro_dinamico(
         periodo    = periodo,
         fch_resol  = fch_resol or "2026-04-19",
         nro_resol  = nro_resol or "0",
+        rut_envia  = cert.rut_firmante or emisor.rut,
     )
 
     # Firmar
@@ -504,6 +506,7 @@ async def generar_libro_desde_xml(
         periodo       = periodo,
         fch_resol     = fch_resol,
         nro_resol     = nro_resol,
+        rut_envia     = cert.rut_firmante or emisor.rut,
     )
 
     firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
