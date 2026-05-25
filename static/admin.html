@@ -658,6 +658,16 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
 
       <p style="font-size:13px;color:var(--text3);margin-bottom:12px">Cada set genera su propio XML independiente para subir al SII por separado.</p>
 
+      <!-- ── FEATURE B: Generación parcial de casos ─────────────────── -->
+      <div id="casos_seleccion" style="display:none;margin-bottom:12px">
+        <div style="font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;display:flex;align-items:center;gap:10px">
+          Seleccionar casos a generar
+          <button onclick="selAllCasos(true)" style="font-size:10px;padding:2px 8px;background:transparent;border:1px solid var(--border2);border-radius:4px;color:var(--text3);cursor:pointer">Todos</button>
+          <button onclick="selAllCasos(false)" style="font-size:10px;padding:2px 8px;background:transparent;border:1px solid var(--border2);border-radius:4px;color:var(--text3);cursor:pointer">Ninguno</button>
+        </div>
+        <div id="casos_sel_grid" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+      </div>
+
       <!-- Configuración de endpoints -->
       <div class="ep-config" id="epConfig">
         <div class="ep-config-hdr" onclick="toggleEpConfig()">
@@ -680,6 +690,133 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
         <div class="sii-step"><div class="sii-num">4</div><div class="sii-txt">Sube el XML — el SII entregará un <strong style="color:var(--accent)">Track ID</strong> para consultar el resultado</div></div>
       </div>
       <div class="result" id="r5"><div class="rlbl" id="r5l"></div><div class="rbody" id="r5c"></div></div>
+    </div>
+  </div>
+
+  <!-- ── TARJETA LIBROS — siempre visible, fuera del flujo de pasos ── -->
+  <div class="card active" id="c_libros" style="border-color:rgba(16,185,129,.35)">
+    <div class="ch" onclick="tgl_libros()">
+      <div class="sn">📚</div>
+      <div class="ct">Generar Libro desde XMLs aceptados</div>
+      <span class="badge ok">siempre disponible</span>
+    </div>
+    <div id="cb_libros" style="padding:22px">
+      <p style="font-size:13px;color:var(--text3);margin-bottom:14px">
+        Sube los EnvioDTE que el SII ya <strong style="color:var(--accent)">aceptó</strong>.
+        El libro se construye desde esos datos exactos — sin BD, sin duplicados, sin necesitar regenerar sets.
+      </p>
+
+      <!-- Aviso especial para LibroCompras -->
+      <div id="aviso_compras" style="display:none;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:12px 14px;margin-bottom:12px;font-size:12px;color:var(--text)">
+        ⚠ <strong>Libro de Compras:</strong> los documentos de compra (recibidos de proveedores) <strong>no están en los EnvioDTE</strong> — esos son documentos que emitiste tú.<br>
+        Para certificación usa la sección de <strong>ingreso manual</strong> abajo con los datos del .txt del SII.
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div class="f">
+          <label>Tipo de Libro</label>
+          <select id="libro_tipo" onchange="onLibroTipoChange()">
+            <option value="ventas">Libro de Ventas</option>
+            <option value="compras">Libro de Compras</option>
+            <option value="guias">Libro de Guías</option>
+          </select>
+        </div>
+        <div class="f">
+          <label>N° Atención del Libro</label>
+          <input type="text" id="libro_natencion" class="mono" placeholder="ej: 4841544">
+        </div>
+      </div>
+
+      <!-- MODO XML (Ventas y Guías) -->
+      <div id="modo_xml_section">
+        <div class="uzone" id="z_libro_xml"
+             ondragover="dOv(event,'z_libro_xml')"
+             ondragleave="dLv('z_libro_xml')"
+             ondrop="dpLibroXML(event)"
+             style="margin-bottom:10px">
+          <input type="file" id="f_libro_xml" accept=".xml" multiple
+                 onchange="addLibroXML(this.files)">
+          <div class="uicon">📑</div>
+          <div class="utxt">
+            <strong>Arrastra los EnvioDTE aquí o haz clic</strong>
+            <span id="utxt_hint">Puedes subir varios — ej: SetBasico + SetExentas para el Libro de Ventas</span>
+          </div>
+        </div>
+        <!-- Folios anulados — solo visible para LibroGuías -->
+        <div id="guias_anulados_section" style="display:none;margin-bottom:10px">
+          <div class="f">
+            <label>🗑 Folios anulados (del .txt: "CASO N corresponde a una guía anulada")</label>
+            <input type="text" id="guias_folios_anulados" class="mono"
+                   placeholder="ej: 76  (separados por coma si hay varios)">
+            <span style="font-size:11px;color:var(--text3)">
+              Estos folios se incluirán con Anulado=2 y quedarán fuera de TotGuiaVenta
+            </span>
+          </div>
+        </div>
+        <div id="libro_xml_chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
+        <div style="display:grid;grid-template-columns:1fr auto;gap:8px">
+          <button class="btn bp bfull" onclick="generarLibroDesdeXML()"
+                  id="btn_libro_xml" disabled style="padding:13px">
+            📚 Generar Libro
+          </button>
+          <button class="btn" onclick="previewLibroXML()"
+                  id="btn_preview_xml" disabled
+                  title="Ver XML sin firmar antes de generar"
+                  style="padding:13px 14px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:16px">
+            🔍
+          </button>
+        </div>
+      </div>
+
+      <!-- MODO MANUAL (Compras — documentos del .txt) -->
+      <div id="modo_manual_section" style="display:none">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:500;text-transform:uppercase;letter-spacing:.5px">
+          Documentos del libro (del .txt del SII)
+          <button onclick="agregarFilaCompra()" style="margin-left:8px;font-size:10px;padding:2px 8px;background:transparent;border:1px solid var(--border2);border-radius:4px;cursor:pointer;color:var(--accent)">+ Agregar</button>
+          <button onclick="limpiarFilasCompra()" style="margin-left:4px;font-size:10px;padding:2px 8px;background:transparent;border:1px solid var(--border2);border-radius:4px;cursor:pointer;color:var(--text3)">Limpiar</button>
+        </div>
+        <div style="overflow-x:auto;margin-bottom:10px">
+          <table style="width:100%;border-collapse:collapse;font-size:11px;font-family:'JetBrains Mono',monospace">
+            <thead>
+              <tr style="color:var(--text3);border-bottom:1px solid var(--border)">
+                <th style="text-align:left;padding:4px 6px;width:70px">TpoDoc</th>
+                <th style="text-align:left;padding:4px 6px;width:70px">Folio</th>
+                <th style="text-align:left;padding:4px 6px;width:100px">Fecha</th>
+                <th style="text-align:left;padding:4px 6px;width:120px">RUT Proveedor</th>
+                <th style="text-align:left;padding:4px 6px">Razón Social</th>
+                <th style="text-align:right;padding:4px 6px;width:90px">Mnt Neto</th>
+                <th style="text-align:right;padding:4px 6px;width:90px">Mnt Exento</th>
+                <th style="text-align:right;padding:4px 6px;width:90px">Mnt IVA</th>
+                <th style="text-align:right;padding:4px 6px;width:90px">Mnt Total</th>
+                <th style="padding:4px 2px;width:24px"></th>
+              </tr>
+            </thead>
+            <tbody id="compras_tbody"></tbody>
+          </table>
+        </div>
+        <!-- Tipos de documento comunes -->
+        <div style="font-size:10px;color:var(--text3);margin-bottom:10px">
+          Tipos: 33=Factura Elect. · 34=Fact.Exenta Elect. · 46=Fact.Compra Elect. · 56=ND Elect. · 61=NC Elect. · 29=Factura papel · 55=ND papel · 60=NC papel
+        </div>
+        <button class="btn bp bfull" onclick="generarLibroManual()" style="padding:13px">
+          📚 Generar Libro de Compras (ingreso manual)
+        </button>
+        <button class="btn" onclick="generarLibroComprasDedicado()" style="padding:11px;margin-top:8px;width:100%;background:rgba(16,185,129,.1);border:1px solid var(--accent);color:var(--accent)">
+          ⚡ Generar con datos del Set 4841545 (automático)
+        </button>
+      </div>
+
+      <!-- Descarga directa — no depende del paso 5 -->
+      <div id="dl_libro_box" style="display:none;margin-top:14px;background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.25);border-radius:10px;padding:14px 16px;text-align:center">
+        <div style="font-size:28px;margin-bottom:6px">📥</div>
+        <div id="dl_libro_nombre" style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent);margin-bottom:12px"></div>
+        <button class="btn bp" onclick="descargarLibro()" style="padding:10px 28px">Descargar Libro XML</button>
+        <div style="font-size:11px;color:var(--text3);margin-top:8px">Súbelo en maullin.sii.cl → Libros Tributarios</div>
+      </div>
+      <div class="result" id="r_libro_xml">
+        <div class="rlbl" id="r_libro_xml_l"></div>
+        <div class="rbody" id="r_libro_xml_c"></div>
+      </div>
     </div>
   </div>
 
@@ -787,7 +924,11 @@ function vRut(r){const c=r.replace(/[.\s-]/g,'').toUpperCase();if(c.length<2)ret
 function onRut(inp,hid){const h=document.getElementById(hid);if(!inp.value){inp.className='mono';h.textContent='RUT sin puntos con guion';h.className='hint';return;}const ok=vRut(inp.value);inp.classList.toggle('valid',ok);inp.classList.toggle('invalid',!ok);if(ok){h.textContent='✓ SII recibirá: '+rutSII(inp.value);h.className='hint ok';}else{h.textContent='✗ Dígito verificador inválido';h.className='hint bad';}}
 function log(msg,t='info'){const b=document.getElementById('conb');const now=new Date().toLocaleTimeString('es-CL',{hour12:false});const d=document.createElement('div');d.className='lg '+t;d.innerHTML='<span class="lgt">'+now+'</span>'+msg;b.appendChild(d);b.scrollTop=b.scrollHeight;}
 function clrLog(){document.getElementById('conb').innerHTML='';}
-function base(){return(document.getElementById('apiUrl').value||'').trim().replace(/\/$/,'');}
+function base(){
+  const v=(document.getElementById('apiUrl').value||'').trim().replace(/\/$/,'');
+  // Si el input está vacío (usuario lo borró o aún no cargó), usar el origen actual
+  return v || window.location.origin;
+}
 async function api(path,opts={}){
   log((opts.method||'GET')+' '+path,'info');
   const r=await fetch(base()+path,opts);
@@ -1332,17 +1473,32 @@ function parsearCasos(bloqueTxt, natencion){
     const razonLine = lines.find(l=>/^RAZON\s+REFERENCIA\b/i.test(l.trim()));
     const razonTexto = razonLine ? razonLine.split('\t').pop().trim() : '';
 
-    // Items — después de la línea "ITEM ... CANTIDAD ..."
+    // Deducir si el documento referenciado es exento (T34) para marcar ítems como exentos
+    // Esto es crítico para NC/ND que corrigen facturas exentas: sus ítems DEBEN ser exentos
+    let refTipoEsExenta = false;
+    if(refLine){
+      const refText = refLine.split('\t').slice(1).join(' ').trim().toUpperCase();
+      refTipoEsExenta = /EXENTA|NO AFECTA/i.test(refText);
+    }
+
+    // Items — después de la línea "ITEM ..."
+    // El .txt del SII tiene dos formatos:
+    //   1. Facturas:   "ITEM  CANTIDAD  UNIDAD MEDIDA  VALOR UNITARIO" → hasCantidad=true, hasUnidad=maybe
+    //   2. NC/ND:      "ITEM  VALOR UNITARIO"           → hasCantidad=false, qty=1 por defecto
     const items=[];
     let enItems=false;
-    let hasPrice=false; // ¿la cabecera tiene PRECIO UNITARIO?
+    let hasPrice=false;   // ¿la cabecera tiene PRECIO/VALOR?
+    let hasCantidad=false; // ¿la cabecera tiene CANTIDAD?
+    let hasUnidad=false;   // ¿la cabecera tiene UNIDAD MEDIDA? (e.g. "Hora")
     for(const linea of lines){
       const l=linea.trim();
       if(!l) continue;
-      // Detectar cabecera de items
-      if(/^ITEM\b/i.test(l) && /CANTIDAD/i.test(l)){
+      // Detectar cabecera de items — con o sin CANTIDAD
+      if(/^ITEM\b/i.test(l) && (/CANTIDAD/i.test(l) || /VALOR\s+UNITARIO/i.test(l))){
         enItems=true;
-        hasPrice=/PRECIO|VALOR/i.test(l);
+        hasPrice    = /PRECIO|VALOR/i.test(l);
+        hasCantidad = /CANTIDAD/i.test(l);
+        hasUnidad   = /UNIDAD\s*MEDIDA/i.test(l);  // ← nuevo: detectar columna unidad
         continue;
       }
       // Parar en líneas de control
@@ -1354,21 +1510,43 @@ function parsearCasos(bloqueTxt, natencion){
         const parts = linea.split('\t').map(p=>p.trim()).filter(p=>p!=='');
         if(parts.length >= 1 && !/^(DESCUENTO|REFERENCIA|RAZON)/i.test(parts[0])){
           const nombre  = parts[0];
-          // Extraer números: quitar puntos de miles y % 
+
+          // Extraer unidad cuando la cabecera tiene "UNIDAD MEDIDA"
+          // Formato: [nombre, cantidad, unidad, precio]
+          // La unidad es el único token no-numérico entre cantidad y precio
+          let unidad = 'UN';
+          if(hasCantidad && hasUnidad && parts.length >= 4){
+            // Buscar el primer token no-numérico después de nombre (ignorar el primero = nombre)
+            const unidadToken = parts.slice(1).find(p=>isNaN(Number(p.replace(/\./g,'').replace(',','.'))));
+            if(unidadToken) unidad = unidadToken;
+          }
+
           const nums = parts.slice(1)
             .map(p=>p.replace(/\./g,'').replace(',','.').replace(/[^0-9.]/g,''))
             .filter(p=>p!=='')
             .map(Number);
-          const cantidad = nums[0]||0;
-          const precio   = hasPrice ? (nums[1]||0) : 0;
           const descPct  = parts.find(p=>/^\d+%$/.test(p.trim()))
                           ? parseFloat(parts.find(p=>/\d+%/.test(p))):null;
-          if(cantidad>0||(!hasPrice&&nombre)){
+
+          let cantidad, precio;
+          if(hasCantidad){
+            // Formato con CANTIDAD: nums[0]=cantidad, nums[1]=precio
+            cantidad = nums[0]||0;
+            precio   = hasPrice ? (nums[1]||0) : 0;
+          } else {
+            // Formato sin CANTIDAD (NC/ND): qty=1, nums[0]=precio unitario
+            cantidad = 1;
+            precio   = hasPrice ? (nums[0]||0) : 0;
+          }
+
+          if(cantidad>0||nombre){
             items.push({
               nombre,
+              unidad,   // ← ahora incluye "Hora", "KG", etc. cuando el .txt lo especifica
               cantidad: cantidad||1,
               precio_unitario: precio,
-              exento: tipoDoc===34 || /EXENTO|EXENTA/i.test(nombre),
+              // Exento si: doc es T34, o referencia a T34/exenta, o nombre contiene EXENTO
+              exento: tipoDoc===34 || refTipoEsExenta || /EXENTO|EXENTA/i.test(nombre),
               descuento_pct: descPct
             });
           }
@@ -1406,15 +1584,38 @@ function parsearCasos(bloqueTxt, natencion){
       else if(/VENTA/i.test(m)) indTraslado=1;
     }
     if(traslLine){
-      if(/EMISOR/i.test(traslLine)) indDespacho=2;
-      else if(/CLIENTE/i.test(traslLine)) indDespacho=3;
+      // TipoDespacho según quién traslada físicamente:
+      // 1 = Cliente retira en dependencias del emisor   ← TRASLADO POR: CLIENTE
+      // 2 = Emisor despacha al domicilio del receptor   ← TRASLADO POR: EMISOR
+      // 3 = Emisor despacha a otras instalaciones (terceros/aduana) — caso especial
+      if(/EMISOR/i.test(traslLine))   indDespacho=2;
+      else if(/CLIENTE/i.test(traslLine)) indDespacho=1;
     }
 
-    const mDG=blockClean.match(/DESCUENTO\s+GLOBAL\s+ITEMES\s+AFECTOS\s+([\d.]+)%/i);
+    // ── Descuento global — parsear porcentaje, glosa y alcance ───────────
+    // El .txt del SII puede tener variantes:
+    //   "DESCUENTO GLOBAL ITEMES AFECTOS  24%"  → solo afectos
+    //   "DESCUENTO GLOBAL  24%"                 → todos los ítems
+    // La glosa (GlosaDR) viene en la misma línea o en una línea GLOSA siguiente
+    let descGlobalPct = null, descGlobalGlosa = 'Porcentaje Variable', descGlobalSoloAfectos = true;
+    const mDG = blockClean.match(/DESCUENTO\s+GLOBAL(?:\s+ITEMES\s+(AFECTOS|EXENTOS))?\s+([\d.]+)%/i);
+    if(mDG){
+      descGlobalPct          = parseFloat(mDG[2]);
+      descGlobalSoloAfectos  = !mDG[1] || /AFECTOS/i.test(mDG[1]);
+      // Intentar extraer glosa si viene en la misma línea después del %
+      const mGlosa = mDG[0].match(/%\s+(.+)/);
+      if(mGlosa && mGlosa[1].trim()) descGlobalGlosa = mGlosa[1].trim();
+    }
+    // Buscar línea GLOSA separada (formato tabular del .txt)
+    const mGlosaLine = blockClean.match(/GLOSA\s+DESC(?:UENTO)?\s*[:.]?\s*(.+)/i)
+                    || blockClean.match(/GLOSA\s+(?:DR|DESCUENTO)\s*[:.]?\s*(.+)/i);
+    if(mGlosaLine && mGlosaLine[1].trim()) descGlobalGlosa = mGlosaLine[1].trim();
 
     casos.push({
       caso:casoN, tipo_doc:tipoDoc, items, referencias,
-      desc_global: mDG?parseFloat(mDG[1]):null,
+      desc_global: descGlobalPct,
+      desc_global_glosa: descGlobalGlosa,
+      desc_global_solo_afectos: descGlobalSoloAfectos,
       ind_traslado: indTraslado, ind_despacho: indDespacho,
     });
   });
@@ -1579,7 +1780,7 @@ function renderModalCaso(si,idx){
   function calcTots(items,tipo){let neto=0,exento=0;items.forEach(it=>{const base=(it.cantidad||0)*(it.precio_unitario||0);const d=base*(it.descuento_pct||0)/100;if(it.exento||tipo===34)exento+=base-d;else neto+=base-d;});const iva=tipo!==34?Math.round(neto*0.19):0;return{neto:Math.round(neto),exento:Math.round(exento),iva,total:Math.round(neto+iva+exento)};}
   const _warnMsg=warnDinamico(caso);
   const warnHtml=_warnMsg?`<div class="caso-warn"><div class="caso-warn-icon">⚠️</div><div class="caso-warn-txt">${_warnMsg}</div></div>`:'';
-  const indHtml=isGuia?`<div class="indicadores-box"><div class="ind-field"><div class="ind-label">IndTraslado</div><input class="ind-input" type="number" id="ind_traslado_${si}_${idx}" value="${cd.ind_traslado??''}" min="1" max="9" placeholder="1-9"><div class="ind-desc">1=Venta despacha, 2=Retira cliente, 5=Traslado interno</div></div><div class="ind-field"><div class="ind-label">IndDespacho</div><input class="ind-input" type="number" id="ind_despacho_${si}_${idx}" value="${cd.ind_despacho??''}" min="1" max="3" placeholder="vacío=sin despacho"><div class="ind-desc">Dejar vacío para traslado interno</div></div></div>`:'';
+  const indHtml=isGuia?`<div class="indicadores-box"><div class="ind-field"><div class="ind-label">IndTraslado</div><input class="ind-input" type="number" id="ind_traslado_${si}_${idx}" value="${cd.ind_traslado??''}" min="1" max="9" placeholder="1-9" onfocus="this.select()"><div class="ind-desc">1=Venta despacha, 2=Retira cliente, 5=Traslado interno</div></div><div class="ind-field"><div class="ind-label">IndDespacho</div><input class="ind-input" type="number" id="ind_despacho_${si}_${idx}" value="${cd.ind_despacho??''}" min="1" max="3" placeholder="vacío=sin despacho" onfocus="this.select()"><div class="ind-desc">Dejar vacío para traslado interno</div></div></div>`:'';
   // ── Panel del caso referenciado (siempre visible si hay ref a doc) ──
   const docRef=refs.find(r=>r.tipo_doc_ref!=='SET');
   const sinItems=cd.items.length===0;
@@ -1643,7 +1844,7 @@ function renderModalCaso(si,idx){
           : docRef.cod_ref===2?
             `Corrige giro: el ítem debe tener precio 0 y monto 0. La razón "${docRef.razon_ref||''}" vendrá como texto del ítem.`
           : docRef.cod_ref===3?
-            `Modifica CASO ${docRef.natencion_ref}-${docRef.num_caso_ref}: agrega los ítems con los valores corregidos.`
+            `Modifica CASO ${docRef.natencion_ref}-${docRef.num_caso_ref}: usa el MISMO nombre de ítem del documento original (no la razón de referencia) con el valor corregido. Ej: si el original dice "HORAS PROGRAMADOR 5187", el ítem debe ser "HORAS PROGRAMADOR 648".`
           : `Agrega los ítems según el set del SII.`}
         </div>
         <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
@@ -1687,13 +1888,17 @@ function renderModalCaso(si,idx){
     onchange="updateItemField(${si},${idx},${ii},'unidad',this.value)"></td>
   <td><input class="item-input" type="number" value="${it.cantidad}" ${dis} min="0"
     style="font-size:13px;font-weight:600;color:var(--text);text-align:right;background:var(--bg)"
+    onfocus="this.select()"
     onchange="updateItem(${si},${idx},${ii},'cantidad',this.value)"></td>
-  <td><input class="item-input" type="number" value="${it.precio_unitario}" ${dis} min="0"
+  <td><input class="item-input" type="number" value="${it.precio_unitario||''}" ${dis} min="0"
+    placeholder="0"
     style="font-size:13px;font-weight:600;color:var(--text);text-align:right;background:var(--bg)"
+    onfocus="this.select()"
     onchange="updateItem(${si},${idx},${ii},'precio_unitario',this.value)"></td>
   <td><input class="item-input" type="number" value="${it.descuento_pct||''}" ${dis}
     min="0" max="100" placeholder="0"
     style="text-align:right"
+    onfocus="this.select()"
     onchange="updateItem(${si},${idx},${ii},'descuento_pct',this.value)"></td>
   <td style="text-align:center">
     <input type="checkbox" title="IndExe=1 — Línea exenta de IVA (sin IVA)"
@@ -1932,6 +2137,7 @@ function confirmarSet(){
       : s.label+' N° '+s.natencion+': '+s.casoValidado.filter(v=>v).length+'/'+s.casos.length+' validados'
   ).join('\n');
   renderGenSelector(sets);
+  renderSeleccionCasos(sets); // Feature B: checkboxes de selección
   done(3,'✓ '+sets.length+' set(s)');
   log('Sets confirmados','ok');
   // Renderizar panel de folios por tipo para el primer set con casos
@@ -1945,6 +2151,336 @@ function confirmarSet(){
   else c5.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
+
+/* ── Toggle modo XML vs Manual según tipo de libro ── */
+function onLibroTipoChange(){
+  const tipo = document.getElementById('libro_tipo').value;
+  const esCompras = tipo === 'compras';
+  const esGuias   = tipo === 'guias';
+  const esVentas  = tipo === 'ventas';
+  document.getElementById('aviso_compras').style.display         = esCompras ? 'block' : 'none';
+  document.getElementById('modo_xml_section').style.display      = esCompras ? 'none'  : 'block';
+  document.getElementById('modo_manual_section').style.display   = esCompras ? 'block' : 'none';
+  document.getElementById('guias_anulados_section').style.display = esGuias  ? 'block' : 'none';
+  // Actualizar hint de la zona de upload
+  const hint = document.getElementById('utxt_hint');
+  if(hint){
+    if(esVentas) hint.textContent = 'Sube SOLO el XML del Set Básico (no Set Exentas)';
+    else if(esGuias) hint.textContent = 'Sube el XML del Set Guías de Despacho';
+    else hint.textContent = 'Puedes subir varios XMLs';
+  }
+  if(esCompras && document.getElementById('compras_tbody').children.length === 0){
+    agregarFilaCompra();
+  }
+}
+
+/* ── Modo Manual: tabla de documentos de compra ── */
+let _compraFilaIdx = 0;
+function agregarFilaCompra(tpo='33', folio='', fecha='', rut='', razon='', neto='0', exe='0', iva='0', total='0'){
+  const idx = _compraFilaIdx++;
+  const today = new Date().toISOString().split('T')[0];
+  const tr = document.createElement('tr');
+  tr.id = `cr_${idx}`;
+  tr.style.cssText = 'border-bottom:1px solid var(--border2)';
+  const inp = (val, w, type='text', ph='') =>
+    `<input style="width:${w};background:transparent;border:1px solid var(--border2);border-radius:4px;padding:3px 5px;font-family:inherit;font-size:11px;color:var(--text)" type="${type}" value="${val}" placeholder="${ph}" oninput="actualizarTotalFila(${idx})">`;
+  tr.innerHTML = `
+    <td style="padding:3px">${inp(tpo,'60px','text','33')}</td>
+    <td style="padding:3px">${inp(folio,'55px','text','234')}</td>
+    <td style="padding:3px">${inp(fecha||today,'95px','date')}</td>
+    <td style="padding:3px">${inp(rut,'105px','text','77777777-7')}</td>
+    <td style="padding:3px">${inp(razon,'140px','text','Proveedor')}</td>
+    <td style="padding:3px">${inp(neto,'75px','number','0')}</td>
+    <td style="padding:3px">${inp(exe,'75px','number','0')}</td>
+    <td style="padding:3px">${inp(iva,'75px','number','0')}</td>
+    <td style="padding:3px"><span id="ct_${idx}" style="padding:3px 5px;font-size:11px">${total}</span></td>
+    <td style="padding:3px"><button onclick="document.getElementById('cr_${idx}').remove()" style="background:transparent;border:none;color:var(--text3);cursor:pointer;font-size:14px">×</button></td>`;
+  document.getElementById('compras_tbody').appendChild(tr);
+  actualizarTotalFila(idx);
+}
+
+function actualizarTotalFila(idx){
+  const row = document.getElementById(`cr_${idx}`);
+  if(!row) return;
+  const inputs = row.querySelectorAll('input');
+  const neto = parseInt(inputs[5].value)||0;
+  const exe  = parseInt(inputs[6].value)||0;
+  const iva  = parseInt(inputs[7].value)||0;
+  const span = document.getElementById(`ct_${idx}`);
+  if(span) span.textContent = (neto+exe+iva).toLocaleString('es-CL');
+}
+
+function limpiarFilasCompra(){
+  document.getElementById('compras_tbody').innerHTML='';
+}
+
+function getFilasCompra(){
+  const rows = document.querySelectorAll('#compras_tbody tr');
+  return Array.from(rows).map(tr=>{
+    const inp = tr.querySelectorAll('input');
+    const neto = parseInt(inp[5].value)||0;
+    const exe  = parseInt(inp[6].value)||0;
+    const iva  = parseInt(inp[7].value)||0;
+    return {
+      tipo_dte:       parseInt(inp[0].value)||33,
+      folio:          parseInt(inp[1].value)||0,
+      fecha_emision:  inp[2].value || new Date().toISOString().split('T')[0],
+      rut_receptor:   inp[3].value.trim() || '66666666-6',
+      nombre_receptor:inp[4].value.trim() || 'Proveedor',
+      monto_neto:     neto,
+      monto_iva:      iva,
+      monto_total:    neto+exe+iva,
+      monto_exe:      exe,
+    };
+  }).filter(r=>r.folio>0);
+}
+
+async function previewLibroXML(){
+  if(!S.id){ log('Carga el emisor primero','warn'); return; }
+  if(_libroXMLFiles.length===0){ log('Sube al menos un XML primero','warn'); return; }
+  const tipo = document.getElementById('libro_tipo').value;
+  const nat  = document.getElementById('libro_natencion').value.trim();
+  if(!nat){ log('Ingresa el N° de atención','warn'); return; }
+
+  const btn = document.getElementById('btn_preview_xml');
+  btn.disabled=true; btn.textContent='⏳';
+  const periodoHoy = new Date().toISOString().slice(0,7);
+  const fd = new FormData();
+  fd.append('emisor_id', S.id); fd.append('tipo_libro', tipo);
+  fd.append('natencion', nat);  fd.append('periodo', periodoHoy);
+  for(const f of _libroXMLFiles) fd.append('archivos', f);
+  const folios = document.getElementById('guias_folios_anulados')?.value.trim()||'';
+  if(folios) fd.append('folios_anulados', folios);
+
+  try{
+    const r = await fetch(base()+'/v1/certificacion-libros/preview', {method:'POST', body:fd});
+    if(!r.ok){ log('Error '+r.status,'err'); return; }
+    const xml = await r.text();
+    // Mostrar en modal
+    let modal = document.getElementById('xml_preview_modal');
+    if(!modal){
+      modal = document.createElement('div');
+      modal.id = 'xml_preview_modal';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+      modal.innerHTML = `
+        <div style="background:var(--bg);border-radius:12px;width:100%;max-width:900px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden">
+          <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+            <span style="font-weight:600;font-size:14px">🔍 Preview XML sin firmar</span>
+            <button onclick="document.getElementById('xml_preview_modal').remove()"
+              style="background:transparent;border:none;color:var(--text3);font-size:20px;cursor:pointer;line-height:1">×</button>
+          </div>
+          <pre id="xml_preview_content"
+            style="margin:0;padding:16px;overflow:auto;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text);background:var(--bg2);flex:1;white-space:pre"></pre>
+        </div>`;
+      document.body.appendChild(modal);
+    }
+    document.getElementById('xml_preview_content').textContent = xml;
+    modal.style.display='flex';
+    log('Preview XML listo','ok');
+  }catch(e){ log('Error: '+e,'err'); }
+  finally{ btn.disabled=false; btn.textContent='🔍'; }
+}
+  if(!S.id){ log('Carga el emisor primero','warn'); return; }
+  const nat = document.getElementById('libro_natencion').value.trim() || '4841545';
+  log(`Generando Libro de Compras N°${nat} con datos del set de certificación...`,'info');
+  const btn = document.querySelector('#modo_manual_section .btn:last-child');
+  if(btn){ btn.disabled=true; btn.textContent='Generando...'; }
+  try{
+    const r = await fetch(`${base()}/v1/certificacion-libro-compras/generar-xml?emisor_id=${S.id}&natencion=${nat}`, {method:'POST'});
+    if(!r.ok){ const t=await r.text(); log('Error '+r.status+': '+t.slice(0,300),'err'); return; }
+    const cd = r.headers.get('Content-Disposition')||'';
+    const m  = cd.match(/filename="([^"]+)"/);
+    S.xmlNombre = m ? m[1] : `LibroCompras_${nat}.xml`;
+    S.xmlBlob   = await r.blob();
+    document.getElementById('dl_libro_nombre').textContent = S.xmlNombre;
+    document.getElementById('dl_libro_box').style.display  = 'block';
+    log(`✓ Libro de Compras generado: ${S.xmlNombre}`,'ok');
+    const box=document.getElementById('r_libro_xml');
+    box.className='result show ok';
+    document.getElementById('r_libro_xml_l').textContent='✓ libro generado';
+    document.getElementById('r_libro_xml_l').className='rlbl ok';
+    document.getElementById('r_libro_xml_c').textContent=S.xmlNombre;
+  }catch(e){ log('Error: '+e,'err'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='⚡ Generar con datos del Set 4841545 (automático)'; } }
+}
+
+async function generarLibroManual(){
+  if(!S.id){ log('Carga el emisor primero','warn'); return; }
+  const nat = document.getElementById('libro_natencion').value.trim();
+  if(!nat){ log('Ingresa el N° de atención del libro','warn'); return; }
+  const filas = getFilasCompra();
+  if(!filas.length){ log('Agrega al menos un documento','warn'); return; }
+
+  const periodoHoy = new Date().toISOString().slice(0,7);
+  // Convertir filas a formato DTE simplificado y enviar como JSON al endpoint manual
+  const body = {
+    emisor_id: S.id,
+    tipo_libro: 'compras',
+    natencion: nat,
+    periodo: periodoHoy,
+    dtes: filas,
+  };
+  const btn = document.querySelector('#modo_manual_section .btn');
+  btn.disabled=true; btn.textContent='Generando...';
+  log(`Generando Libro de Compras manual con ${filas.length} documentos...`,'info');
+  try{
+    const r = await fetch(base()+'/v1/certificacion-libros/manual', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    if(!r.ok){ const t=await r.text(); log('Error '+r.status+': '+t.slice(0,300),'err'); return; }
+    const cd = r.headers.get('Content-Disposition')||'';
+    const m  = cd.match(/filename="([^"]+)"/);
+    S.xmlNombre = m ? m[1] : `LibroCompras_${nat}.xml`;
+    S.xmlBlob   = await r.blob();
+    document.getElementById('dl_libro_nombre').textContent = S.xmlNombre;
+    document.getElementById('dl_libro_box').style.display  = 'block';
+    log(`✓ Libro de Compras generado — ${filas.length} documentos`,'ok');
+    const box=document.getElementById('r_libro_xml');
+    box.className='result show ok';
+    document.getElementById('r_libro_xml_l').className='rlbl ok';
+    document.getElementById('r_libro_xml_l').textContent='✓ libro generado';
+    document.getElementById('r_libro_xml_c').textContent=`${S.xmlNombre}\n${filas.length} documentos ingresados manualmente.`;
+  }catch(e){ log('Error: '+e,'err'); }
+  finally{ btn.disabled=false; btn.textContent='📚 Generar Libro de Compras'; }
+}
+const _libroXMLFiles = [];
+
+function dpLibroXML(e){ e.preventDefault(); dLv('z_libro_xml'); addLibroXML(e.dataTransfer.files); }
+
+function addLibroXML(files){
+  for(const f of files){
+    if(_libroXMLFiles.find(x=>x.name===f.name)) continue;
+    _libroXMLFiles.push(f);
+  }
+  renderLibroXMLChips();
+  const dis = _libroXMLFiles.length === 0;
+  document.getElementById('btn_libro_xml').disabled   = dis;
+  document.getElementById('btn_preview_xml').disabled = dis;
+}
+
+function renderLibroXMLChips(){
+  document.getElementById('libro_xml_chips').innerHTML = _libroXMLFiles.map((f,i)=>
+    `<div style="display:flex;align-items:center;gap:6px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);border-radius:6px;padding:4px 10px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent)">
+      📄 ${f.name}
+      <span onclick="removeLibroXML(${i})" style="cursor:pointer;color:var(--text3);margin-left:4px">×</span>
+    </div>`
+  ).join('');
+}
+
+function removeLibroXML(i){
+  _libroXMLFiles.splice(i,1);
+  renderLibroXMLChips();
+  const dis = _libroXMLFiles.length === 0;
+  document.getElementById('btn_libro_xml').disabled   = dis;
+  document.getElementById('btn_preview_xml').disabled = dis;
+}
+
+async function generarLibroDesdeXML(){
+  if(!S.id){ log('Carga el emisor primero','warn'); return; }
+  if(_libroXMLFiles.length === 0){ log('Sube al menos un XML de EnvioDTE','warn'); return; }
+  const tipo   = document.getElementById('libro_tipo').value;
+  const nat    = document.getElementById('libro_natencion').value.trim();
+  if(!nat){ log('Ingresa el N° de atención del libro','warn'); return; }
+
+  const btn = document.getElementById('btn_libro_xml');
+  btn.disabled = true; btn.textContent = 'Generando...';
+  log(`Generando Libro ${tipo} N° ${nat} desde ${_libroXMLFiles.length} XML(s)...`,'info');
+
+  // Auto-detectar período desde los XMLs o usar mes actual
+  const periodoHoy = new Date().toISOString().slice(0,7);
+
+  const fd = new FormData();
+  fd.append('emisor_id', S.id);
+  fd.append('tipo_libro', tipo);
+  fd.append('natencion',  nat);
+  fd.append('periodo',    periodoHoy);
+  for(const f of _libroXMLFiles) fd.append('archivos', f);
+  // Folios anulados — LibroGuías: marca guías anuladas con Anulado=2
+  const foliosAnulados = document.getElementById('guias_folios_anulados')?.value.trim() || '';
+  if(foliosAnulados) fd.append('folios_anulados', foliosAnulados);
+
+  try{
+    const r = await fetch(base()+'/v1/certificacion-libros/desde-xml', { method:'POST', body:fd });
+    if(!r.ok){
+      const txt = await r.text();
+      log('Error '+r.status,'err');
+      const box=document.getElementById('r_libro_xml');
+      box.className='result show fail';
+      document.getElementById('r_libro_xml_l').className='rlbl fail';
+      document.getElementById('r_libro_xml_l').textContent='✗ error';
+      document.getElementById('r_libro_xml_c').textContent=txt.slice(0,400);
+      return;
+    }
+    const cd = r.headers.get('Content-Disposition')||'';
+    const m  = cd.match(/filename="([^"]+)"/);
+    S.xmlNombre = m ? m[1] : `Libro${tipo}_${nat}.xml`;
+    S.xmlBlob   = await r.blob();
+    const nDTEs = r.headers.get('X-DTEs-Incluidos')||'?';
+    log(`✓ Libro ${tipo} generado — ${nDTEs} DTEs incluidos`,'ok');
+    // Mostrar descarga en la tarjeta de libros (no depende del paso 5)
+    document.getElementById('dl_libro_nombre').textContent = S.xmlNombre;
+    document.getElementById('dl_libro_box').style.display = 'block';
+    document.getElementById('dl_name5').textContent = S.xmlNombre;
+    document.getElementById('dlbox5').classList.add('show');
+    const box=document.getElementById('r_libro_xml');
+    box.className='result show ok';
+    document.getElementById('r_libro_xml_l').className='rlbl ok';
+    document.getElementById('r_libro_xml_l').textContent='✓ libro generado';
+    document.getElementById('r_libro_xml_c').textContent=`${S.xmlNombre}\n${nDTEs} DTEs incluidos desde los XMLs subidos.`;
+  }catch(e){
+    log('Error: '+e,'err');
+  }finally{
+    btn.disabled = false; btn.textContent = '📚 Generar Libro desde XMLs';
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   FEATURE B: SELECCIÓN DE CASOS PARA GENERACIÓN PARCIAL
+══════════════════════════════════════════════════════ */
+const _casosSeleccionados = new Set(); // "si-ci" → incluido
+
+function renderSeleccionCasos(sets){
+  const grid = document.getElementById('casos_sel_grid');
+  const panel = document.getElementById('casos_seleccion');
+  if(!sets||!sets.length){ panel.style.display='none'; return; }
+  panel.style.display='block';
+  _casosSeleccionados.clear();
+
+  let html = '';
+  sets.forEach((set,si)=>{
+    if(set.esLibro) return;
+    const col = getSetColor(set.key, si);
+    set.casos.forEach((c,ci)=>{
+      const key = `${si}-${ci}`;
+      _casosSeleccionados.add(key); // todos seleccionados por defecto
+      html += `<label style="display:flex;align-items:center;gap:5px;cursor:pointer;
+        background:var(--bg2);border:1px solid ${col}33;border-radius:6px;
+        padding:5px 10px;font-size:11px;font-family:'JetBrains Mono',monospace;
+        color:${col}">
+        <input type="checkbox" id="csel_${key}" checked style="accent-color:${col}"
+          onchange="toggleCasoSel('${key}',this.checked)">
+        CASO ${c.caso} T${c.tipo_doc||'?'}
+      </label>`;
+    });
+  });
+  grid.innerHTML = html;
+}
+
+function toggleCasoSel(key, checked){
+  if(checked) _casosSeleccionados.add(key);
+  else _casosSeleccionados.delete(key);
+}
+
+function selAllCasos(val){
+  document.querySelectorAll('[id^="csel_"]').forEach(cb=>{
+    cb.checked = val;
+    const key = cb.id.replace('csel_','');
+    if(val) _casosSeleccionados.add(key);
+    else _casosSeleccionados.delete(key);
+  });
+}
 
 /* ══════════════════════════════════════════════════════
    PASO 5: GENERAR XML — SELECTOR DINÁMICO MULTI-SET
@@ -1979,6 +2515,14 @@ async function generarXML(setKey, natencion){
   const endpoint=getEndpointMap()[setKey];
   if(!endpoint){res(5,false,'No hay endpoint configurado para el set: '+setKey);return;}
 
+  // Refrescar CAFs y reasignar folios ANTES de generar
+  // Esto evita el error REF-3-750 causado por FolioRef desactualizados
+  // cuando se generan múltiples intentos (el folio_actual del CAF avanza con cada intento)
+  const amb = document.getElementById('e_amb')?.value || 'certificacion';
+  await cargarCAFs(S.id, amb);
+  asignarFolios();
+  log('Folios reasignados desde CAF actual antes de generar','info');
+
   const btns=document.querySelectorAll('#gen_tabs .bp');
   btns.forEach(b=>{if(b.textContent.includes('Generar')){b.disabled=true;b.textContent='Generando...';}});
   log(`Generando ${setKey} N° ${natencion}...`,'info');
@@ -1993,22 +2537,35 @@ async function generarXML(setKey, natencion){
 
   if(usarDinamico && set){
     // Convertir casoData del admin al formato del endpoint dinámico
-    const casos = set.casos.map((caso, ci)=>{
+    // Feature B: solo incluir casos que están seleccionados (checkboxes)
+    const siIdx = S.setsDetectados.indexOf(set);
+    const casos = set.casos
+      .map((caso, ci)=>({ caso, ci }))
+      .filter(({ci}) => {
+        const key = `${siIdx}-${ci}`;
+        return _casosSeleccionados.size === 0 || _casosSeleccionados.has(key);
+      })
+      .map(({caso, ci})=>{
       const cd = set.casoData[ci]||{};
       return {
         numero_caso:          ci+1,
         tipo_dte:             caso.tipo_doc,
         fecha_emision:        new Date().toISOString().split('T')[0],
-        // forzar_monto_cero si no hay ítems O si alguna ref tiene CodRef=2
-        // El dte_service lo detecta y omite <Detalle> en el XML
+        // forzar_monto_cero: CodRef=2 siempre, NC/ND sin ítems originales también
+        // (ahora generamos placeholder pero el monto debe ser 0)
         forzar_monto_cero: (()=>{
-          if(cd.items&&cd.items.length===0&&[56,61].includes(caso.tipo_doc)) return true;
           const refs=cd.referencias||[];
-          return refs.some(r=>r.tipo_doc_ref!=='SET'&&parseInt(r.cod_ref)===2);
+          const esCodRef2=refs.some(r=>r.tipo_doc_ref!=='SET'&&parseInt(r.cod_ref)===2);
+          if(esCodRef2) return true;
+          // NC/ND que originalmente no tenían ítems → placeholder con monto 0
+          if((!cd.items||cd.items.length===0)&&[56,61].includes(caso.tipo_doc)) return true;
+          return false;
         })(),
         indicador_traslado:   cd.ind_traslado||0,
         indicador_despacho:   cd.ind_despacho||0,
         descuento_global_pct: caso.desc_global||0,
+        glosa_descuento: caso.desc_global_glosa||'Porcentaje Variable',
+        desc_global_solo_afectos: caso.desc_global_solo_afectos!==false,
         receptor: cd.receptor ? {
           rut:          cd.receptor.rut||'77777777-7',
           razon_social: cd.receptor.razon_social||'EMPRESA LTDA',
@@ -2017,19 +2574,71 @@ async function generarXML(setKey, natencion){
           comuna:       cd.receptor.comuna||'',
           ciudad:       cd.receptor.ciudad||'',
         } : {rut:'77777777-7',razon_social:'EMPRESA LTDA',giro:'',direccion:'',comuna:'',ciudad:''},
-        // Si forzar_monto_cero (CodRef=2 o sin ítems en NC/ND),
-        // enviar items=[] para que xml_builder omita <Detalle> completamente
+        // items: CodRef=2 → un ítem descriptivo con MontoItem=0 (SII lo exige)
+        //        NC/ND sin ítems → lista vacía (forzar_monto_cero lo maneja)
+        //        resto → ítems normales
         items: (()=>{
           const refs=cd.referencias||[];
           const esCodRef2=refs.some(r=>r.tipo_doc_ref!=='SET'&&parseInt(r.cod_ref)===2);
           const sinItems=!cd.items||cd.items.length===0;
-          if(esCodRef2||(sinItems&&[56,61].includes(caso.tipo_doc))) return [];
+
+          if(esCodRef2){
+            // El SII exige al menos 1 ítem aunque sea corrección de texto.
+            // Si el usuario ya agregó ítems en el wizard → usarlos con monto 0.
+            // Si no → auto-generar uno con la razón de referencia como nombre.
+            const itemsExistentes = cd.items||[];
+            if(itemsExistentes.length > 0){
+              return itemsExistentes.map(it=>({
+                nombre:          it.nombre||'',
+                descripcion:     it.descripcion||it.nombre||'',
+                cantidad:        Number(it.cantidad)||1,
+                precio_unitario: 0,   // forzar_monto_cero=true → MontoItem=0
+                descuento_pct:   0,
+                exento:          true, // IndExe=1 es obligatorio cuando monto=0
+                codigo:          it.codigo_val||'',
+                unidad:          it.unidad||'UN',
+              }));
+            }
+            // Auto-generar ítem con la razón de la referencia CodRef=2
+            const refCodRef2 = refs.find(r=>r.tipo_doc_ref!=='SET'&&parseInt(r.cod_ref)===2);
+            const nombreItem = (refCodRef2?.razon_ref||'CORRECCION DATO').toUpperCase();
+            return [{
+              nombre:          nombreItem,
+              descripcion:     nombreItem,
+              cantidad:        1,
+              precio_unitario: 0,
+              descuento_pct:   0,
+              exento:          true,
+              codigo:          '',
+              unidad:          'UN',
+            }];
+          }
+
+          // NC/ND sin ítems (CodRef=1 u otro): el XSD exige al menos 1 <Detalle>
+          // Sin Detalle el sobre es rechazado por schema inválido (línea donde empieza Referencia)
+          // Generar ítem placeholder con la razón de referencia y forzar_monto_cero
+          if(sinItems&&[56,61].includes(caso.tipo_doc)){
+            const refDoc = refs.find(r=>r.tipo_doc_ref!=='SET');
+            const nombreItem = (refDoc?.razon_ref||'ANULA DOCUMENTO').toUpperCase();
+            return [{
+              nombre:          nombreItem,
+              descripcion:     nombreItem,
+              cantidad:        1,
+              precio_unitario: 0,
+              descuento_pct:   0,
+              exento:          true,
+              codigo:          '',
+              unidad:          'UN',
+            }];
+          }
+
           return (cd.items||[]).map(it=>({
             nombre:          it.nombre||'',
             descripcion:     it.descripcion||it.nombre||'',
             cantidad:        Number(it.cantidad)||0,
             precio_unitario: Number(it.precio_unitario)||0,
-            descuento_pct:   Number(it.descuento_pct)||0,
+            // Si hay descuento global (DscRcgGlobal), ítems con precio COMPLETO
+            descuento_pct:   caso.desc_global ? 0 : Number(it.descuento_pct)||0,
             exento:          Boolean(it.exento),
             codigo:          it.codigo_val||'',
             unidad:          it.unidad||'UN',
@@ -2041,6 +2650,9 @@ async function generarXML(setKey, natencion){
           fecha_ref:    ref.fecha_ref||new Date().toISOString().split('T')[0],
           cod_ref:      ref.cod_ref||null,
           razon_ref:    ref.razon_ref||'',
+          // num_caso_ref: el backend lo usa para resolver el folio real del caso referenciado
+          // Esto evita REF-3-750 por folio_ref desactualizado del frontend
+          num_caso_ref: ref.num_caso_ref||null,
         })),
       };
     });
@@ -2124,183 +2736,6 @@ async function generarXML(setKey, natencion){
   }
 }
 
-
-/* ── Toggle modo XML vs Manual según tipo de libro ── */
-function onLibroTipoChange(){
-  const tipo = document.getElementById('libro_tipo').value;
-  const esCompras = tipo === 'compras';
-  const esGuias   = tipo === 'guias';
-  const esVentas  = tipo === 'ventas';
-  document.getElementById('aviso_compras').style.display         = esCompras ? 'block' : 'none';
-  document.getElementById('modo_xml_section').style.display      = esCompras ? 'none'  : 'block';
-  document.getElementById('modo_manual_section').style.display   = esCompras ? 'block' : 'none';
-  document.getElementById('guias_anulados_section').style.display = esGuias  ? 'block' : 'none';
-  const hint = document.getElementById('utxt_hint');
-  if(hint){
-    if(esVentas) hint.textContent = 'Sube SOLO el XML del Set Básico (no Set Exentas)';
-    else if(esGuias) hint.textContent = 'Sube el XML del Set Guías de Despacho';
-    else hint.textContent = 'Puedes subir varios XMLs';
-  }
-  if(esCompras && document.getElementById('compras_tbody').children.length === 0) agregarFilaCompra();
-}
-
-let _compraFilaIdx = 0;
-function agregarFilaCompra(tpo='33',folio='',fecha='',rut='',razon='',neto='0',exe='0',iva='0',total='0'){
-  const idx=_compraFilaIdx++;const today=new Date().toISOString().split('T')[0];
-  const tr=document.createElement('tr');tr.id=`cr_${idx}`;tr.style.cssText='border-bottom:1px solid var(--border2)';
-  const inp=(val,w,type='text',ph='')=>`<input style="width:${w};background:transparent;border:1px solid var(--border2);border-radius:4px;padding:3px 5px;font-family:inherit;font-size:11px;color:var(--text)" type="${type}" value="${val}" placeholder="${ph}" oninput="actualizarTotalFila(${idx})">`;
-  tr.innerHTML=`<td style="padding:3px">${inp(tpo,'60px','text','33')}</td><td style="padding:3px">${inp(folio,'55px','text','234')}</td><td style="padding:3px">${inp(fecha||today,'95px','date')}</td><td style="padding:3px">${inp(rut,'105px','text','77777777-7')}</td><td style="padding:3px">${inp(razon,'140px','text','Proveedor')}</td><td style="padding:3px">${inp(neto,'75px','number','0')}</td><td style="padding:3px">${inp(exe,'75px','number','0')}</td><td style="padding:3px">${inp(iva,'75px','number','0')}</td><td style="padding:3px"><span id="ct_${idx}" style="padding:3px 5px;font-size:11px">${total}</span></td><td style="padding:3px"><button onclick="document.getElementById('cr_${idx}').remove()" style="background:transparent;border:none;color:var(--text3);cursor:pointer;font-size:14px">×</button></td>`;
-  document.getElementById('compras_tbody').appendChild(tr);actualizarTotalFila(idx);
-}
-function actualizarTotalFila(idx){
-  const row=document.getElementById(`cr_${idx}`);if(!row)return;
-  const inputs=row.querySelectorAll('input');
-  const neto=parseInt(inputs[5].value)||0,exe=parseInt(inputs[6].value)||0,iva=parseInt(inputs[7].value)||0;
-  const span=document.getElementById(`ct_${idx}`);if(span)span.textContent=(neto+exe+iva).toLocaleString('es-CL');
-}
-function limpiarFilasCompra(){document.getElementById('compras_tbody').innerHTML='';}
-function getFilasCompra(){
-  return Array.from(document.querySelectorAll('#compras_tbody tr')).map(tr=>{
-    const inp=tr.querySelectorAll('input');
-    const neto=parseInt(inp[5].value)||0,exe=parseInt(inp[6].value)||0,iva=parseInt(inp[7].value)||0;
-    return{tipo_dte:parseInt(inp[0].value)||33,folio:parseInt(inp[1].value)||0,fecha_emision:inp[2].value||new Date().toISOString().split('T')[0],rut_receptor:inp[3].value.trim()||'66666666-6',nombre_receptor:inp[4].value.trim()||'Proveedor',monto_neto:neto,monto_iva:iva,monto_total:neto+exe+iva,monto_exe:exe};
-  }).filter(r=>r.folio>0);
-}
-
-async function previewLibroXML(){
-  if(!S.id){log('Carga el emisor primero','warn');return;}
-  if(_libroXMLFiles.length===0){log('Sube al menos un XML primero','warn');return;}
-  const tipo=document.getElementById('libro_tipo').value;
-  const nat=document.getElementById('libro_natencion').value.trim();
-  if(!nat){log('Ingresa el N° de atención','warn');return;}
-  const btn=document.getElementById('btn_preview_xml');
-  btn.disabled=true;btn.textContent='⏳';
-  const fd=new FormData();
-  fd.append('emisor_id',S.id);fd.append('tipo_libro',tipo);fd.append('natencion',nat);fd.append('periodo',new Date().toISOString().slice(0,7));
-  for(const f of _libroXMLFiles)fd.append('archivos',f);
-  const folios=document.getElementById('guias_folios_anulados')?.value.trim()||'';
-  if(folios)fd.append('folios_anulados',folios);
-  try{
-    const r=await fetch(base()+'/v1/certificacion-libros/preview',{method:'POST',body:fd});
-    if(!r.ok){log('Error '+r.status,'err');return;}
-    const xml=await r.text();
-    let modal=document.getElementById('xml_preview_modal');
-    if(!modal){modal=document.createElement('div');modal.id='xml_preview_modal';modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';modal.innerHTML=`<div style="background:var(--bg);border-radius:12px;width:100%;max-width:900px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden"><div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center"><span style="font-weight:600;font-size:14px">🔍 Preview XML sin firmar</span><button onclick="document.getElementById('xml_preview_modal').remove()" style="background:transparent;border:none;color:var(--text3);font-size:20px;cursor:pointer;line-height:1">×</button></div><pre id="xml_preview_content" style="margin:0;padding:16px;overflow:auto;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text);background:var(--bg2);flex:1;white-space:pre"></pre></div>`;document.body.appendChild(modal);}
-    document.getElementById('xml_preview_content').textContent=xml;
-    modal.style.display='flex';log('Preview XML listo','ok');
-  }catch(e){log('Error: '+e,'err');}
-  finally{btn.disabled=false;btn.textContent='🔍';}
-}
-
-async function generarLibroComprasDedicado(){
-  if(!S.id){log('Carga el emisor primero','warn');return;}
-  const nat=document.getElementById('libro_natencion').value.trim();
-  if(!nat){log('Ingresa el N° de atención','warn');return;}
-  log(`Generando Libro de Compras N°${nat}...`,'info');
-  const btn=document.querySelector('#modo_manual_section .btn:last-child');
-  if(btn){btn.disabled=true;btn.textContent='Generando...';}
-  try{
-    const r=await fetch(`${base()}/v1/certificacion-libro-compras/generar-xml?emisor_id=${S.id}&natencion=${encodeURIComponent(nat)}`,{method:'POST'});
-    if(!r.ok){const t=await r.text();log('Error '+r.status+': '+t.slice(0,300),'err');return;}
-    const cd=r.headers.get('Content-Disposition')||'';const m=cd.match(/filename="([^"]+)"/);
-    S.xmlNombre=m?m[1]:`LibroCompras_${nat}.xml`;S.xmlBlob=await r.blob();
-    document.getElementById('dl_libro_nombre').textContent=S.xmlNombre;
-    document.getElementById('dl_libro_box').style.display='block';
-    log(`✓ Libro de Compras generado: ${S.xmlNombre}`,'ok');
-    const box=document.getElementById('r_libro_xml');box.className='result show ok';
-    document.getElementById('r_libro_xml_l').textContent='✓ libro generado';
-    document.getElementById('r_libro_xml_l').className='rlbl ok';
-    document.getElementById('r_libro_xml_c').textContent=S.xmlNombre;
-  }catch(e){log('Error: '+e,'err');}
-  finally{if(btn){btn.disabled=false;btn.textContent='⚡ Generar con datos del Set (automático)';}}
-}
-
-async function generarLibroManual(){
-  if(!S.id){log('Carga el emisor primero','warn');return;}
-  const nat=document.getElementById('libro_natencion').value.trim();
-  if(!nat){log('Ingresa el N° de atención del libro','warn');return;}
-  const filas=getFilasCompra();if(!filas.length){log('Agrega al menos un documento','warn');return;}
-  const body={emisor_id:S.id,tipo_libro:'compras',natencion:nat,periodo:new Date().toISOString().slice(0,7),dtes:filas};
-  const btn=document.querySelector('#modo_manual_section .btn');
-  btn.disabled=true;btn.textContent='Generando...';
-  log(`Generando Libro de Compras manual con ${filas.length} documentos...`,'info');
-  try{
-    const r=await fetch(base()+'/v1/certificacion-libros/manual',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if(!r.ok){const t=await r.text();log('Error '+r.status+': '+t.slice(0,300),'err');return;}
-    const cd=r.headers.get('Content-Disposition')||'';const m=cd.match(/filename="([^"]+)"/);
-    S.xmlNombre=m?m[1]:`LibroCompras_${nat}.xml`;S.xmlBlob=await r.blob();
-    document.getElementById('dl_libro_nombre').textContent=S.xmlNombre;
-    document.getElementById('dl_libro_box').style.display='block';
-    log(`✓ Libro de Compras generado — ${filas.length} documentos`,'ok');
-    const box=document.getElementById('r_libro_xml');box.className='result show ok';
-    document.getElementById('r_libro_xml_l').className='rlbl ok';
-    document.getElementById('r_libro_xml_l').textContent='✓ libro generado';
-    document.getElementById('r_libro_xml_c').textContent=`${S.xmlNombre}\n${filas.length} docs manuales.`;
-  }catch(e){log('Error: '+e,'err');}
-  finally{btn.disabled=false;btn.textContent='📚 Generar Libro de Compras';}
-}
-
-const _libroXMLFiles=[];
-function dpLibroXML(e){e.preventDefault();dLv('z_libro_xml');addLibroXML(e.dataTransfer.files);}
-function addLibroXML(files){
-  for(const f of files){if(_libroXMLFiles.find(x=>x.name===f.name))continue;_libroXMLFiles.push(f);}
-  renderLibroXMLChips();
-  const dis=_libroXMLFiles.length===0;
-  document.getElementById('btn_libro_xml').disabled=dis;
-  document.getElementById('btn_preview_xml').disabled=dis;
-}
-function renderLibroXMLChips(){
-  document.getElementById('libro_xml_chips').innerHTML=_libroXMLFiles.map((f,i)=>
-    `<div style="display:flex;align-items:center;gap:6px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);border-radius:6px;padding:4px 10px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent)">📄 ${f.name}<span onclick="removeLibroXML(${i})" style="cursor:pointer;color:var(--text3);margin-left:4px">×</span></div>`
-  ).join('');
-}
-function removeLibroXML(i){
-  _libroXMLFiles.splice(i,1);renderLibroXMLChips();
-  const dis=_libroXMLFiles.length===0;
-  document.getElementById('btn_libro_xml').disabled=dis;
-  document.getElementById('btn_preview_xml').disabled=dis;
-}
-
-async function generarLibroDesdeXML(){
-  if(!S.id){log('Carga el emisor primero','warn');return;}
-  if(_libroXMLFiles.length===0){log('Sube al menos un XML de EnvioDTE','warn');return;}
-  const tipo=document.getElementById('libro_tipo').value;
-  const nat=document.getElementById('libro_natencion').value.trim();
-  if(!nat){log('Ingresa el N° de atención del libro','warn');return;}
-  const btn=document.getElementById('btn_libro_xml');
-  btn.disabled=true;btn.textContent='Generando...';
-  log(`Generando Libro ${tipo} N° ${nat} desde ${_libroXMLFiles.length} XML(s)...`,'info');
-  const fd=new FormData();
-  fd.append('emisor_id',S.id);fd.append('tipo_libro',tipo);fd.append('natencion',nat);
-  fd.append('periodo',new Date().toISOString().slice(0,7));
-  for(const f of _libroXMLFiles)fd.append('archivos',f);
-  const foliosAnulados=document.getElementById('guias_folios_anulados')?.value.trim()||'';
-  if(foliosAnulados)fd.append('folios_anulados',foliosAnulados);
-  try{
-    const r=await fetch(base()+'/v1/certificacion-libros/desde-xml',{method:'POST',body:fd});
-    if(!r.ok){
-      const txt=await r.text();log('Error '+r.status,'err');
-      const box=document.getElementById('r_libro_xml');box.className='result show fail';
-      document.getElementById('r_libro_xml_l').className='rlbl fail';
-      document.getElementById('r_libro_xml_l').textContent='✗ error';
-      document.getElementById('r_libro_xml_c').textContent=txt.slice(0,400);return;
-    }
-    const cd=r.headers.get('Content-Disposition')||'';const m=cd.match(/filename="([^"]+)"/);
-    S.xmlNombre=m?m[1]:`Libro${tipo}_${nat}.xml`;S.xmlBlob=await r.blob();
-    const nDTEs=r.headers.get('X-DTEs-Incluidos')||'?';
-    log(`✓ Libro ${tipo} generado — ${nDTEs} DTEs incluidos`,'ok');
-    document.getElementById('dl_libro_nombre').textContent=S.xmlNombre;
-    document.getElementById('dl_libro_box').style.display='block';
-    document.getElementById('dl_name5').textContent=S.xmlNombre;
-    document.getElementById('dlbox5').classList.add('show');
-    const box=document.getElementById('r_libro_xml');box.className='result show ok';
-    document.getElementById('r_libro_xml_l').className='rlbl ok';
-    document.getElementById('r_libro_xml_l').textContent='✓ libro generado';
-    document.getElementById('r_libro_xml_c').textContent=`${S.xmlNombre}\n${nDTEs} DTEs incluidos.`;
-  }catch(e){log('Error: '+e,'err');}
-  finally{btn.disabled=false;btn.textContent='📚 Generar Libro desde XMLs';}
-}
-
 function descargarXML(){
   if(!S.xmlBlob){log('Primero genera el XML','warn');return;}
   const url=URL.createObjectURL(S.xmlBlob);
@@ -2309,6 +2744,7 @@ function descargarXML(){
   log('XML descargado: '+S.xmlNombre,'ok');
 }
 
+// Descarga del libro — usa el mismo blob/nombre que generarLibroDesdeXML() guardó
 function descargarLibro(){
   if(!S.xmlBlob){log('Primero genera el libro','warn');return;}
   const url=URL.createObjectURL(S.xmlBlob);
@@ -2636,12 +3072,30 @@ function generarXMLEjemplo(set, cd, caso, ci){
   const esNota        = [56, 61].includes(tipo);
   const esBoleta      = TIPOS_BOLETA.includes(tipo);
   const esExenta      = TIPO_EXENTA.includes(tipo);
-  const forzarCero    = cd.items.length === 0 && esNota;
+  const hayDescGlobal = !!(caso.desc_global);
+
+  // Determinar la lista de ítems real que irá al XML
+  // (misma lógica que generarXML para que el preview sea fiel)
+  const refs       = cd.referencias||[];
+  const esCodRef2  = refs.some(r=>r.tipo_doc_ref!=='SET'&&parseInt(r.cod_ref)===2);
+  let itemsPreview = cd.items||[];
+  if(esCodRef2){
+    if(itemsPreview.length === 0){
+      const refCodRef2 = refs.find(r=>r.tipo_doc_ref!=='SET'&&parseInt(r.cod_ref)===2);
+      itemsPreview = [{
+        nombre:'('+((refCodRef2?.razon_ref||'CORRECCION DATO').toUpperCase())+')',
+        cantidad:1, precio_unitario:0, exento:true, descuento_pct:0,
+      }];
+    }
+  }
+  const forzarCero = esCodRef2 || (itemsPreview.length === 0 && esNota);
 
   let subtotalAfecto = 0, subtotalExento = 0;
-  cd.items.forEach(it=>{
+  itemsPreview.forEach(it=>{
     const bruto = (it.cantidad||0)*(it.precio_unitario||0);
-    const neto  = Math.round(bruto - bruto*(it.descuento_pct||0)/100);
+    // Con descuento global: usar precio completo. Sin él: respetar descuento del ítem.
+    const descItemPct = hayDescGlobal ? 0 : (it.descuento_pct||0);
+    const neto  = Math.round(bruto - bruto*descItemPct/100);
     if(it.exento||esExenta) subtotalExento += neto;
     else subtotalAfecto += neto;
   });
@@ -2659,6 +3113,14 @@ function generarXMLEjemplo(set, cd, caso, ci){
     mntIVA    = Math.round(subtotalAfecto * 0.19);
     mntExento = Math.round(subtotalExento);
     mntTotal  = mntNeto + mntIVA + mntExento;
+  }
+  // Aplicar descuento global a los totales (igual que xml_builder._calcular_totales)
+  // Los ítems ya van con precio completo — el descuento se aplica aquí una sola vez
+  if(hayDescGlobal && caso.desc_global > 0){
+    const descMnt   = Math.round(mntNeto * caso.desc_global / 100);
+    mntNeto         = mntNeto - descMnt;
+    mntIVA          = Math.round(mntNeto * 0.19);
+    mntTotal        = mntNeto + mntIVA + mntExento;
   }
   if(forzarCero){ mntNeto=0; mntIVA=0; mntExento=0; mntTotal=0; }
 
@@ -2687,28 +3149,28 @@ function generarXMLEjemplo(set, cd, caso, ci){
   xml += `      <Emisor>\n`;
   xml += `        <RUTEmisor>${E.rut||'RUT-EMISOR'}</RUTEmisor>\n`;
   if(esBoleta){
-    xml += `        <RznSocEmisor>${E.razon_social||''}</RznSocEmisor>\n`;
-    xml += `        <GiroEmisor>${E.giro||''}</GiroEmisor>\n`;
+    xml += `        <RznSocEmisor>${xmlEncodeText(E.razon_social||'')}</RznSocEmisor>\n`;
+    xml += `        <GiroEmisor>${xmlEncodeText(E.giro||'')}</GiroEmisor>\n`;
   } else {
-    xml += `        <RznSoc>${E.razon_social||''}</RznSoc>\n`;
-    xml += `        <GiroEmis>${E.giro||''}</GiroEmis>\n`;
-    if(E.telefono) xml += `        <Telefono>${E.telefono}</Telefono>\n`;
-    xml += `        <Acteco>${E.acteco||'620200'}</Acteco>\n`;
+    xml += `        <RznSoc>${xmlEncodeText(E.razon_social||'')}</RznSoc>\n`;
+    xml += `        <GiroEmis>${xmlEncodeText(E.giro||'')}</GiroEmis>\n`;
+    if(E.telefono) xml += `        <Telefono>${xmlEncodeText(E.telefono)}</Telefono>\n`;
+    xml += `        <Acteco>${xmlEncodeText(E.acteco||'620200')}</Acteco>\n`;
   }
-  xml += `        <DirOrigen>${E.direccion||''}</DirOrigen>\n`;
-  xml += `        <CmnaOrigen>${E.comuna||''}</CmnaOrigen>\n`;
-  xml += `        <CiudadOrigen>${E.ciudad||''}</CiudadOrigen>\n`;
+  xml += `        <DirOrigen>${xmlEncodeText(E.direccion||'')}</DirOrigen>\n`;
+  xml += `        <CmnaOrigen>${xmlEncodeText(E.comuna||'')}</CmnaOrigen>\n`;
+  xml += `        <CiudadOrigen>${xmlEncodeText(E.ciudad||'')}</CiudadOrigen>\n`;
   xml += `      </Emisor>\n`;
 
   // ── Receptor ─────────────────────────────────────────────────────────────
   xml += `      <Receptor>\n`;
   xml += `        <RUTRecep>${(recep.rut||'<!-- RUT receptor -->').replace(/\./g,'')}</RUTRecep>\n`;
-  xml += `        <RznSocRecep>${recep.razon_social||'<!-- Razón social -->'}</RznSocRecep>\n`;
-  if(recep.giro)      xml += `        <GiroRecep>${recep.giro}</GiroRecep>\n`;
+  xml += `        <RznSocRecep>${xmlEncodeText(recep.razon_social||'<!-- Razón social -->')}</RznSocRecep>\n`;
+  if(recep.giro)      xml += `        <GiroRecep>${xmlEncodeText(recep.giro)}</GiroRecep>\n`;
   if(!esBoleta){
-    xml += `        <DirRecep>${recep.direccion||'S/D'}</DirRecep>\n`;
-    xml += `        <CmnaRecep>${recep.comuna||'S/C'}</CmnaRecep>\n`;
-    xml += `        <CiudadRecep>${recep.ciudad||'S/C'}</CiudadRecep>\n`;
+    xml += `        <DirRecep>${xmlEncodeText(recep.direccion||'S/D')}</DirRecep>\n`;
+    xml += `        <CmnaRecep>${xmlEncodeText(recep.comuna||'S/C')}</CmnaRecep>\n`;
+    xml += `        <CiudadRecep>${xmlEncodeText(recep.ciudad||'S/C')}</CiudadRecep>\n`;
   }
   xml += `      </Receptor>\n`;
 
@@ -2722,10 +3184,14 @@ function generarXMLEjemplo(set, cd, caso, ci){
     if(mntIVA>0){ xml += `        <TasaIVA>19</TasaIVA>\n`; xml += `        <IVA>${mntIVA}</IVA>\n`; }
   } else {
     if(!forzarCero){
-      xml += `        <MntNeto>${mntNeto}</MntNeto>\n`;
+      // MntNeto solo si hay afectos — NC/ND exenta lo tiene en 0
+      if(mntNeto>0)   xml += `        <MntNeto>${mntNeto}</MntNeto>\n`;
       if(mntExento>0) xml += `        <MntExe>${mntExento}</MntExe>\n`;
-      xml += `        <TasaIVA>19</TasaIVA>\n`;
-      xml += `        <IVA>${mntIVA}</IVA>\n`;
+      // TasaIVA e IVA solo cuando hay IVA real — NO para NC/ND de docs exentos
+      if(mntIVA>0){
+        xml += `        <TasaIVA>19</TasaIVA>\n`;
+        xml += `        <IVA>${mntIVA}</IVA>\n`;
+      }
     }
   }
   xml += `        <MntTotal>${mntTotal}</MntTotal>\n`;
@@ -2733,38 +3199,49 @@ function generarXMLEjemplo(set, cd, caso, ci){
   xml += `    </Encabezado>\n`;
 
   // ── Detalle — orden XSD fiel al xml_builder.py ───────────────────────────
-  // Orden: NroLinDet → [CdgItem] → [IndExe] → NmbItem → QtyItem → [UnmdItem]
-  //        → [PrcItem si ≠0] → [DescuentoPct] → [DescuentoMonto] → MontoItem
-  cd.items.forEach((it, ii)=>{
+  itemsPreview.forEach((it, ii)=>{
+    xml += `    <Detalle>\n`;
+    xml += `      <NroLinDet>${ii+1}</NroLinDet>\n`;
+
+    // CodRef=2 (forzarCero): solo NroLinDet + NmbItem + MontoItem=0
+    // IndExe, QtyItem, PrcItem NO van — el SII los rechaza en este contexto
+    if(forzarCero){
+      xml += `      <NmbItem>${xmlEncodeText(it.nombre)}</NmbItem>\n`;
+      xml += `      <MontoItem>0</MontoItem>\n`;
+      xml += `    </Detalle>\n`;
+      return;
+    }
+
     const qty     = parseFloat(it.cantidad)||0;
     const prc     = parseFloat(it.precio_unitario)||0;
     const base    = qty * prc;
-    const descPct = parseFloat(it.descuento_pct)||0;
+    // Con descuento global: DescuentoPct NO va en el ítem, precio completo
+    // Sin descuento global: respetar descuento individual del ítem
+    const descPct = hayDescGlobal ? 0 : (parseFloat(it.descuento_pct)||0);
     const descMnt = descPct ? Math.round(base*(descPct/100)) : 0;
-    const linea   = forzarCero ? 0 : Math.round(base - descMnt);
+    const linea   = Math.round(base - descMnt);
     const codVal  = (it.codigo_val||'').trim();
     const unmd    = (it.unidad||'').trim();
-
-    xml += `    <Detalle>\n`;
-    xml += `      <NroLinDet>${ii+1}</NroLinDet>\n`;
 
     // CdgItem: TpoCodigo="INT1" (igual que xml_builder.py)
     if(codVal){
       xml += `      <CdgItem>\n`;
       xml += `        <TpoCodigo>INT1</TpoCodigo>\n`;
-      xml += `        <VlrCodigo>${codVal}</VlrCodigo>\n`;
+      xml += `        <VlrCodigo>${xmlEncodeText(codVal)}</VlrCodigo>\n`;
       xml += `      </CdgItem>\n`;
     }
 
     // IndExe ANTES de NmbItem (orden XSD correcto)
-    if(it.exento||esExenta) xml += `      <IndExe>1</IndExe>\n`;
+    // IndExe=1 solo para ítems exentos dentro de docs AFECTOS (T33, T56, T61)
+    // T34 (Factura Exenta): el doc completo es exento → IndExe en ítems causa "No Cuadran"
+    if(it.exento && !esExenta) xml += `      <IndExe>1</IndExe>\n`;
 
-    xml += `      <NmbItem>${it.nombre}</NmbItem>\n`;
-    // QtyItem con 2 decimales — igual que xml_builder.py f"{cantidad:.2f}"
-    xml += `      <QtyItem>${qty.toFixed(2)}</QtyItem>\n`;
-    if(unmd) xml += `      <UnmdItem>${unmd}</UnmdItem>\n`;
-    // PrcItem: omitir si es 0 (ítem ficticio CodRef=2) — igual que xml_builder.py
-    if(Math.round(prc)!==0) xml += `      <PrcItem>${Math.round(prc)}</PrcItem>\n`;
+    xml += `      <NmbItem>${xmlEncodeText(it.nombre)}</NmbItem>\n`;
+    xml += `      <QtyItem>${fmtQty(qty)}</QtyItem>\n`;
+    if(unmd) xml += `      <UnmdItem>${xmlEncodeText(unmd)}</UnmdItem>\n`;
+    // PrcItem solo si > 0 — el XSD del SII exige minInclusive=0.000001
+    // T52 traslado interno y placeholders con precio=0: omitir PrcItem
+    if(Math.round(prc) > 0) xml += `      <PrcItem>${Math.round(prc)}</PrcItem>\n`;
     if(descPct){
       xml += `      <DescuentoPct>${descPct.toFixed(2)}</DescuentoPct>\n`;
       xml += `      <DescuentoMonto>${descMnt}</DescuentoMonto>\n`;
@@ -2772,6 +3249,24 @@ function generarXMLEjemplo(set, cd, caso, ci){
     xml += `      <MontoItem>${linea}</MontoItem>\n`;
     xml += `    </Detalle>\n`;
   });
+
+  // ── DscRcgGlobal — solo si hay descuento global (después de Detalle) ────
+  // Mismo formato que pide el SII: GlosaDR, TpoValor=%, ValorDR sin decimales
+  if(caso.desc_global){
+    const pct       = caso.desc_global;
+    const glosa     = xmlEncodeText(caso.desc_global_glosa||'Porcentaje Variable');
+    const valorDR   = Number.isInteger(pct) ? String(pct) : pct.toFixed(2);
+    const soloAfect = caso.desc_global_solo_afectos !== false;
+    xml += `    <DscRcgGlobal>\n`;
+    xml += `      <NroLinDR>1</NroLinDR>\n`;
+    xml += `      <TpoMov>D</TpoMov>\n`;
+    xml += `      <GlosaDR>${glosa}</GlosaDR>\n`;
+    xml += `      <TpoValor>%</TpoValor>\n`;
+    xml += `      <ValorDR>${valorDR}</ValorDR>\n`;
+    // IndExeDR=1 solo cuando aplica también a exentos (no solo afectos)
+    if(!soloAfect) xml += `      <IndExeDR>1</IndExeDR>\n`;
+    xml += `    </DscRcgGlobal>\n`;
+  }
 
   // ── Referencias — después de Detalle (orden XSD) ─────────────────────────
   (cd.referencias||[]).forEach((ref, ri)=>{
@@ -2783,7 +3278,7 @@ function generarXMLEjemplo(set, cd, caso, ci){
     xml += `      <FchRef>${ref.fecha_ref||fechaHoy}</FchRef>\n`;
     if(!esSet && ref.cod_ref && ['1','2','3'].includes(String(ref.cod_ref)))
       xml += `      <CodRef>${ref.cod_ref}</CodRef>\n`;
-    if(ref.razon_ref) xml += `      <RazonRef>${ref.razon_ref}</RazonRef>\n`;
+    if(ref.razon_ref) xml += `      <RazonRef>${xmlEncodeText(ref.razon_ref)}</RazonRef>\n`;
     xml += `    </Referencia>\n`;
   });
 
@@ -2795,20 +3290,31 @@ function generarXMLEjemplo(set, cd, caso, ci){
   return xml;
 }
 
-/* ── Conversión a ISO-8859-1 (entidades XML numéricas) ──────── */
-// Caracteres fuera del rango ASCII básico (>127) que no son
-// válidos en ISO-8859-1 como texto plano → &#NNN;
-function toISO88591Entities(str){
+/* ── Encoding para nodos de texto XML (ISO-8859-1 + escape XML) ─
+   Reemplaza toISO88591Entities(). Diferencia clave:
+   - Antes: solo convertía chars > 127 (ó ñ Ü...)
+   - Ahora: TAMBIÉN escapa & → &amp; (ASCII 38, no > 127)
+     sin esto "Pintura B&W" genera XML inválido en el preview.
+   Orden obligatorio: & primero, luego chars > 127.           ── */
+function xmlEncodeText(str){
+  if(!str) return '';
+  // PASO 1: & primero — es ASCII (38) así que el loop de abajo no lo captura
+  let s = String(str).replace(/&/g, '&amp;');
+  // PASO 2: chars no-ASCII → entidades numéricas ISO-8859-1
   let out = '';
-  for(let i=0; i<str.length; i++){
-    const code = str.charCodeAt(i);
-    if(code > 127){
-      out += `&#${code};`;  // ñ→&#241; á→&#225; é→&#233; etc.
-    } else {
-      out += str[i];
-    }
+  for(let i=0; i<s.length; i++){
+    const code = s.charCodeAt(i);
+    out += code > 127 ? `&#${code};` : s[i];  // ñ→&#241; á→&#225; Ü→&#220; etc.
   }
   return out;
+}
+
+/* ── Formato de cantidad sin decimales innecesarios ─────────── */
+// Antes: qty.toFixed(2) → "80.00", "1.00"
+// Ahora: fmtQty(qty)    → "80",    "1"   (o "1.50" si decimal real)
+function fmtQty(qty){
+  const n = parseFloat(qty) || 0;
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
 /* ── Syntax highlight con encoding ISO-8859-1 ─────────────────── */
@@ -2897,6 +3403,7 @@ function renderFoliosPorTipo(containerEl, si){
    UI HELPERS
 ══════════════════════════════════════════════════════ */
 function tgl(n){const c=document.getElementById('c'+n);if(c.classList.contains('locked'))return;const b=c.querySelector('.cb');b.style.display=b.style.display==='none'?'block':'none';}
+function tgl_libros(){const b=document.getElementById('cb_libros');b.style.display=b.style.display==='none'?'block':'none';}
 function unlock(n){const c=document.getElementById('c'+n);c.classList.remove('locked');c.classList.add('active');c.querySelector('.cb').style.display='block';c.scrollIntoView({behavior:'smooth',block:'nearest'});}
 function done(n,txt){document.getElementById('c'+n).classList.replace('active','done');const b=document.getElementById('b'+n);b.textContent=txt;b.className='badge ok';}
 function dOv(e,id){e.preventDefault();document.getElementById(id).classList.add('over');}
