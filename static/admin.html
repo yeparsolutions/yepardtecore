@@ -2280,8 +2280,9 @@ async function previewLibroXML(){
   }catch(e){ log('Error: '+e,'err'); }
   finally{ btn.disabled=false; btn.textContent='🔍'; }
 }
+
+async function generarLibroComprasDedicado(){
   if(!S.id){ log('Carga el emisor primero','warn'); return; }
-  const nat = document.getElementById('libro_natencion').value.trim() || '4841545';
   log(`Generando Libro de Compras N°${nat} con datos del set de certificación...`,'info');
   const btn = document.querySelector('#modo_manual_section .btn:last-child');
   if(btn){ btn.disabled=true; btn.textContent='Generando...'; }
