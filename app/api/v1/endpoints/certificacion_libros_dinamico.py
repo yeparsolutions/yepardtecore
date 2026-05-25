@@ -174,27 +174,54 @@ def _construir_libro_xml(
         fecha_str = str(fecha_raw)[:10] if fecha_raw else periodo + "-01"
         rut_doc   = (dte.rut_receptor or "66666666-6").replace(".", "")
         razon_doc = (dte.nombre_receptor or "Consumidor Final")[:50]
+
+        monto_neto  = int(dte.monto_neto  or 0)
+        monto_iva   = int(dte.monto_iva   or 0)
+        monto_total = int(dte.monto_total or 0)
+        monto_exe   = int(getattr(dte, 'monto_exe', 0) or 0)
+
+        # ── Inferir tipo especial IVA desde lo que ya está en BD ────────────
+        # El modelo DTE actual no tiene columnas tipo_especial/iva_no_rec/etc.
+        # Las inferimos desde tipo_dte + montos para no tocar el modelo ni
+        # romper los sets de ventas/boletas/guías que ya funcionan.
+        #
+        # Si las columnas existen (migración futura), se usan directamente.
+        tipo_especial  = getattr(dte, 'tipo_especial', '') or ''
+        iva_uso_comun  = int(getattr(dte, 'iva_uso_comun', 0) or 0)
+        fct_prop       = getattr(dte, 'fct_prop', '0.60') or '0.60'
+        iva_no_rec     = int(getattr(dte, 'iva_no_rec', 0) or 0)
+        cod_iva_no_rec = int(getattr(dte, 'cod_iva_no_rec', 9) or 9)
+        iva_ret_total  = int(getattr(dte, 'iva_ret_total', 0) or 0)
+
+        # Solo inferir si las columnas no existen o están vacías (compatibilidad)
+        if not tipo_especial and not iva_uso_comun and not iva_no_rec and not iva_ret_total:
+            if dte.tipo_dte == 46 and monto_iva > 0:
+                # Doc 46 (Factura de Compra): el IVA siempre es retención total.
+                # El comprador NO tiene crédito fiscal — lo retiene y entera al fisco.
+                tipo_especial = "iva_ret_total"
+                iva_ret_total = monto_iva
+                monto_iva     = 0   # MntIVA=0 en el detalle del libro
+
         docs.append({
             "tipo":           dte.tipo_dte,
             "folio":          dte.folio,
             "fecha":          fecha_str,
             "rut":            rut_doc,
             "razon":          razon_doc,
-            "neto":           int(dte.monto_neto  or 0),
-            "iva":            int(dte.monto_iva   or 0),
-            # Usar monto_exe directo — NO recalcular (rompe casos de IVA especial)
-            "exe":            int(getattr(dte, 'monto_exe', 0) or 0),
-            "total":          int(dte.monto_total or 0),
+            "neto":           monto_neto,
+            "iva":            monto_iva,
+            "exe":            monto_exe,
+            "total":          monto_total,
             "anulado":        getattr(dte, 'anulado', False),
             "ind_traslado":   getattr(dte, 'ind_traslado', None),
             "tipo_despacho":  getattr(dte, 'tipo_despacho', None),
             # Campos especiales IVA (LibroCompras)
-            "tipo_especial":  getattr(dte, 'tipo_especial', ''),
-            "iva_uso_comun":  getattr(dte, 'iva_uso_comun', 0),
-            "fct_prop":       getattr(dte, 'fct_prop', '0.60'),
-            "iva_no_rec":     getattr(dte, 'iva_no_rec', 0),
-            "cod_iva_no_rec": getattr(dte, 'cod_iva_no_rec', 9),
-            "iva_ret_total":  getattr(dte, 'iva_ret_total', 0),
+            "tipo_especial":  tipo_especial,
+            "iva_uso_comun":  iva_uso_comun,
+            "fct_prop":       fct_prop,
+            "iva_no_rec":     iva_no_rec,
+            "cod_iva_no_rec": cod_iva_no_rec,
+            "iva_ret_total":  iva_ret_total,
         })
 
     # ── ResumenPeriodo ────────────────────────────────────────────────────────
@@ -295,7 +322,8 @@ def _construir_libro_xml(
                 etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc.get("cod_iva_no_rec", 9))
                 etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
             elif te == "iva_ret_total":
-                etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
+                # MntIVA=0: el IVA retenido NO es crédito fiscal del comprador
+                etree.SubElement(det, f"{{{NS}}}MntIVA").text      = "0"
                 etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
             else:
                 # Normal o T56/T61: siempre emitir MntIVA
