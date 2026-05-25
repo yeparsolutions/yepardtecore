@@ -705,10 +705,17 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
         Sube los EnvioDTE que el SII ya <strong style="color:var(--accent)">aceptó</strong>.
         El libro se construye desde esos datos exactos — sin BD, sin duplicados, sin necesitar regenerar sets.
       </p>
+
+      <!-- Aviso especial para LibroCompras -->
+      <div id="aviso_compras" style="display:none;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:12px 14px;margin-bottom:12px;font-size:12px;color:var(--text)">
+        ⚠ <strong>Libro de Compras:</strong> los documentos de compra (recibidos de proveedores) <strong>no están en los EnvioDTE</strong> — esos son documentos que emitiste tú.<br>
+        Para certificación usa la sección de <strong>ingreso manual</strong> abajo con los datos del .txt del SII.
+      </div>
+
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
         <div class="f">
           <label>Tipo de Libro</label>
-          <select id="libro_tipo">
+          <select id="libro_tipo" onchange="onLibroTipoChange()">
             <option value="ventas">Libro de Ventas</option>
             <option value="compras">Libro de Compras</option>
             <option value="guias">Libro de Guías</option>
@@ -719,24 +726,64 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
           <input type="text" id="libro_natencion" class="mono" placeholder="ej: 4841544">
         </div>
       </div>
-      <div class="uzone" id="z_libro_xml"
-           ondragover="dOv(event,'z_libro_xml')"
-           ondragleave="dLv('z_libro_xml')"
-           ondrop="dpLibroXML(event)"
-           style="margin-bottom:10px">
-        <input type="file" id="f_libro_xml" accept=".xml" multiple
-               onchange="addLibroXML(this.files)">
-        <div class="uicon">📑</div>
-        <div class="utxt">
-          <strong>Arrastra los EnvioDTE aquí o haz clic</strong>
-          Puedes subir varios — ej: SetBasico + SetExentas para el Libro de Ventas
+
+      <!-- MODO XML (Ventas y Guías) -->
+      <div id="modo_xml_section">
+        <div class="uzone" id="z_libro_xml"
+             ondragover="dOv(event,'z_libro_xml')"
+             ondragleave="dLv('z_libro_xml')"
+             ondrop="dpLibroXML(event)"
+             style="margin-bottom:10px">
+          <input type="file" id="f_libro_xml" accept=".xml" multiple
+                 onchange="addLibroXML(this.files)">
+          <div class="uicon">📑</div>
+          <div class="utxt">
+            <strong>Arrastra los EnvioDTE aquí o haz clic</strong>
+            Puedes subir varios — ej: SetBasico + SetExentas para el Libro de Ventas
+          </div>
         </div>
+        <div id="libro_xml_chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
+        <button class="btn bp bfull" onclick="generarLibroDesdeXML()"
+                id="btn_libro_xml" disabled style="padding:13px">
+          📚 Generar Libro desde XMLs
+        </button>
       </div>
-      <div id="libro_xml_chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
-      <button class="btn bp bfull" onclick="generarLibroDesdeXML()"
-              id="btn_libro_xml" disabled style="padding:13px">
-        📚 Generar Libro
-      </button>
+
+      <!-- MODO MANUAL (Compras — documentos del .txt) -->
+      <div id="modo_manual_section" style="display:none">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:500;text-transform:uppercase;letter-spacing:.5px">
+          Documentos del libro (del .txt del SII)
+          <button onclick="agregarFilaCompra()" style="margin-left:8px;font-size:10px;padding:2px 8px;background:transparent;border:1px solid var(--border2);border-radius:4px;cursor:pointer;color:var(--accent)">+ Agregar</button>
+          <button onclick="limpiarFilasCompra()" style="margin-left:4px;font-size:10px;padding:2px 8px;background:transparent;border:1px solid var(--border2);border-radius:4px;cursor:pointer;color:var(--text3)">Limpiar</button>
+        </div>
+        <div style="overflow-x:auto;margin-bottom:10px">
+          <table style="width:100%;border-collapse:collapse;font-size:11px;font-family:'JetBrains Mono',monospace">
+            <thead>
+              <tr style="color:var(--text3);border-bottom:1px solid var(--border)">
+                <th style="text-align:left;padding:4px 6px;width:70px">TpoDoc</th>
+                <th style="text-align:left;padding:4px 6px;width:70px">Folio</th>
+                <th style="text-align:left;padding:4px 6px;width:100px">Fecha</th>
+                <th style="text-align:left;padding:4px 6px;width:120px">RUT Proveedor</th>
+                <th style="text-align:left;padding:4px 6px">Razón Social</th>
+                <th style="text-align:right;padding:4px 6px;width:90px">Mnt Neto</th>
+                <th style="text-align:right;padding:4px 6px;width:90px">Mnt Exento</th>
+                <th style="text-align:right;padding:4px 6px;width:90px">Mnt IVA</th>
+                <th style="text-align:right;padding:4px 6px;width:90px">Mnt Total</th>
+                <th style="padding:4px 2px;width:24px"></th>
+              </tr>
+            </thead>
+            <tbody id="compras_tbody"></tbody>
+          </table>
+        </div>
+        <!-- Tipos de documento comunes -->
+        <div style="font-size:10px;color:var(--text3);margin-bottom:10px">
+          Tipos: 33=Factura Elect. · 34=Fact.Exenta Elect. · 46=Fact.Compra Elect. · 56=ND Elect. · 61=NC Elect. · 29=Factura papel · 55=ND papel · 60=NC papel
+        </div>
+        <button class="btn bp bfull" onclick="generarLibroManual()" style="padding:13px">
+          📚 Generar Libro de Compras
+        </button>
+      </div>
+
       <!-- Descarga directa — no depende del paso 5 -->
       <div id="dl_libro_box" style="display:none;margin-top:14px;background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.25);border-radius:10px;padding:14px 16px;text-align:center">
         <div style="font-size:28px;margin-bottom:6px">📥</div>
@@ -2083,9 +2130,120 @@ function confirmarSet(){
 }
 
 
-/* ══════════════════════════════════════════════════════
-   FEATURE A: LIBRO DESDE XMLs ACEPTADOS
-══════════════════════════════════════════════════════ */
+/* ── Toggle modo XML vs Manual según tipo de libro ── */
+function onLibroTipoChange(){
+  const tipo = document.getElementById('libro_tipo').value;
+  const esCompras = tipo === 'compras';
+  document.getElementById('aviso_compras').style.display  = esCompras ? 'block' : 'none';
+  document.getElementById('modo_xml_section').style.display    = esCompras ? 'none'  : 'block';
+  document.getElementById('modo_manual_section').style.display = esCompras ? 'block' : 'none';
+  if(esCompras && document.getElementById('compras_tbody').children.length === 0){
+    agregarFilaCompra(); // una fila inicial
+  }
+}
+
+/* ── Modo Manual: tabla de documentos de compra ── */
+let _compraFilaIdx = 0;
+function agregarFilaCompra(tpo='33', folio='', fecha='', rut='', razon='', neto='0', exe='0', iva='0', total='0'){
+  const idx = _compraFilaIdx++;
+  const today = new Date().toISOString().split('T')[0];
+  const tr = document.createElement('tr');
+  tr.id = `cr_${idx}`;
+  tr.style.cssText = 'border-bottom:1px solid var(--border2)';
+  const inp = (val, w, type='text', ph='') =>
+    `<input style="width:${w};background:transparent;border:1px solid var(--border2);border-radius:4px;padding:3px 5px;font-family:inherit;font-size:11px;color:var(--text)" type="${type}" value="${val}" placeholder="${ph}" oninput="actualizarTotalFila(${idx})">`;
+  tr.innerHTML = `
+    <td style="padding:3px">${inp(tpo,'60px','text','33')}</td>
+    <td style="padding:3px">${inp(folio,'55px','text','234')}</td>
+    <td style="padding:3px">${inp(fecha||today,'95px','date')}</td>
+    <td style="padding:3px">${inp(rut,'105px','text','77777777-7')}</td>
+    <td style="padding:3px">${inp(razon,'140px','text','Proveedor')}</td>
+    <td style="padding:3px">${inp(neto,'75px','number','0')}</td>
+    <td style="padding:3px">${inp(exe,'75px','number','0')}</td>
+    <td style="padding:3px">${inp(iva,'75px','number','0')}</td>
+    <td style="padding:3px"><span id="ct_${idx}" style="padding:3px 5px;font-size:11px">${total}</span></td>
+    <td style="padding:3px"><button onclick="document.getElementById('cr_${idx}').remove()" style="background:transparent;border:none;color:var(--text3);cursor:pointer;font-size:14px">×</button></td>`;
+  document.getElementById('compras_tbody').appendChild(tr);
+  actualizarTotalFila(idx);
+}
+
+function actualizarTotalFila(idx){
+  const row = document.getElementById(`cr_${idx}`);
+  if(!row) return;
+  const inputs = row.querySelectorAll('input');
+  const neto = parseInt(inputs[5].value)||0;
+  const exe  = parseInt(inputs[6].value)||0;
+  const iva  = parseInt(inputs[7].value)||0;
+  const span = document.getElementById(`ct_${idx}`);
+  if(span) span.textContent = (neto+exe+iva).toLocaleString('es-CL');
+}
+
+function limpiarFilasCompra(){
+  document.getElementById('compras_tbody').innerHTML='';
+}
+
+function getFilasCompra(){
+  const rows = document.querySelectorAll('#compras_tbody tr');
+  return Array.from(rows).map(tr=>{
+    const inp = tr.querySelectorAll('input');
+    const neto = parseInt(inp[5].value)||0;
+    const exe  = parseInt(inp[6].value)||0;
+    const iva  = parseInt(inp[7].value)||0;
+    return {
+      tipo_dte:       parseInt(inp[0].value)||33,
+      folio:          parseInt(inp[1].value)||0,
+      fecha_emision:  inp[2].value || new Date().toISOString().split('T')[0],
+      rut_receptor:   inp[3].value.trim() || '66666666-6',
+      nombre_receptor:inp[4].value.trim() || 'Proveedor',
+      monto_neto:     neto,
+      monto_iva:      iva,
+      monto_total:    neto+exe+iva,
+      monto_exe:      exe,
+    };
+  }).filter(r=>r.folio>0);
+}
+
+async function generarLibroManual(){
+  if(!S.id){ log('Carga el emisor primero','warn'); return; }
+  const nat = document.getElementById('libro_natencion').value.trim();
+  if(!nat){ log('Ingresa el N° de atención del libro','warn'); return; }
+  const filas = getFilasCompra();
+  if(!filas.length){ log('Agrega al menos un documento','warn'); return; }
+
+  const periodoHoy = new Date().toISOString().slice(0,7);
+  // Convertir filas a formato DTE simplificado y enviar como JSON al endpoint manual
+  const body = {
+    emisor_id: S.id,
+    tipo_libro: 'compras',
+    natencion: nat,
+    periodo: periodoHoy,
+    dtes: filas,
+  };
+  const btn = document.querySelector('#modo_manual_section .btn');
+  btn.disabled=true; btn.textContent='Generando...';
+  log(`Generando Libro de Compras manual con ${filas.length} documentos...`,'info');
+  try{
+    const r = await fetch(base()+'/v1/certificacion-libros/manual', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    if(!r.ok){ const t=await r.text(); log('Error '+r.status+': '+t.slice(0,300),'err'); return; }
+    const cd = r.headers.get('Content-Disposition')||'';
+    const m  = cd.match(/filename="([^"]+)"/);
+    S.xmlNombre = m ? m[1] : `LibroCompras_${nat}.xml`;
+    S.xmlBlob   = await r.blob();
+    document.getElementById('dl_libro_nombre').textContent = S.xmlNombre;
+    document.getElementById('dl_libro_box').style.display  = 'block';
+    log(`✓ Libro de Compras generado — ${filas.length} documentos`,'ok');
+    const box=document.getElementById('r_libro_xml');
+    box.className='result show ok';
+    document.getElementById('r_libro_xml_l').className='rlbl ok';
+    document.getElementById('r_libro_xml_l').textContent='✓ libro generado';
+    document.getElementById('r_libro_xml_c').textContent=`${S.xmlNombre}\n${filas.length} documentos ingresados manualmente.`;
+  }catch(e){ log('Error: '+e,'err'); }
+  finally{ btn.disabled=false; btn.textContent='📚 Generar Libro de Compras'; }
+}
 const _libroXMLFiles = [];
 
 function dpLibroXML(e){ e.preventDefault(); dLv('z_libro_xml'); addLibroXML(e.dataTransfer.files); }
