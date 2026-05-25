@@ -175,15 +175,16 @@ def _construir_libro_xml(
         rut_doc   = (dte.rut_receptor or "66666666-6").replace(".", "")
         razon_doc = (dte.nombre_receptor or "Consumidor Final")[:50]
         docs.append({
-            "tipo":  dte.tipo_dte,
-            "folio": dte.folio,
-            "fecha": fecha_str,
-            "rut":   rut_doc,
-            "razon": razon_doc,
-            "neto":  int(dte.monto_neto  or 0),
-            "iva":   int(dte.monto_iva   or 0),
-            "exe":   int((dte.monto_total or 0) - (dte.monto_neto or 0) - (dte.monto_iva or 0)),
-            "total": int(dte.monto_total or 0),
+            "tipo":    dte.tipo_dte,
+            "folio":   dte.folio,
+            "fecha":   fecha_str,
+            "rut":     rut_doc,
+            "razon":   razon_doc,
+            "neto":    int(dte.monto_neto  or 0),
+            "iva":     int(dte.monto_iva   or 0),
+            "exe":     int((dte.monto_total or 0) - (dte.monto_neto or 0) - (dte.monto_iva or 0)),
+            "total":   int(dte.monto_total or 0),
+            "anulado": getattr(dte, 'anulado', False),
         })
 
     # ── ResumenPeriodo ────────────────────────────────────────────────────────
@@ -191,13 +192,14 @@ def _construir_libro_xml(
 
     if es_guias:
         # LibroGuia_v10.xsd: ResumenPeriodo con TotalesPeriodo agrupado por TpoDoc=52
-        # (misma estructura que LibroCV pero con campos específicos de guías)
-        guias_venta  = [d for d in docs if d["total"] > 0]
+        # Anulado=2 para guías anuladas, Anulado=1 para vigentes
+        guias_venta  = [d for d in docs if d["total"] > 0 and not d.get("anulado")]
+        guias_anuld  = [d for d in docs if d.get("anulado")]
         tot_mnt_vta  = sum(d["total"] for d in guias_venta)
         tot_p = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
         etree.SubElement(tot_p, f"{{{NS}}}TpoDoc").text        = "52"
-        etree.SubElement(tot_p, f"{{{NS}}}TotFolAnulado").text = "0"
-        etree.SubElement(tot_p, f"{{{NS}}}TotGuiaAnulada").text= "0"
+        etree.SubElement(tot_p, f"{{{NS}}}TotFolAnulado").text = str(len(guias_anuld))
+        etree.SubElement(tot_p, f"{{{NS}}}TotGuiaAnulada").text= str(len(guias_anuld))
         etree.SubElement(tot_p, f"{{{NS}}}TotGuiaVenta").text  = str(len(guias_venta))
         if tot_mnt_vta > 0:
             etree.SubElement(tot_p, f"{{{NS}}}TotMntGuiaVta").text = str(tot_mnt_vta)
@@ -222,9 +224,8 @@ def _construir_libro_xml(
             #                    → [RUTDoc] → [RznSoc] → [MntNeto] → [TasaImp] → [IVA]
             #                    → [MntExe] → MntTotal
             etree.SubElement(det, f"{{{NS}}}Folio").text   = str(doc["folio"])
-            # Anulado: enum [1,2,3] — 1=vigente, 2=anulada, 3=no despachada
-            # (NO usar 0 — el XSD de LibroGuia solo acepta enteros 1,2,3)
-            etree.SubElement(det, f"{{{NS}}}Anulado").text = "1"
+            # Anulado: 1=vigente, 2=anulada (según campo marcado por el usuario)
+            etree.SubElement(det, f"{{{NS}}}Anulado").text = "2" if doc.get("anulado") else "1"
             # IndTraslado: no está en el modelo DTE — omitir (campo opcional)
             etree.SubElement(det, f"{{{NS}}}FchDoc").text  = doc["fecha"]
             if doc["rut"]:
@@ -426,6 +427,7 @@ class _DTEFake:
         self.monto_total     = d.get("monto_total", 0)
         self.estado          = "ACEPTADO"
         self.ambiente        = "certificacion"
+        self.anulado         = bool(d.get("anulado", False))
 
 
 @router.post(
@@ -447,6 +449,7 @@ async def generar_libro_desde_xml(
     archivos:   list[UploadFile] = File(...),  # uno o más EnvioDTE XML
     fch_resol:  str           = Form("2026-04-19"),
     nro_resol:  str           = Form("0"),
+    folios_anulados: str      = Form(""),    # LibroGuías: folios anulados, e.g. "76,77"
     db: AsyncSession = Depends(get_db),
 ):
     if tipo_libro not in ("ventas", "compras", "guias"):
@@ -464,6 +467,13 @@ async def generar_libro_desde_xml(
     if not cert:
         raise HTTPException(400, "Sin certificado .p12 cargado")
 
+    # Parsear folios anulados (LibroGuías: "76,77" → {76, 77})
+    folios_anulados_set: set[int] = set()
+    for f in (folios_anulados or "").split(","):
+        f = f.strip()
+        if f.isdigit():
+            folios_anulados_set.add(int(f))
+
     # Parsear todos los XMLs subidos
     todos_dtes: list[_DTEFake] = []
     folios_vistos: set = set()
@@ -477,8 +487,10 @@ async def generar_libro_desde_xml(
 
         for d in dtes_xml:
             key = (d["tipo_dte"], d["folio"])
-            if key not in folios_vistos:          # deduplicar si suben mismo DTE dos veces
+            if key not in folios_vistos:
                 folios_vistos.add(key)
+                # Marcar como anulado si el folio está en la lista del usuario
+                d["anulado"] = d["folio"] in folios_anulados_set
                 todos_dtes.append(_DTEFake(d))
 
     if not todos_dtes:
