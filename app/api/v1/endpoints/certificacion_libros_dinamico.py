@@ -190,18 +190,17 @@ def _construir_libro_xml(
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
 
     if es_guias:
-        # LibroGuia_v10.xsd: estructura propia — NO usa TotalesPeriodo
-        # TotFolAnulado: folios anulados (0 en certificación)
-        # TotGuiaAnulada: guías anuladas (0 en certificación)
-        # TotGuiaVenta: número de guías de venta (con monto > 0)
-        # TotMntGuiaVta: suma de MntTotal de guías de venta
+        # LibroGuia_v10.xsd: ResumenPeriodo con TotalesPeriodo agrupado por TpoDoc=52
+        # (misma estructura que LibroCV pero con campos específicos de guías)
         guias_venta  = [d for d in docs if d["total"] > 0]
         tot_mnt_vta  = sum(d["total"] for d in guias_venta)
-        etree.SubElement(resumen, f"{{{NS}}}TotFolAnulado").text  = "0"
-        etree.SubElement(resumen, f"{{{NS}}}TotGuiaAnulada").text = "0"
-        etree.SubElement(resumen, f"{{{NS}}}TotGuiaVenta").text   = str(len(guias_venta))
+        tot_p = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
+        etree.SubElement(tot_p, f"{{{NS}}}TpoDoc").text        = "52"
+        etree.SubElement(tot_p, f"{{{NS}}}TotFolAnulado").text = "0"
+        etree.SubElement(tot_p, f"{{{NS}}}TotGuiaAnulada").text= "0"
+        etree.SubElement(tot_p, f"{{{NS}}}TotGuiaVenta").text  = str(len(guias_venta))
         if tot_mnt_vta > 0:
-            etree.SubElement(resumen, f"{{{NS}}}TotMntGuiaVta").text = str(tot_mnt_vta)
+            etree.SubElement(tot_p, f"{{{NS}}}TotMntGuiaVta").text = str(tot_mnt_vta)
     else:
         # LibroCV_v10.xsd: TotalesPeriodo por tipo de documento
         for tipo_doc in sorted(set(d["tipo"] for d in docs)):
