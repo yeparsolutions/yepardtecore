@@ -739,7 +739,18 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
           <div class="uicon">📑</div>
           <div class="utxt">
             <strong>Arrastra los EnvioDTE aquí o haz clic</strong>
-            Puedes subir varios — ej: SetBasico + SetExentas para el Libro de Ventas
+            <span id="utxt_hint">Puedes subir varios — ej: SetBasico + SetExentas para el Libro de Ventas</span>
+          </div>
+        </div>
+        <!-- Folios anulados — solo visible para LibroGuías -->
+        <div id="guias_anulados_section" style="display:none;margin-bottom:10px">
+          <div class="f">
+            <label>🗑 Folios anulados (del .txt: "CASO N corresponde a una guía anulada")</label>
+            <input type="text" id="guias_folios_anulados" class="mono"
+                   placeholder="ej: 76  (separados por coma si hay varios)">
+            <span style="font-size:11px;color:var(--text3)">
+              Estos folios se incluirán con Anulado=2 y quedarán fuera de TotGuiaVenta
+            </span>
           </div>
         </div>
         <div id="libro_xml_chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
@@ -2134,11 +2145,21 @@ function confirmarSet(){
 function onLibroTipoChange(){
   const tipo = document.getElementById('libro_tipo').value;
   const esCompras = tipo === 'compras';
-  document.getElementById('aviso_compras').style.display  = esCompras ? 'block' : 'none';
-  document.getElementById('modo_xml_section').style.display    = esCompras ? 'none'  : 'block';
-  document.getElementById('modo_manual_section').style.display = esCompras ? 'block' : 'none';
+  const esGuias   = tipo === 'guias';
+  const esVentas  = tipo === 'ventas';
+  document.getElementById('aviso_compras').style.display         = esCompras ? 'block' : 'none';
+  document.getElementById('modo_xml_section').style.display      = esCompras ? 'none'  : 'block';
+  document.getElementById('modo_manual_section').style.display   = esCompras ? 'block' : 'none';
+  document.getElementById('guias_anulados_section').style.display = esGuias  ? 'block' : 'none';
+  // Actualizar hint de la zona de upload
+  const hint = document.getElementById('utxt_hint');
+  if(hint){
+    if(esVentas) hint.textContent = 'Sube SOLO el XML del Set Básico (no Set Exentas)';
+    else if(esGuias) hint.textContent = 'Sube el XML del Set Guías de Despacho';
+    else hint.textContent = 'Puedes subir varios XMLs';
+  }
   if(esCompras && document.getElementById('compras_tbody').children.length === 0){
-    agregarFilaCompra(); // una fila inicial
+    agregarFilaCompra();
   }
 }
 
@@ -2281,6 +2302,8 @@ async function generarLibroDesdeXML(){
 
   const btn = document.getElementById('btn_libro_xml');
   btn.disabled = true; btn.textContent = 'Generando...';
+  const foliosAnulados = document.getElementById('guias_folios_anulados')?.value.trim() || '';
+  if(foliosAnulados) fd.append('folios_anulados', foliosAnulados);
   log(`Generando Libro ${tipo} N° ${nat} desde ${_libroXMLFiles.length} XML(s)...`,'info');
 
   // Auto-detectar período desde los XMLs o usar mes actual
