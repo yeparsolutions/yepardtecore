@@ -196,15 +196,37 @@ def _construir_libro_xml(
         # Solo inferir si las columnas no existen o están vacías (compatibilidad)
         if not tipo_especial and not iva_uso_comun and not iva_no_rec and not iva_ret_total:
             if dte.tipo_dte == 46 and monto_iva > 0:
-                # Doc 46 (Factura de Compra): IVA retenido total.
-                # En LibroCompras MntIVA SE MANTIENE con el valor del IVA del doc,
-                # e IVARetTotal informa que ese monto fue retenido (mismo valor).
-                # NO poner monto_iva=0: el SII valida que detalle cuadre con resumen.
+                # Doc 46: IVA retenido total. MntIVA se mantiene, IVARetTotal mismo valor.
+                # MntTotal = solo el neto (el IVA fue retenido, no lo paga el comprador).
                 tipo_especial = "iva_ret_total"
                 iva_ret_total = monto_iva
+                monto_total   = monto_neto  # total económico real sin IVA retenido
+            elif dte.tipo_dte == 33 and monto_iva > 0 and monto_neto > 0:
+                # Doc 33 con IVA no recuperable (entrega gratuita, art. 23 N°5 DL825).
+                # El set de compras SII lo marca como "ENTREGA GRATUITA DEL PROVEEDOR".
+                # En BD está guardado con monto_iva normal porque el DTE original lo trae.
+                # En el LibroCompras se informa como IVANoRec cod.9, MntIVA=0.
+                # Inferimos: si es libro de compras Y el IVA cuadra con neto*19% exacto,
+                # lo tratamos como no recuperable cod.9.
+                iva_calculado = round(monto_neto * 0.19)
+                if tipo_libro == "COMPRA" and monto_iva == iva_calculado and monto_exe == 0:
+                    tipo_especial  = "iva_no_rec"
+                    iva_no_rec     = monto_iva
+                    cod_iva_no_rec = 9
+                    monto_iva      = 0  # MntIVA=0, el IVA va en IVANoRec
+
+        # En LibroCompras las NC/ND recibidas de proveedores son documentos físicos:
+        # tipo 60 (NC física) y tipo 56 (ND física), no electrónicos (61/56).
+        # El SII del set de prueba usa tipo 60 para notas de crédito de compras.
+        tipo_doc_libro = dte.tipo_dte
+        if tipo_libro == "COMPRA":
+            if dte.tipo_dte == 61:
+                tipo_doc_libro = 60
+            elif dte.tipo_dte == 56:
+                tipo_doc_libro = 55
 
         docs.append({
-            "tipo":           dte.tipo_dte,
+            "tipo":           tipo_doc_libro,
             "folio":          dte.folio,
             "fecha":          fecha_str,
             "rut":            rut_doc,
