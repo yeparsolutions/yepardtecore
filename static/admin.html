@@ -1840,8 +1840,27 @@ function updateCasoStatus(si,ci){
 /* ══════════════════════════════════════════════════════
    MODAL WIZARD — MULTI-SET
 ══════════════════════════════════════════════════════ */
-function abrirWizard(){if(!S.setsDetectados||!S.setsDetectados.length)return;abrirWizardSet(0,0);}
-function abrirWizardSet(si,ci=0){S.setActivo=si;S.casoActual=ci;renderModalCaso(si,ci);document.getElementById('modalOverlay').classList.add('open');document.body.style.overflow='hidden';}
+function abrirWizard(){
+  if(!S.setsDetectados||!S.setsDetectados.length)return;
+  // Saltar libros — buscar el primer set con casos
+  const idx = S.setsDetectados.findIndex(s=>!s.esLibro && s.casos.length>0);
+  if(idx<0) return;
+  abrirWizardSet(idx,0);
+}
+function abrirWizardSet(si,ci=0){
+  const set=S.setsDetectados[si];
+  if(!set||set.esLibro){
+    // Es un libro — abrir el wizard de libro en su lugar
+    if(set) abrirLibroDesdePanel(set.key, set.natencion);
+    return;
+  }
+  const cd=set.casoData?.[ci];
+  if(!cd){ console.warn('casoData['+ci+'] undefined'); return; }
+  S.setActivo=si;S.casoActual=ci;
+  renderModalCaso(si,ci);
+  document.getElementById('modalOverlay').classList.add('open');
+  document.body.style.overflow='hidden';
+}
 function closeModal(){document.getElementById('modalOverlay').classList.remove('open');document.body.style.overflow='';}
 function handleOverlayClick(e){if(e.target===document.getElementById('modalOverlay'))closeModal();}
 
@@ -2486,8 +2505,8 @@ function onLibroTipoChange(){
     else if(esGuias) hint.textContent = 'Sube el XML del Set Guías de Despacho';
     else hint.textContent = 'Puedes subir varios XMLs';
   }
-  if(esCompras && document.getElementById('compras_tbody').children.length === 0){
-    agregarFilaCompra();
+  if(esCompras && document.getElementById('libro_wizard_modal')){
+    // LibroCompras: el wizard se abre manualmente con el botón
   }
 }
 
