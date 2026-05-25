@@ -191,18 +191,16 @@ def _construir_libro_xml(
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
 
     if es_guias:
-        # LibroGuia_v10.xsd: ResumenPeriodo con TotalesPeriodo agrupado por TpoDoc=52
-        # Anulado=2 para guías anuladas, Anulado=1 para vigentes
+        # LibroGuia_v10.xsd: TotFolAnulado, TotGuiaAnulada, TotGuiaVenta van DIRECTO
+        # en ResumenPeriodo — NO dentro de TotalesPeriodo (ese es el wrapper de LibroCV)
         guias_venta  = [d for d in docs if d["total"] > 0 and not d.get("anulado")]
         guias_anuld  = [d for d in docs if d.get("anulado")]
         tot_mnt_vta  = sum(d["total"] for d in guias_venta)
-        tot_p = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
-        etree.SubElement(tot_p, f"{{{NS}}}TpoDoc").text        = "52"
-        etree.SubElement(tot_p, f"{{{NS}}}TotFolAnulado").text = str(len(guias_anuld))
-        etree.SubElement(tot_p, f"{{{NS}}}TotGuiaAnulada").text= str(len(guias_anuld))
-        etree.SubElement(tot_p, f"{{{NS}}}TotGuiaVenta").text  = str(len(guias_venta))
+        etree.SubElement(resumen, f"{{{NS}}}TotFolAnulado").text  = str(len(guias_anuld))
+        etree.SubElement(resumen, f"{{{NS}}}TotGuiaAnulada").text = str(len(guias_anuld))
+        etree.SubElement(resumen, f"{{{NS}}}TotGuiaVenta").text   = str(len(guias_venta))
         if tot_mnt_vta > 0:
-            etree.SubElement(tot_p, f"{{{NS}}}TotMntGuiaVta").text = str(tot_mnt_vta)
+            etree.SubElement(resumen, f"{{{NS}}}TotMntGuiaVta").text = str(tot_mnt_vta)
     else:
         # LibroCV_v10.xsd: TotalesPeriodo por tipo de documento
         for tipo_doc in sorted(set(d["tipo"] for d in docs)):
