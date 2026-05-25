@@ -32,7 +32,7 @@ DOCUMENTOS = [
     {"tipo": 30, "folio": 781, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
      "neto": 29947, "exe": 0, "iva": 0, "iva_uso_comun": _iva(29947),
      "total": 29947 + _iva(29947), "tipo_especial": "iva_uso_comun"},
-    {"tipo": 60, "folio": 451, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
+    {"tipo": 61, "folio": 451, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
      "neto": 2807, "exe": 0, "iva": _iva(2807), "total": 2807 + _iva(2807), "tipo_especial": None},
     {"tipo": 33, "folio": 67, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
      "neto": 10913, "exe": 0, "iva": 0, "iva_no_rec": _iva(10913), "cod_iva_no_rec": 9,
