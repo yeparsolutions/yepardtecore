@@ -768,41 +768,27 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
         </div>
       </div>
 
-      <!-- MODO MANUAL (Compras — documentos del .txt) -->
+
+      <!-- MODO MANUAL (Compras — wizard caso por caso) -->
       <div id="modo_manual_section" style="display:none">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:500;text-transform:uppercase;letter-spacing:.5px">
-          Documentos del libro (del .txt del SII)
-          <button onclick="agregarFilaCompra()" style="margin-left:8px;font-size:10px;padding:2px 8px;background:transparent;border:1px solid var(--border2);border-radius:4px;cursor:pointer;color:var(--accent)">+ Agregar</button>
-          <button onclick="limpiarFilasCompra()" style="margin-left:4px;font-size:10px;padding:2px 8px;background:transparent;border:1px solid var(--border2);border-radius:4px;cursor:pointer;color:var(--text3)">Limpiar</button>
-        </div>
-        <div style="overflow-x:auto;margin-bottom:10px">
-          <table style="width:100%;border-collapse:collapse;font-size:11px;font-family:'JetBrains Mono',monospace">
-            <thead>
-              <tr style="color:var(--text3);border-bottom:1px solid var(--border)">
-                <th style="text-align:left;padding:4px 6px;width:70px">TpoDoc</th>
-                <th style="text-align:left;padding:4px 6px;width:70px">Folio</th>
-                <th style="text-align:left;padding:4px 6px;width:100px">Fecha</th>
-                <th style="text-align:left;padding:4px 6px;width:120px">RUT Proveedor</th>
-                <th style="text-align:left;padding:4px 6px">Razón Social</th>
-                <th style="text-align:right;padding:4px 6px;width:90px">Mnt Neto</th>
-                <th style="text-align:right;padding:4px 6px;width:90px">Mnt Exento</th>
-                <th style="text-align:right;padding:4px 6px;width:90px">Mnt IVA</th>
-                <th style="text-align:right;padding:4px 6px;width:90px">Mnt Total</th>
-                <th style="padding:4px 2px;width:24px"></th>
-              </tr>
-            </thead>
-            <tbody id="compras_tbody"></tbody>
-          </table>
-        </div>
-        <!-- Tipos de documento comunes -->
-        <div style="font-size:10px;color:var(--text3);margin-bottom:10px">
-          Tipos: 33=Factura Elect. · 34=Fact.Exenta Elect. · 46=Fact.Compra Elect. · 56=ND Elect. · 61=NC Elect. · 29=Factura papel · 55=ND papel · 60=NC papel
-        </div>
-        <button class="btn bp bfull" onclick="generarLibroManual()" style="padding:13px">
-          📚 Generar Libro de Compras (ingreso manual)
+        <button class="btn bp bfull" onclick="abrirLibroWizard('compras')" style="padding:13px;margin-bottom:8px">
+          📋 Revisar y completar documentos del Libro de Compras
         </button>
-        <button class="btn" onclick="generarLibroComprasDedicado()" style="padding:11px;margin-top:8px;width:100%;background:rgba(16,185,129,.1);border:1px solid var(--accent);color:var(--accent)">
-          ⚡ Generar con datos del Set 4841545 (automático)
+        <!-- Resumen de docs confirmados -->
+        <div id="compras_wizard_resumen" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px">
+          <div id="compras_wizard_resumen_txt" style="color:var(--text3)"></div>
+        </div>
+        <button class="btn bp bfull" onclick="generarLibroManual()" id="btn_gen_compras_manual"
+                style="padding:13px;display:none">
+          📚 Generar Libro de Compras
+        </button>
+        <button class="btn bfull" onclick="previewLibroManual()" id="btn_preview_compras"
+                style="padding:11px;margin-top:6px;display:none;background:var(--bg2);border:1px solid var(--border2);color:var(--text3)">
+          🔍 Vista previa XML
+        </button>
+        <button class="btn bfull" onclick="generarLibroComprasDedicado()"
+                style="padding:11px;margin-top:8px;background:rgba(16,185,129,.1);border:1px solid var(--accent);color:var(--accent)">
+          ⚡ Generar automático (Set 4841545)
         </button>
       </div>
 
@@ -818,6 +804,100 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
         <div class="rbody" id="r_libro_xml_c"></div>
       </div>
     </div>
+
+<!-- ══════════════════ MODAL WIZARD DE LIBROS ══════════════════ -->
+<div id="libro_wizard_modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:8000;align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--bg);border-radius:14px;width:100%;max-width:680px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.4)">
+    <!-- Header -->
+    <div style="padding:16px 20px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">
+      <span id="lw_tipo_badge" style="font-size:10px;font-weight:600;padding:3px 10px;border-radius:20px;background:rgba(59,130,246,.15);color:#3b82f6;letter-spacing:.5px;text-transform:uppercase">COMPRAS</span>
+      <span id="lw_natencion_badge" style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text3)"></span>
+      <!-- Progress dots -->
+      <div id="lw_dots" style="display:flex;gap:5px;margin-left:auto"></div>
+      <button onclick="cerrarLibroWizard()" style="background:transparent;border:none;color:var(--text3);font-size:20px;cursor:pointer;line-height:1;margin-left:8px">×</button>
+    </div>
+    <!-- Body scrollable -->
+    <div style="overflow-y:auto;flex:1;padding:20px">
+      <div id="lw_caso_header" style="margin-bottom:16px">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px" id="lw_caso_label"></div>
+        <div style="font-size:17px;font-weight:700;color:var(--text)" id="lw_doc_tipo"></div>
+        <div style="font-size:12px;color:var(--text3);margin-top:3px" id="lw_obs_label"></div>
+      </div>
+      <!-- Campos del documento -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+        <div class="f">
+          <label>Tipo Documento (TpoDoc)</label>
+          <select id="lw_tpodoc" style="font-family:'JetBrains Mono',monospace">
+            <option value="30">30 — Factura</option>
+            <option value="33">33 — Factura Electrónica</option>
+            <option value="34">34 — Fact. Exenta Elect.</option>
+            <option value="46">46 — Fact. Compra Elect.</option>
+            <option value="56">56 — Nota Débito Elect.</option>
+            <option value="60">60 — Nota Crédito</option>
+            <option value="61">61 — Nota Crédito Elect.</option>
+          </select>
+        </div>
+        <div class="f">
+          <label>Folio</label>
+          <input type="number" id="lw_folio" class="mono" onfocus="this.select()">
+        </div>
+        <div class="f">
+          <label>Fecha Documento</label>
+          <input type="date" id="lw_fecha">
+        </div>
+        <div class="f">
+          <label>RUT Proveedor / Emisor</label>
+          <input type="text" id="lw_rut" class="mono" placeholder="76354771-K" onfocus="this.select()">
+        </div>
+        <div class="f" style="grid-column:1/-1">
+          <label>Razón Social</label>
+          <input type="text" id="lw_razon" placeholder="PROVEEDOR SA">
+        </div>
+      </div>
+      <!-- Montos -->
+      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Montos</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+        <div class="f"><label>Monto Neto</label><input type="number" id="lw_neto" class="mono" value="0" onfocus="this.select()" oninput="lwCalcTotal()"></div>
+        <div class="f"><label>Monto Exento</label><input type="number" id="lw_exe" class="mono" value="0" onfocus="this.select()" oninput="lwCalcTotal()"></div>
+        <div class="f"><label>IVA 19%</label><input type="number" id="lw_iva" class="mono" value="0" onfocus="this.select()" oninput="lwCalcTotal()"></div>
+      </div>
+      <!-- Casos especiales IVA -->
+      <div id="lw_especiales" style="margin-bottom:14px">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
+          Tratamiento especial de IVA
+          <select id="lw_tipo_especial" onchange="lwToggleEspecial()" style="margin-left:10px;font-size:11px;padding:2px 6px;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--text)">
+            <option value="">— Normal —</option>
+            <option value="iva_uso_comun">IVA Uso Común (Factor prop.)</option>
+            <option value="iva_no_rec">IVA No Recuperable (Entrega gratuita)</option>
+            <option value="iva_ret_total">IVA Retención Total</option>
+          </select>
+        </div>
+        <div id="lw_uc_panel" style="display:none;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:8px;padding:10px 12px">
+          <div class="f"><label>Monto IVA Uso Común</label><input type="number" id="lw_iva_uc" class="mono" value="0" onfocus="this.select()"></div>
+          <div class="f" style="margin-top:8px"><label>Factor Proporcionalidad</label><input type="text" id="lw_fct_prop" class="mono" value="0.60"></div>
+        </div>
+        <div id="lw_nr_panel" style="display:none;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:8px;padding:10px 12px">
+          <div class="f"><label>Monto IVA No Recuperable</label><input type="number" id="lw_iva_nr" class="mono" value="0" onfocus="this.select()"></div>
+        </div>
+        <div id="lw_ret_panel" style="display:none;background:rgba(99,102,241,.06);border:1px solid rgba(99,102,241,.2);border-radius:8px;padding:10px 12px">
+          <div class="f"><label>Monto IVA Retenido Total</label><input type="number" id="lw_iva_ret" class="mono" value="0" onfocus="this.select()"></div>
+        </div>
+      </div>
+      <!-- Total calculado -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:13px;color:var(--text3)">Monto Total calculado</span>
+        <span id="lw_total_calc" style="font-size:20px;font-weight:700;color:var(--accent);font-family:'JetBrains Mono',monospace">$0</span>
+      </div>
+    </div>
+    <!-- Footer -->
+    <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px">
+      <span id="lw_progress_label" style="font-size:12px;color:var(--text3);flex:1">Doc 1 de 7 · pendiente</span>
+      <button onclick="lwPreviewXML()" style="padding:9px 14px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text3);cursor:pointer;font-size:13px">🔍 Preview</button>
+      <button onclick="lwAnterior()" id="btn_lw_prev" style="padding:9px 14px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);cursor:pointer;font-size:13px">← Anterior</button>
+      <button onclick="lwSiguiente()" id="btn_lw_next" style="padding:9px 18px;background:var(--accent);border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:13px;font-weight:600">Siguiente →</button>
+    </div>
+  </div>
+</div>
   </div>
 
 </div><!-- /steps -->
@@ -2152,7 +2232,241 @@ function confirmarSet(){
 }
 
 
-/* ── Toggle modo XML vs Manual según tipo de libro ── */
+/* ══════════════════════════════════════════════════════
+   LIBRO WIZARD — Caso por caso (igual que el wizard de sets)
+══════════════════════════════════════════════════════ */
+
+// Documentos pre-cargados del Set Libro Compras 4841545
+// El usuario los revisa y edita caso por caso antes de generar
+const LIBRO_COMPRAS_DOCS_DEFAULT = [
+  { tipo:30, folio:234, obs:'FACTURA DEL GIRO CON DERECHO A CREDITO',
+    neto:34744, exe:0, iva:Math.round(34744*.19), tipo_especial:'', label:'Factura' },
+  { tipo:33, folio:32,  obs:'FACTURA DEL GIRO CON DERECHO A CREDITO',
+    neto:8608, exe:9597, iva:Math.round(8608*.19), tipo_especial:'', label:'Factura Electrónica' },
+  { tipo:30, folio:781, obs:'FACTURA CON IVA USO COMUN — factor 0.60',
+    neto:29947, exe:0, iva:0, iva_uso_comun:Math.round(29947*.19), fct_prop:'0.60',
+    tipo_especial:'iva_uso_comun', label:'Factura' },
+  { tipo:60, folio:451, obs:'NOTA DE CREDITO POR DESCUENTO A FACTURA 234',
+    neto:2807, exe:0, iva:Math.round(2807*.19), tipo_especial:'', label:'Nota de Crédito' },
+  { tipo:33, folio:67,  obs:'ENTREGA GRATUITA DEL PROVEEDOR — IVA no recuperable',
+    neto:10913, exe:0, iva:0, iva_no_rec:Math.round(10913*.19),
+    tipo_especial:'iva_no_rec', label:'Factura Electrónica' },
+  { tipo:46, folio:9,   obs:'COMPRA CON RETENCION TOTAL DEL IVA',
+    neto:10019, exe:0, iva:Math.round(10019*.19), iva_ret_total:Math.round(10019*.19),
+    tipo_especial:'iva_ret_total', label:'Factura de Compra Electrónica' },
+  { tipo:61, folio:211, obs:'NOTA DE CREDITO POR DESCUENTO FACTURA ELECTRONICA 32',
+    neto:0, exe:6396, iva:0, tipo_especial:'', label:'Nota de Crédito Electrónica' },
+];
+LIBRO_COMPRAS_DOCS_DEFAULT.forEach(d=>{
+  d.rut = '76354771-K'; d.razon = 'PROVEEDOR SA';
+  d.fecha = '2026-05-22';
+  d.total = d.neto + d.exe + d.iva + (d.iva_uso_comun||0) + (d.iva_no_rec||0);
+  d.confirmado = false;
+});
+
+const LW = {
+  tipo: 'compras',
+  docs: [],
+  idx: 0,
+};
+
+function abrirLibroWizard(tipo){
+  LW.tipo = tipo;
+  LW.idx  = 0;
+  // Pre-cargar documentos según el tipo
+  if(tipo === 'compras'){
+    LW.docs = LIBRO_COMPRAS_DOCS_DEFAULT.map(d=>({...d}));
+  }
+  // Inicializar modal
+  document.getElementById('lw_tipo_badge').textContent = tipo.toUpperCase();
+  const nat = document.getElementById('libro_natencion').value.trim() || '4841545';
+  document.getElementById('lw_natencion_badge').textContent = 'N° ' + nat;
+  document.getElementById('libro_wizard_modal').style.display = 'flex';
+  lwRenderDoc();
+}
+
+function cerrarLibroWizard(){
+  document.getElementById('libro_wizard_modal').style.display = 'none';
+  lwActualizarResumen();
+}
+
+function lwRenderDoc(){
+  const doc = LW.docs[LW.idx];
+  const total = LW.docs.length;
+
+  // Header
+  document.getElementById('lw_caso_label').textContent = `Documento ${LW.idx+1} de ${total}`;
+  document.getElementById('lw_doc_tipo').textContent   = doc.label || ('Tipo ' + doc.tipo);
+  document.getElementById('lw_obs_label').textContent  = doc.obs || '';
+
+  // Dots de progreso
+  document.getElementById('lw_dots').innerHTML = LW.docs.map((d,i)=>
+    `<div style="width:8px;height:8px;border-radius:50%;background:${
+      i===LW.idx ? '#3b82f6' : (d.confirmado ? '#10b981' : 'var(--border2)')
+    };cursor:pointer" onclick="lwGoTo(${i})"></div>`
+  ).join('');
+
+  // Campos
+  document.getElementById('lw_tpodoc').value = String(doc.tipo);
+  document.getElementById('lw_folio').value  = doc.folio;
+  document.getElementById('lw_fecha').value  = doc.fecha;
+  document.getElementById('lw_rut').value    = doc.rut || '';
+  document.getElementById('lw_razon').value  = doc.razon || '';
+  document.getElementById('lw_neto').value   = doc.neto || 0;
+  document.getElementById('lw_exe').value    = doc.exe  || 0;
+  document.getElementById('lw_iva').value    = doc.iva  || 0;
+  document.getElementById('lw_tipo_especial').value = doc.tipo_especial || '';
+
+  // Especiales
+  document.getElementById('lw_iva_uc').value  = doc.iva_uso_comun || 0;
+  document.getElementById('lw_fct_prop').value = doc.fct_prop || '0.60';
+  document.getElementById('lw_iva_nr').value  = doc.iva_no_rec || 0;
+  document.getElementById('lw_iva_ret').value = doc.iva_ret_total || 0;
+  lwToggleEspecial();
+  lwCalcTotal();
+
+  // Progress label
+  document.getElementById('lw_progress_label').textContent =
+    `Doc ${LW.idx+1} de ${total} · ${doc.confirmado ? '✓ confirmado' : 'pendiente'}`;
+
+  // Botones nav
+  document.getElementById('btn_lw_prev').disabled = LW.idx === 0;
+  document.getElementById('btn_lw_next').textContent =
+    LW.idx === total-1 ? '✓ Confirmar y cerrar' : 'Siguiente →';
+}
+
+function lwGoTo(i){ lwGuardarActual(); LW.idx=i; lwRenderDoc(); }
+
+function lwToggleEspecial(){
+  const te = document.getElementById('lw_tipo_especial').value;
+  document.getElementById('lw_uc_panel').style.display  = te==='iva_uso_comun' ? 'block':'none';
+  document.getElementById('lw_nr_panel').style.display  = te==='iva_no_rec'    ? 'block':'none';
+  document.getElementById('lw_ret_panel').style.display = te==='iva_ret_total' ? 'block':'none';
+  lwCalcTotal();
+}
+
+function lwCalcTotal(){
+  const n   = parseInt(document.getElementById('lw_neto').value)||0;
+  const e   = parseInt(document.getElementById('lw_exe').value)||0;
+  const iva = parseInt(document.getElementById('lw_iva').value)||0;
+  const uc  = parseInt(document.getElementById('lw_iva_uc').value)||0;
+  const nr  = parseInt(document.getElementById('lw_iva_nr').value)||0;
+  const te  = document.getElementById('lw_tipo_especial').value;
+  let total = n + e;
+  if(te==='iva_uso_comun')  total += uc;
+  else if(te==='iva_no_rec') total += nr;
+  else total += iva;
+  document.getElementById('lw_total_calc').textContent = '$'+total.toLocaleString('es-CL');
+}
+
+function lwGuardarActual(){
+  const doc = LW.docs[LW.idx];
+  const te  = document.getElementById('lw_tipo_especial').value;
+  doc.tipo   = parseInt(document.getElementById('lw_tpodoc').value);
+  doc.folio  = parseInt(document.getElementById('lw_folio').value)||0;
+  doc.fecha  = document.getElementById('lw_fecha').value;
+  doc.rut    = document.getElementById('lw_rut').value.trim();
+  doc.razon  = document.getElementById('lw_razon').value.trim();
+  doc.neto   = parseInt(document.getElementById('lw_neto').value)||0;
+  doc.exe    = parseInt(document.getElementById('lw_exe').value)||0;
+  doc.iva    = parseInt(document.getElementById('lw_iva').value)||0;
+  doc.tipo_especial = te;
+  doc.iva_uso_comun = parseInt(document.getElementById('lw_iva_uc').value)||0;
+  doc.fct_prop = document.getElementById('lw_fct_prop').value;
+  doc.iva_no_rec    = parseInt(document.getElementById('lw_iva_nr').value)||0;
+  doc.iva_ret_total = parseInt(document.getElementById('lw_iva_ret').value)||0;
+  // Calcular total
+  let t = doc.neto + doc.exe;
+  if(te==='iva_uso_comun')  t += doc.iva_uso_comun;
+  else if(te==='iva_no_rec') t += doc.iva_no_rec;
+  else t += doc.iva;
+  doc.total = t;
+  doc.confirmado = true;
+}
+
+function lwAnterior(){ lwGuardarActual(); if(LW.idx>0){LW.idx--;lwRenderDoc();} }
+
+function lwSiguiente(){
+  lwGuardarActual();
+  if(LW.idx < LW.docs.length-1){
+    LW.idx++; lwRenderDoc();
+  } else {
+    cerrarLibroWizard();
+  }
+}
+
+function lwActualizarResumen(){
+  const confirmados = LW.docs.filter(d=>d.confirmado).length;
+  const total = LW.docs.length;
+  const res = document.getElementById('compras_wizard_resumen');
+  const txt = document.getElementById('compras_wizard_resumen_txt');
+  if(total===0){ res.style.display='none'; return; }
+  res.style.display='block';
+  txt.innerHTML = `<span style="color:${confirmados===total?'var(--accent)':'var(--text3)'}">
+    ${confirmados===total?'✓':'⚠'} ${confirmados} de ${total} documentos confirmados</span>
+    ${LW.docs.map((d,i)=>`<span style="display:inline-block;margin:3px 4px 0 0;font-size:10px;padding:1px 7px;border-radius:10px;background:${d.confirmado?'rgba(16,185,129,.12)':'var(--bg2)'};color:${d.confirmado?'var(--accent)':'var(--text3)'};font-family:monospace;cursor:pointer" onclick="lwGoTo_ext(${i})">T${d.tipo} F${d.folio}</span>`).join('')}`;
+  // Mostrar botones si hay confirmados
+  document.getElementById('btn_gen_compras_manual').style.display = confirmados>0?'block':'none';
+  document.getElementById('btn_preview_compras').style.display    = confirmados>0?'block':'none';
+}
+
+function lwGoTo_ext(i){ abrirLibroWizardEnDoc(i); }
+
+function abrirLibroWizardEnDoc(i){
+  LW.idx = i;
+  document.getElementById('libro_wizard_modal').style.display='flex';
+  lwRenderDoc();
+}
+
+async function lwPreviewXML(){
+  lwGuardarActual();
+  const docs = LW.docs.filter(d=>d.confirmado);
+  if(!docs.length){ log('Confirma al menos un documento','warn'); return; }
+  const nat = document.getElementById('libro_natencion').value.trim() || '4841545';
+  const body = { emisor_id:S.id, tipo_libro:LW.tipo, natencion:nat,
+                  periodo:new Date().toISOString().slice(0,7), dtes:_lwDocsToApi(docs) };
+  try{
+    const r = await fetch(base()+'/v1/certificacion-libros/preview-manual',
+      {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    if(!r.ok){ log('Error '+r.status,'err'); return; }
+    const xml = await r.text();
+    _mostrarPreviewModal(xml, 'Preview Libro Compras (sin firmar)');
+  }catch(e){ log('Error: '+e,'err'); }
+}
+
+function _lwDocsToApi(docs){
+  return docs.map(d=>({
+    tipo_dte: d.tipo, folio: d.folio, fecha_emision: d.fecha,
+    rut_receptor: d.rut, nombre_receptor: d.razon,
+    monto_neto: d.neto, monto_iva: d.iva, monto_total: d.total,
+    monto_exe: d.exe, tipo_especial: d.tipo_especial||'',
+    iva_uso_comun: d.iva_uso_comun||0, fct_prop: d.fct_prop||'0.60',
+    iva_no_rec: d.iva_no_rec||0, iva_ret_total: d.iva_ret_total||0,
+  }));
+}
+
+function _mostrarPreviewModal(xml, titulo){
+  let modal = document.getElementById('xml_preview_modal');
+  if(modal) modal.remove();
+  modal = document.createElement('div');
+  modal.id = 'xml_preview_modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = `
+    <div style="background:var(--bg);border-radius:12px;width:100%;max-width:920px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden">
+      <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:600;font-size:13px">🔍 ${titulo}</span>
+        <div style="display:flex;gap:10px;align-items:center">
+          <button onclick="navigator.clipboard.writeText(document.getElementById('xml_pre').textContent).then(()=>log('XML copiado','ok'))"
+            style="font-size:11px;padding:4px 12px;background:transparent;border:1px solid var(--border2);border-radius:6px;color:var(--text3);cursor:pointer">📋 Copiar</button>
+          <button onclick="document.getElementById('xml_preview_modal').remove()"
+            style="background:transparent;border:none;color:var(--text3);font-size:20px;cursor:pointer">×</button>
+        </div>
+      </div>
+      <pre id="xml_pre" style="margin:0;padding:16px;overflow:auto;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text);background:var(--bg2);flex:1;white-space:pre;tab-size:2"></pre>
+    </div>`;
+  document.getElementById('xml_pre').textContent = xml;
+  document.body.appendChild(modal);
+}
 function onLibroTipoChange(){
   const tipo = document.getElementById('libro_tipo').value;
   const esCompras = tipo === 'compras';
@@ -2281,9 +2595,16 @@ async function previewLibroXML(){
   finally{ btn.disabled=false; btn.textContent='🔍'; }
 }
 
+async function previewLibroManual(){
+  if(!S.id){ log('Carga el emisor primero','warn'); return; }
+  const nat = document.getElementById('libro_natencion').value.trim() || '4841545';
+  const docs = LW.docs.filter(d=>d.confirmado);
+  if(!docs.length){ log('Confirma al menos un documento primero','warn'); return; }
+  await lwPreviewXML(); // reutilizar la misma lógica
+}
+
 async function generarLibroComprasDedicado(){
   if(!S.id){ log('Carga el emisor primero','warn'); return; }
-  log(`Generando Libro de Compras N°${nat} con datos del set de certificación...`,'info');
   const btn = document.querySelector('#modo_manual_section .btn:last-child');
   if(btn){ btn.disabled=true; btn.textContent='Generando...'; }
   try{
@@ -2309,18 +2630,37 @@ async function generarLibroManual(){
   if(!S.id){ log('Carga el emisor primero','warn'); return; }
   const nat = document.getElementById('libro_natencion').value.trim();
   if(!nat){ log('Ingresa el N° de atención del libro','warn'); return; }
-  const filas = getFilasCompra();
-  if(!filas.length){ log('Agrega al menos un documento','warn'); return; }
+  const docs = LW.docs.filter(d=>d.confirmado);
+  if(!docs.length){ log('Confirma al menos un documento en el wizard','warn'); return; }
 
   const periodoHoy = new Date().toISOString().slice(0,7);
-  // Convertir filas a formato DTE simplificado y enviar como JSON al endpoint manual
   const body = {
-    emisor_id: S.id,
-    tipo_libro: 'compras',
-    natencion: nat,
-    periodo: periodoHoy,
-    dtes: filas,
+    emisor_id: S.id, tipo_libro: LW.tipo, natencion: nat, periodo: periodoHoy,
+    dtes: _lwDocsToApi(docs),
   };
+  const btn = document.getElementById('btn_gen_compras_manual');
+  btn.disabled=true; btn.textContent='Generando...';
+  log(`Generando Libro ${LW.tipo} con ${docs.length} documentos...`,'info');
+  try{
+    const r = await fetch(base()+'/v1/certificacion-libros/manual', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body),
+    });
+    if(!r.ok){ const t=await r.text(); log('Error '+r.status+': '+t.slice(0,300),'err'); return; }
+    const cd = r.headers.get('Content-Disposition')||'';
+    const m  = cd.match(/filename="([^"]+)"/);
+    S.xmlNombre = m ? m[1] : `LibroCompras_${nat}.xml`;
+    S.xmlBlob   = await r.blob();
+    document.getElementById('dl_libro_nombre').textContent = S.xmlNombre;
+    document.getElementById('dl_libro_box').style.display  = 'block';
+    log(`✓ Libro generado: ${S.xmlNombre}`,'ok');
+    const box=document.getElementById('r_libro_xml');
+    box.className='result show ok';
+    document.getElementById('r_libro_xml_l').textContent='✓ libro generado';
+    document.getElementById('r_libro_xml_l').className='rlbl ok';
+    document.getElementById('r_libro_xml_c').textContent=S.xmlNombre;
+  }catch(e){ log('Error: '+e,'err'); }
+  finally{ btn.disabled=false; btn.textContent='📚 Generar Libro de Compras'; }
+}
   const btn = document.querySelector('#modo_manual_section .btn');
   btn.disabled=true; btn.textContent='Generando...';
   log(`Generando Libro de Compras manual con ${filas.length} documentos...`,'info');
