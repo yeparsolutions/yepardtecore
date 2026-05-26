@@ -909,7 +909,7 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
 </div>
 </div><!-- /main -->
 
-<script charset="utf-8">
+<script>
 /* ══════════════════════════════════════════════════════
    TEMA CLARO / OSCURO
 ══════════════════════════════════════════════════════ */
@@ -1476,7 +1476,10 @@ function parsearTxtMultiSet(txt){
     const {key, label} = detectarTipoSet(headerLine);
     const esLibro = ['ventas','compras','libro_guias'].includes(key);
     const casos   = esLibro ? [] : parsearCasos(bloque, natencion);
-    sets.push({key, label, natencion, casos, esLibro});
+    // Para LibroCompras: intentar extraer lista de documentos del .txt del SII
+    // Esto permite pre-cargar el wizard con los datos reales del set (folio, tipo, obs)
+    const docsLibro = (key === 'compras') ? parsearDocumentosLibroComprasTxt(bloque) : [];
+    sets.push({key, label, natencion, casos, esLibro, docsLibro});
   });
 
   return sets.length ? sets : null;
@@ -1484,7 +1487,92 @@ function parsearTxtMultiSet(txt){
 
 
 
-// ── Mapa tipo texto → tipo DTE para referencias ─────────────────
+// ── Parser de documentos del LibroCompras desde el .txt del SII ─────────────
+// Analogía: el .txt es la "lista de ingredientes" que el SII entrega.
+// Esta función lee esa lista y prepara los documentos para el wizard,
+// para que el usuario solo tenga que completar los montos y tipos especiales.
+//
+// El .txt del SII para LibroCompras lista los documentos así:
+//   FACTURA                              234
+//   DESCRIPCION DEL CASO
+//            34.744
+//
+//   FACTURA ELECTRONICA                   32
+//   ...
+function parsearDocumentosLibroComprasTxt(bloqueTxt) {
+  // Mapa de texto SII → tipo DTE
+  // Ordenado de más específico a menos para evitar false matches
+  const TIPO_MAP = [
+    { re: /FACTURA\s+NO\s+AFECTA|FACTURA\s+EXENTA/i,           tipo: 34, label: 'Factura No Afecta/Exenta' },
+    { re: /FACTURA\s+DE\s+COMPRA\s+ELECTR/i,                   tipo: 46, label: 'Factura Compra Electrónica' },
+    { re: /FACTURA\s+ELECTR/i,                                 tipo: 33, label: 'Factura Electrónica' },
+    { re: /NOTA\s+DE\s+CREDITO\s+ELECTR/i,                    tipo: 61, label: 'Nota de Crédito Electrónica' },
+    { re: /NOTA\s+DE\s+DEBITO\s+ELECTR/i,                     tipo: 56, label: 'Nota de Débito Electrónica' },
+    { re: /LIQUIDACION\s*-?\s*FACTURA\s+ELECTR/i,              tipo: 43, label: 'Liquidación-Factura Elect.' },
+    { re: /FACTURA\b/i,                                        tipo: 30, label: 'Factura' },
+    { re: /NOTA\s+DE\s+CREDITO\b/i,                           tipo: 60, label: 'Nota de Crédito' },
+    { re: /NOTA\s+DE\s+DEBITO\b/i,                            tipo: 55, label: 'Nota de Débito' },
+  ];
+
+  const docs = [];
+  const lines = bloqueTxt.replace(/\r/g, '').split('\n');
+
+  for(let i = 0; i < lines.length; i++) {
+    const linea = lines[i];
+    const trim  = linea.trim();
+    if(!trim) continue;
+
+    // Buscar línea que coincida con un tipo de documento conocido
+    let tipoMatch = null;
+    for(const t of TIPO_MAP) {
+      if(t.re.test(trim)) { tipoMatch = t; break; }
+    }
+    if(!tipoMatch) continue;
+
+    // Extraer folio: número al final de la línea (puede tener espacios)
+    const mFolio = linea.match(/(\d{1,6})\s*$/);
+    if(!mFolio) continue;
+    const folio = parseInt(mFolio[1]);
+    if(!folio) continue;
+
+    // Descripción: siguiente línea no vacía que no empiece con dígito
+    let obs = '';
+    let rut = '';
+    for(let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+      const sig = lines[j].trim();
+      if(!sig) continue;
+      // Si parece un RUT (XX.XXX.XXX-X o XXXXXXXX-X)
+      if(/^\d{7,8}-[\dkK]$|^\d{1,2}\.\d{3}\.\d{3}-[\dkK]$/.test(sig)) {
+        rut = sig.replace(/\./g, '');
+        continue;
+      }
+      // Si empieza con número puede ser montos — parar
+      if(/^\d/.test(sig) || /^\s+\d/.test(lines[j])) break;
+      if(!obs) obs = sig;
+    }
+
+    docs.push({
+      tipo:          tipoMatch.tipo,
+      folio,
+      obs:           obs || tipoMatch.label + ' N°' + folio,
+      label:         tipoMatch.label,
+      neto:          0,
+      exe:           0,
+      iva:           0,
+      tipo_especial: '',
+      rut:           rut || '',
+      razon:         '',
+      fecha:         new Date().toISOString().slice(0, 10),
+      confirmado:    false,
+    });
+  }
+
+  // Si parsea al menos 1 documento lo consideramos exitoso
+  if(docs.length > 0) {
+    log(`LibroCompras: ${docs.length} doc(s) detectados en el .txt (completa los montos en el wizard)`, 'ok');
+  }
+  return docs;
+}
 const DOC_TEXT_TIPO = [
   {re:/FACTURA\s+NO\s+AFECTA\s+O\s+EXENTA\s+ELECTR/i, tipo:34},
   {re:/FACTURA\s+DE\s+COMPRA\s+ELECTR/i,              tipo:46},
@@ -2295,9 +2383,18 @@ const LW = {
 function abrirLibroWizard(tipo){
   LW.tipo = tipo;
   LW.idx  = 0;
-  // Pre-cargar documentos según el tipo
+
   if(tipo === 'compras'){
-    LW.docs = LIBRO_COMPRAS_DOCS_DEFAULT.map(d=>({...d}));
+    // Prioridad: 1) documentos del .txt parseado  2) template hardcodeado
+    const setCompras = S.setsDetectados?.find(s => s.key === 'compras');
+    if(setCompras?.docsLibro?.length > 0){
+      // El usuario cargó el .txt del SII → usar esos documentos
+      // Los montos vendrán en 0 — el wizard los muestra para que el usuario los complete
+      LW.docs = setCompras.docsLibro.map(d => ({...d}));
+    } else {
+      // Sin .txt cargado → template del set 4841545 como referencia
+      LW.docs = LIBRO_COMPRAS_DOCS_DEFAULT.map(d => ({...d}));
+    }
   }
   // Inicializar modal
   document.getElementById('lw_tipo_badge').textContent = tipo.toUpperCase();
@@ -2637,56 +2734,22 @@ async function generarLibroManual(){
   if(!docs.length){ log('Confirma al menos un documento en el wizard','warn'); return; }
 
   const periodoHoy = new Date().toISOString().slice(0,7);
-  const btn = document.getElementById('btn_gen_compras_manual');
-  btn.disabled=true; btn.textContent='Guardando set...';
-  log(`Guardando set de compras N° ${nat} con ${docs.length} documentos...`,'info');
-
-  // PASO 1: Guardar el set en BD con el endpoint dinámico
-  const bodySet = {
-    emisor_id:  S.id,
-    natencion:  nat,
-    periodo:    periodoHoy,
-    fch_resol:  '2026-04-19',
-    nro_resol:  '0',
-    fct_prop:   '0.60',
-    documentos: docs.map(d=>({
-      tipo_dte:       d.tipo,
-      folio:          d.folio,
-      fecha_doc:      d.fecha,
-      rut_doc:        d.rut,
-      razon_doc:      d.razon,
-      monto_neto:     d.neto          || 0,
-      monto_exe:      d.exe           || 0,
-      monto_iva:      d.iva           || 0,
-      monto_total:    d.total         || 0,
-      tipo_especial:  d.tipo_especial || '',
-      iva_uso_comun:  d.iva_uso_comun || 0,
-      fct_prop:       d.fct_prop      || '0.60',
-      iva_no_rec:     d.iva_no_rec    || 0,
-      cod_iva_no_rec: d.cod_iva_no_rec|| 9,
-      iva_ret_total:  d.iva_ret_total || 0,
-    })),
+  const body = {
+    emisor_id: S.id, tipo_libro: LW.tipo, natencion: nat, periodo: periodoHoy,
+    dtes: _lwDocsToApi(docs),
   };
-
+  const btn = document.getElementById('btn_gen_compras_manual');
+  btn.disabled=true; btn.textContent='Generando...';
+  log(`Generando Libro ${LW.tipo} con ${docs.length} documentos...`,'info');
   try{
-    const r1 = await fetch(base()+'/v1/certificacion-libro-compras-din/set', {
-      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(bodySet),
+    const r = await fetch(base()+'/v1/certificacion-libros/manual', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body),
     });
-    if(!r1.ok){ const t=await r1.text(); log('Error guardando set: '+r1.status+' '+t.slice(0,200),'err'); return; }
-    const setData = await r1.json();
-    const setId   = setData.set_id;
-    log('Set guardado - ID '+setId+' - '+setData.documentos+' documentos','ok');
-
-    // PASO 2: Generar el libro desde el set guardado
-    btn.textContent='Generando libro...';
-    const r2 = await fetch(base()+`/v1/certificacion-libro-compras-din/generar-xml/${setId}`, {
-      method:'POST',
-    });
-    if(!r2.ok){ const t=await r2.text(); log('Error generando libro: '+r2.status+' '+t.slice(0,200),'err'); return; }
-    const cd2 = r2.headers.get('Content-Disposition')||'';
-    const m2  = cd2.match(/filename="([^"]+)"/);
-    S.xmlNombre = m2 ? m2[1] : `LibroCompras_${nat}.xml`;
-    S.xmlBlob   = await r2.blob();
+    if(!r.ok){ const t=await r.text(); log('Error '+r.status+': '+t.slice(0,300),'err'); return; }
+    const cd = r.headers.get('Content-Disposition')||'';
+    const m  = cd.match(/filename="([^"]+)"/);
+    S.xmlNombre = m ? m[1] : `LibroCompras_${nat}.xml`;
+    S.xmlBlob   = await r.blob();
     document.getElementById('dl_libro_nombre').textContent = S.xmlNombre;
     document.getElementById('dl_libro_box').style.display  = 'block';
     log(`✓ Libro generado: ${S.xmlNombre}`,'ok');
@@ -2694,8 +2757,7 @@ async function generarLibroManual(){
     box.className='result show ok';
     document.getElementById('r_libro_xml_l').textContent='✓ libro generado';
     document.getElementById('r_libro_xml_l').className='rlbl ok';
-    document.getElementById('r_libro_xml_c').textContent=S.xmlNombre+'
-Set ID: '+setId+' guardado en BD.';
+    document.getElementById('r_libro_xml_c').textContent=S.xmlNombre;
   }catch(e){ log('Error: '+e,'err'); }
   finally{ btn.disabled=false; btn.textContent='📚 Generar Libro de Compras'; }
 }
