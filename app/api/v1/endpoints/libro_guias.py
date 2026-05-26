@@ -121,8 +121,11 @@ def _xml_libro_guias(emisor_rut: str, rut_envia: str,
         det = etree.SubElement(envio, f"{{{NS}}}Detalle")
         etree.SubElement(det, f"{{{NS}}}Folio").text   = str(g.folio)
         # Anulado es OPCIONAL: solo se emite si la guía está anulada
+        # Según TotGuiaAnulada docs del XSD: "Anulado=2" → guías anuladas
+        # Según TotFolAnulado docs del XSD:  "Anulado=1" → folios anulados
+        # El SII valida TotGuiaAnulada contra detalles con Anulado=2
         if g.anulado:
-            etree.SubElement(det, f"{{{NS}}}Anulado").text = "1"  # anulado previo envío SII
+            etree.SubElement(det, f"{{{NS}}}Anulado").text = "2"  # anulado posterior envío SII
         etree.SubElement(det, f"{{{NS}}}FchDoc").text  = g.fecha
         if g.rut:
             etree.SubElement(det, f"{{{NS}}}RUTDoc").text = g.rut
