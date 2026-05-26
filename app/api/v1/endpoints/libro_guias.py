@@ -5,13 +5,14 @@
 # POST /v1/libro-guias
 # Body: { emisor_id, natencion, periodo, guias: [...] }
 #
-# Schema: LibroGuia_v10.xsd (diferente de LibroCV)
-# Diferencias vs LibroCompras:
-#   - Root tag: LibroGuia (no LibroCompraVenta)
-#   - No tiene TipoOperacion en Carátula
-#   - ResumenPeriodo: TotFolAnulado, TotGuiaAnulada, TotGuiaVenta (plano)
-#   - Detalle usa "Folio" (no NroDoc), "Anulado" (1=vigente, 2=anulado),
-#     "IVA" (no MntIVA), sin TasaImp antes
+# Schema: LibroGuia_v10.xsd
+#
+# Reglas SII para el resumen:
+#   TotGuiaVenta  = guías vigentes (Anulado=1) CON MntTotal > 0
+#                   (traslados internos con total=0 van en Detalle pero NO en TotGuiaVenta)
+#   TotMntGuiaVta = suma de MntTotal de guías vigentes con total > 0
+#   TotGuiaAnulada= guías anuladas (Anulado=2)
+#   TotFolAnulado = mismo que TotGuiaAnulada
 # ═══════════════════════════════════════════════════════════════════
 
 import logging
@@ -39,16 +40,15 @@ NS = "http://www.sii.cl/SiiDte"
 # ── Modelos ───────────────────────────────────────────────────────────────────
 
 class GuiaDespacho(BaseModel):
-    """Una Guía de Despacho para el Libro de Guías."""
     folio: int
-    fecha: str                  # AAAA-MM-DD
+    fecha: str
     rut: str = "66666666-6"
     razon: str = ""
     exe: int = 0
     neto: int = 0
     iva: int = 0
     total: int = 0
-    anulado: bool = False       # True = la guía fue anulada
+    anulado: bool = False
 
 
 class LibroGuiasRequest(BaseModel):
@@ -64,21 +64,20 @@ class LibroGuiasRequest(BaseModel):
 
 def _xml_libro_guias(emisor_rut: str, rut_envia: str,
                      req: LibroGuiasRequest) -> str:
-    """
-    Construye el XML del LibroGuia para el set de certificación.
-
-    Estructura (LibroGuia_v10.xsd):
-      Caratula:       sin TipoOperacion (distinto al LibroCV)
-      ResumenPeriodo: TotFolAnulado / TotGuiaAnulada / TotGuiaVenta / TotMntGuiaVta
-      Detalle:        Folio / Anulado(1|2) / FchDoc / RUTDoc / RznSoc /
-                      MntNeto / TasaImp / IVA / MntExe / MntTotal
-    """
     tmst = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
-    guias_venta  = [g for g in req.guias if not g.anulado]
+    # ── Clasificar guías ──────────────────────────────────────────────────────
+    # Anuladas: Anulado=2 en el Detalle, se cuentan en TotGuiaAnulada
+    # Vigentes de venta: Anulado=1, MntTotal > 0 → se cuentan en TotGuiaVenta
+    # Vigentes de traslado: Anulado=1, MntTotal = 0 → van en Detalle pero NO en TotGuiaVenta
     guias_anuld  = [g for g in req.guias if g.anulado]
+    guias_vigentes = [g for g in req.guias if not g.anulado]
+    guias_venta  = [g for g in guias_vigentes if g.total > 0]   # con monto = guías de venta
+    # guias_traslado = [g for g in guias_vigentes if g.total == 0]  # traslados internos
 
-    # ── Raíz — LibroGuia (NO LibroCompraVenta) ────────────────────────────────
+    tot_mnt_vta = sum(g.total for g in guias_venta)
+
+    # ── Raíz ─────────────────────────────────────────────────────────────────
     root = etree.Element(
         f"{{{NS}}}LibroGuia",
         nsmap={None: NS, "xsi": "http://www.w3.org/2001/XMLSchema-instance"},
@@ -91,58 +90,46 @@ def _xml_libro_guias(emisor_rut: str, rut_envia: str,
     envio = etree.SubElement(root, f"{{{NS}}}EnvioLibro")
     envio.set("ID", "LibroGuias")
 
-    # ── Carátula — sin TipoOperacion ──────────────────────────────────────────
+    # ── Carátula — sin TipoOperacion (exclusivo de LibroCV) ───────────────────
     car = etree.SubElement(envio, f"{{{NS}}}Caratula")
     etree.SubElement(car, f"{{{NS}}}RutEmisorLibro").text    = emisor_rut
     etree.SubElement(car, f"{{{NS}}}RutEnvia").text          = rut_envia
     etree.SubElement(car, f"{{{NS}}}PeriodoTributario").text = req.periodo
     etree.SubElement(car, f"{{{NS}}}FchResol").text          = req.fch_resol
     etree.SubElement(car, f"{{{NS}}}NroResol").text          = req.nro_resol
-    # LibroGuia no tiene TipoOperacion — va directo a TipoLibro
     etree.SubElement(car, f"{{{NS}}}TipoLibro").text         = "ESPECIAL"
     etree.SubElement(car, f"{{{NS}}}TipoEnvio").text         = "TOTAL"
     etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = req.natencion
 
-    # ── ResumenPeriodo — plano, sin TotalesPeriodo ─────────────────────────────
-    # El SII valida: TotGuiaVenta + TotGuiaAnulada = total Detalles
+    # ── ResumenPeriodo ────────────────────────────────────────────────────────
+    # TotGuiaVenta  = guías vigentes CON monto (excluye traslados internos con total=0)
+    # TotFolAnulado = TotGuiaAnulada = guías anuladas
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
     etree.SubElement(resumen, f"{{{NS}}}TotFolAnulado").text  = str(len(guias_anuld))
     etree.SubElement(resumen, f"{{{NS}}}TotGuiaAnulada").text = str(len(guias_anuld))
     etree.SubElement(resumen, f"{{{NS}}}TotGuiaVenta").text   = str(len(guias_venta))
-    tot_mnt = sum(g.total for g in guias_venta)
-    if tot_mnt:
-        etree.SubElement(resumen, f"{{{NS}}}TotMntGuiaVta").text = str(tot_mnt)
+    if tot_mnt_vta:
+        etree.SubElement(resumen, f"{{{NS}}}TotMntGuiaVta").text = str(tot_mnt_vta)
 
-    # ── Detalle — un nodo por guía ────────────────────────────────────────────
+    # ── Detalle — TODAS las guías van aquí (vigentes y anuladas) ─────────────
     for g in req.guias:
         det = etree.SubElement(envio, f"{{{NS}}}Detalle")
-
-        # Folio (no NroDoc — nombre diferente al LibroCV)
-        etree.SubElement(det, f"{{{NS}}}Folio").text = str(g.folio)
-
-        # Anulado: 1 = vigente, 2 = anulada
+        etree.SubElement(det, f"{{{NS}}}Folio").text   = str(g.folio)
         etree.SubElement(det, f"{{{NS}}}Anulado").text = "2" if g.anulado else "1"
-
-        etree.SubElement(det, f"{{{NS}}}FchDoc").text = g.fecha
-
+        etree.SubElement(det, f"{{{NS}}}FchDoc").text  = g.fecha
         if g.rut:
             etree.SubElement(det, f"{{{NS}}}RUTDoc").text = g.rut
         if g.razon:
             etree.SubElement(det, f"{{{NS}}}RznSoc").text = g.razon[:50]
-
-        # Montos — orden exigido por LibroGuia_v10.xsd
         if g.neto:
             etree.SubElement(det, f"{{{NS}}}MntNeto").text = str(g.neto)
         if g.iva:
-            # En LibroGuia es "TasaImp" + "IVA" (no MntIVA como en LibroCV)
             etree.SubElement(det, f"{{{NS}}}TasaImp").text = "19"
             etree.SubElement(det, f"{{{NS}}}IVA").text     = str(g.iva)
         if g.exe:
             etree.SubElement(det, f"{{{NS}}}MntExe").text  = str(g.exe)
-
         etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(g.total)
 
-    # ── Timestamp de firma ────────────────────────────────────────────────────
     etree.SubElement(envio, f"{{{NS}}}TmstFirma").text = tmst
 
     raw = etree.tostring(root, encoding="ISO-8859-1",
@@ -160,10 +147,6 @@ async def generar_libro_guias(
     req: LibroGuiasRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Genera el LibroGuia XML firmado a partir de las guías enviadas en el body.
-    No lee DTEs de la BD.
-    """
     emisor = await db.get(Emisor, req.emisor_id)
     if not emisor:
         raise HTTPException(404, f"Emisor {req.emisor_id} no encontrado")
@@ -183,10 +166,12 @@ async def generar_libro_guias(
     if not req.guias:
         raise HTTPException(400, "El libro debe tener al menos una guía")
 
+    guias_venta  = [g for g in req.guias if not g.anulado and g.total > 0]
+    guias_anuld  = [g for g in req.guias if g.anulado]
+
     logger.info(
         f"[LIBRO GUIAS] emisor={emisor.rut} natencion={req.natencion} "
-        f"total={len(req.guias)} vigentes={sum(1 for g in req.guias if not g.anulado)} "
-        f"anuladas={sum(1 for g in req.guias if g.anulado)}"
+        f"total={len(req.guias)} venta={len(guias_venta)} anuladas={len(guias_anuld)}"
     )
 
     try:
