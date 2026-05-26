@@ -778,6 +778,10 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
         <div id="compras_wizard_resumen" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px">
           <div id="compras_wizard_resumen_txt" style="color:var(--text3)"></div>
         </div>
+        <label id="lbl_rectifica" style="display:none;align-items:center;gap:8px;font-size:12px;color:var(--text2);cursor:pointer;margin-bottom:8px">
+          <input type="checkbox" id="lw_rectifica" style="accent-color:var(--accent)">
+          Modo RECTIFICA — el SII ya cerró este libro
+        </label>
         <button class="btn bp bfull" onclick="generarLibroManual()" id="btn_gen_compras_manual"
                 style="padding:13px;display:none">
           📚 Generar Libro de Compras
@@ -2477,6 +2481,9 @@ function abrirLibroWizard(tipo){
   document.getElementById('lw_tipo_badge').textContent = tipo.toUpperCase();
   const nat = document.getElementById('libro_natencion').value.trim() || '4841545';
   document.getElementById('lw_natencion_badge').textContent = 'N° ' + nat;
+  // Reset rectifica checkbox
+  const cbRect = document.getElementById('lw_rectifica');
+  if(cbRect) cbRect.checked = false;
   document.getElementById('libro_wizard_modal').style.display = 'flex';
   lwRenderDoc();
 }
@@ -2603,6 +2610,7 @@ function lwActualizarResumen(){
     ${LW.docs.map((d,i)=>`<span style="display:inline-block;margin:3px 4px 0 0;font-size:10px;padding:1px 7px;border-radius:10px;background:${d.confirmado?'rgba(16,185,129,.12)':'var(--bg2)'};color:${d.confirmado?'var(--accent)':'var(--text3)'};font-family:monospace;cursor:pointer" onclick="lwGoTo_ext(${i})">T${d.tipo} F${d.folio}</span>`).join('')}`;
   // Mostrar botones si hay confirmados
   document.getElementById('btn_gen_compras_manual').style.display = confirmados>0?'block':'none';
+  document.getElementById('lbl_rectifica').style.display = confirmados>0?'flex':'none';
   document.getElementById('btn_preview_compras').style.display    = confirmados>0?'block':'none';
 }
 
@@ -2832,7 +2840,13 @@ async function generarLibroManual(){
     total:          d.total || 0,
   }));
 
-  const body = { emisor_id: S.id, natencion: nat, periodo: periodoHoy, documentos };
+  // Detectar si es rectificación (checkbox en el wizard)
+  const esRectifica = document.getElementById('lw_rectifica')?.checked;
+  const body = {
+    emisor_id: S.id, natencion: nat, periodo: periodoHoy, documentos,
+    tipo_libro: esRectifica ? 'RECTIFICA' : 'ESPECIAL',
+  };
+  if(esRectifica) log('Modo RECTIFICA — sobreescribe el libro cerrado','warn');
   const btn = document.getElementById('btn_gen_compras_manual');
   btn.disabled=true; btn.textContent='Generando...';
   log('Generando Libro Compras — ' + docs.length + ' docs, tipos: ' + [...new Set(docs.map(d=>d.tipo))].sort().join(','), 'info');
