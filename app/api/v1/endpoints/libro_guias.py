@@ -66,16 +66,21 @@ def _xml_libro_guias(emisor_rut: str, rut_envia: str,
                      req: LibroGuiasRequest) -> str:
     tmst = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
-    # ── Clasificar guías ──────────────────────────────────────────────────────
-    # Anuladas: Anulado=2 en el Detalle, se cuentan en TotGuiaAnulada
-    # Vigentes de venta: Anulado=1, MntTotal > 0 → se cuentan en TotGuiaVenta
-    # Vigentes de traslado: Anulado=1, MntTotal = 0 → van en Detalle pero NO en TotGuiaVenta
-    guias_anuld  = [g for g in req.guias if g.anulado]
-    guias_vigentes = [g for g in req.guias if not g.anulado]
-    guias_venta  = [g for g in guias_vigentes if g.total > 0]   # con monto = guías de venta
-    # guias_traslado = [g for g in guias_vigentes if g.total == 0]  # traslados internos
+    # ── Clasificar guías — según LibroGuia_v10.xsd ───────────────────────────
+    # CONVENCIÓN CORRECTA DEL XSD (verificada):
+    #   Campo Anulado es OPCIONAL en el Detalle:
+    #     - Guías VIGENTES: NO llevan campo <Anulado>
+    #     - Guías ANULADAS previo envío SII: <Anulado>1</Anulado>
+    #     - Guías ANULADAS posterior envío SII: <Anulado>2</Anulado>
+    #   TotFolAnulado = count(detalles con Anulado presente) → solo anuladas
+    #   TotGuiaAnulada = igual que TotFolAnulado
+    #   TotGuiaVenta   = count(detalles sin Anulado) → todas las vigentes
 
-    tot_mnt_vta = sum(g.total for g in guias_venta)
+    guias_anuld = [g for g in req.guias if g.anulado]      # llevarán <Anulado>
+    guias_venta = [g for g in req.guias if not g.anulado]  # NO llevarán <Anulado>
+
+    tot_mnt_vta     = sum(g.total for g in guias_venta)
+    tot_fol_anulado = len(guias_anuld)
 
     # ── Raíz ─────────────────────────────────────────────────────────────────
     root = etree.Element(
@@ -105,7 +110,7 @@ def _xml_libro_guias(emisor_rut: str, rut_envia: str,
     # TotGuiaVenta  = guías vigentes CON monto (excluye traslados internos con total=0)
     # TotFolAnulado = TotGuiaAnulada = guías anuladas
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
-    etree.SubElement(resumen, f"{{{NS}}}TotFolAnulado").text  = str(len(guias_anuld))
+    etree.SubElement(resumen, f"{{{NS}}}TotFolAnulado").text  = str(tot_fol_anulado)
     etree.SubElement(resumen, f"{{{NS}}}TotGuiaAnulada").text = str(len(guias_anuld))
     etree.SubElement(resumen, f"{{{NS}}}TotGuiaVenta").text   = str(len(guias_venta))
     if tot_mnt_vta:
@@ -115,7 +120,9 @@ def _xml_libro_guias(emisor_rut: str, rut_envia: str,
     for g in req.guias:
         det = etree.SubElement(envio, f"{{{NS}}}Detalle")
         etree.SubElement(det, f"{{{NS}}}Folio").text   = str(g.folio)
-        etree.SubElement(det, f"{{{NS}}}Anulado").text = "2" if g.anulado else "1"
+        # Anulado es OPCIONAL: solo se emite si la guía está anulada
+        if g.anulado:
+            etree.SubElement(det, f"{{{NS}}}Anulado").text = "1"  # anulado previo envío SII
         etree.SubElement(det, f"{{{NS}}}FchDoc").text  = g.fecha
         if g.rut:
             etree.SubElement(det, f"{{{NS}}}RUTDoc").text = g.rut
@@ -171,7 +178,7 @@ async def generar_libro_guias(
 
     logger.info(
         f"[LIBRO GUIAS] emisor={emisor.rut} natencion={req.natencion} "
-        f"total={len(req.guias)} venta={len(guias_venta)} anuladas={len(guias_anuld)}"
+        f"total={len(req.guias)} vigentes={len(guias_venta)} anuladas={len(guias_anuld)}"
     )
 
     try:
