@@ -2961,8 +2961,14 @@ async function generarLibroDesdeXML(){
   if(!S.id){ log('Carga el emisor primero','warn'); return; }
   const tipo = document.getElementById('libro_tipo').value;
 
-  // Guías usa el nuevo endpoint limpio — parsea XMLs en el cliente
+  // Guías: nuevo endpoint limpio que parsea XMLs en el cliente
   if(tipo === 'guias') { return await _generarLibroGuias(); }
+
+  // Compras: NO usa "desde-xml" — los documentos vienen del wizard (botón de arriba)
+  if(tipo === 'compras'){
+    log('Para el Libro de Compras usa el wizard "📋 Revisar y completar" y luego "📚 Generar Libro de Compras"','warn');
+    return;
+  }
 
   if(_libroXMLFiles.length === 0){ log('Sube al menos un XML de EnvioDTE','warn'); return; }
   const nat    = document.getElementById('libro_natencion').value.trim();
