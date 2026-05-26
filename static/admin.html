@@ -1488,91 +1488,166 @@ function parsearTxtMultiSet(txt){
 
 
 // ── Parser de documentos del LibroCompras desde el .txt del SII ─────────────
-// Analogía: el .txt es la "lista de ingredientes" que el SII entrega.
-// Esta función lee esa lista y prepara los documentos para el wizard,
-// para que el usuario solo tenga que completar los montos y tipos especiales.
+// El .txt tiene bloques de 3 líneas separados por líneas vacías:
+//   Línea 1: TIPO_DOCUMENTO \t\t FOLIO
+//   Línea 2: DESCRIPCIÓN (observación del caso)
+//   Línea 3: [MONTO_EXE \t\t MONTO_AFE] ó solo [MONTO_AFE]
 //
-// El .txt del SII para LibroCompras lista los documentos así:
-//   FACTURA                              234
-//   DESCRIPCION DEL CASO
-//            34.744
-//
-//   FACTURA ELECTRONICA                   32
-//   ...
+// Analogía: el .txt es como un recibo de supermercado —
+// cada producto tiene nombre, descripción y precio en líneas separadas.
+// El parser lee esas 3 líneas juntas (un bloque por producto).
 function parsearDocumentosLibroComprasTxt(bloqueTxt) {
-  // Mapa de texto SII → tipo DTE
-  // Ordenado de más específico a menos para evitar false matches
+  // Mapa tipo-texto → tipo DTE (más específico primero)
   const TIPO_MAP = [
-    { re: /FACTURA\s+NO\s+AFECTA|FACTURA\s+EXENTA/i,           tipo: 34, label: 'Factura No Afecta/Exenta' },
-    { re: /FACTURA\s+DE\s+COMPRA\s+ELECTR/i,                   tipo: 46, label: 'Factura Compra Electrónica' },
-    { re: /FACTURA\s+ELECTR/i,                                 tipo: 33, label: 'Factura Electrónica' },
-    { re: /NOTA\s+DE\s+CREDITO\s+ELECTR/i,                    tipo: 61, label: 'Nota de Crédito Electrónica' },
-    { re: /NOTA\s+DE\s+DEBITO\s+ELECTR/i,                     tipo: 56, label: 'Nota de Débito Electrónica' },
-    { re: /LIQUIDACION\s*-?\s*FACTURA\s+ELECTR/i,              tipo: 43, label: 'Liquidación-Factura Elect.' },
-    { re: /FACTURA\b/i,                                        tipo: 30, label: 'Factura' },
-    { re: /NOTA\s+DE\s+CREDITO\b/i,                           tipo: 60, label: 'Nota de Crédito' },
-    { re: /NOTA\s+DE\s+DEBITO\b/i,                            tipo: 55, label: 'Nota de Débito' },
+    { re: /^FACTURA\s+DE\s+COMPRA\s+ELECTR/i,      tipo: 46, label: 'Factura Compra Electrónica' },
+    { re: /^FACTURA\s+NO\s+AFECTA|^FACTURA\s+EXENTA/i, tipo: 34, label: 'Factura No Afecta/Exenta' },
+    { re: /^FACTURA\s+ELECTR/i,                     tipo: 33, label: 'Factura Electrónica' },
+    { re: /^NOTA\s+DE\s+CREDITO\s+ELECTR/i,         tipo: 61, label: 'Nota de Crédito Electrónica' },
+    { re: /^NOTA\s+DE\s+DEBITO\s+ELECTR/i,          tipo: 56, label: 'Nota de Débito Electrónica' },
+    // "NOTA DE CREDITO" sin ELECTRONICA → T61 en entorno DTE
+    { re: /^NOTA\s+DE\s+CREDITO\b/i,                tipo: 61, label: 'Nota de Crédito Electrónica' },
+    { re: /^NOTA\s+DE\s+DEBITO\b/i,                 tipo: 56, label: 'Nota de Débito Electrónica' },
+    { re: /^FACTURA\b/i,                             tipo: 30, label: 'Factura' },
+  ];
+
+  // Reglas tipo_especial IVA desde la descripción del caso
+  const ESPECIAL_MAP = [
+    { re: /USO\s+COM.N|USO\s+COMUN/i,                te: 'iva_uso_comun' },
+    { re: /ENTREGA\s+GRATUITA|NO\s+RECUP|ART\.?\s*23/i, te: 'iva_no_rec' },
+    { re: /RETENCI.N\s+TOTAL|RETENCION\s+TOTAL/i,     te: 'iva_ret_total' },
   ];
 
   const docs = [];
-  const lines = bloqueTxt.replace(/\r/g, '').split('\n');
+  const lineas = bloqueTxt.replace(/\r/g, '').split('\n')
+    // Eliminar líneas separadoras (=====, -----) para no contaminar los bloques
+    .filter(l => !/^[=\-]{5,}\s*$/.test(l.trim()));
 
-  for(let i = 0; i < lines.length; i++) {
-    const linea = lines[i];
-    const trim  = linea.trim();
-    if(!trim) continue;
-
-    // Buscar línea que coincida con un tipo de documento conocido
-    let tipoMatch = null;
-    for(const t of TIPO_MAP) {
-      if(t.re.test(trim)) { tipoMatch = t; break; }
+  // ── Agrupar en bloques separados por líneas vacías ───────────────────
+  // Cada bloque = un documento del .txt
+  const bloques = [];
+  let actual = [];
+  for(const l of lineas) {
+    if(!l.trim()) {
+      if(actual.length) { bloques.push(actual); actual = []; }
+    } else {
+      actual.push(l);
     }
-    if(!tipoMatch) continue;
+  }
+  if(actual.length) bloques.push(actual);
 
-    // Extraer folio: número al final de la línea (puede tener espacios)
-    const mFolio = linea.match(/(\d{1,6})\s*$/);
+  // ── Parsear cada bloque ───────────────────────────────────────────────
+  for(const bloque of bloques) {
+    if(bloque.length < 2) continue;
+
+    // Buscar la PRIMERA línea del bloque que corresponda a un tipo de documento.
+    // (El primer bloque incluye el header "TIPO DOCUMENTO / OBSERVACIONES"
+    // junto al primer documento — hay que saltar las líneas del header)
+    let tipoMatch = null, tipoIdx = -1;
+    for(let li = 0; li < bloque.length; li++) {
+      const trimLi = bloque[li].trim();
+      for(const t of TIPO_MAP) {
+        if(t.re.test(trimLi)) { tipoMatch = t; tipoIdx = li; break; }
+      }
+      if(tipoMatch) break;
+    }
+    if(!tipoMatch || tipoIdx < 0) continue;
+
+    const l1 = bloque[tipoIdx].trim();                              // TIPO + FOLIO
+    const l2 = tipoIdx+1 < bloque.length ? bloque[tipoIdx+1].trim() : '';  // DESCRIPCIÓN
+    const l3 = tipoIdx+2 < bloque.length ? bloque[tipoIdx+2] : '';          // MONTOS
+
+    // Extraer folio: número al final de l1 (puede haber tabs entre tipo y folio)
+    const mFolio = l1.match(/(\d{1,6})\s*$/);
     if(!mFolio) continue;
     const folio = parseInt(mFolio[1]);
     if(!folio) continue;
 
-    // Descripción: siguiente línea no vacía que no empiece con dígito
-    let obs = '';
-    let rut = '';
-    for(let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
-      const sig = lines[j].trim();
-      if(!sig) continue;
-      // Si parece un RUT (XX.XXX.XXX-X o XXXXXXXX-X)
-      if(/^\d{7,8}-[\dkK]$|^\d{1,2}\.\d{3}\.\d{3}-[\dkK]$/.test(sig)) {
-        rut = sig.replace(/\./g, '');
-        continue;
-      }
-      // Si empieza con número puede ser montos — parar
-      if(/^\d/.test(sig) || /^\s+\d/.test(lines[j])) break;
-      if(!obs) obs = sig;
+    // Detectar tipo especial IVA desde la descripción
+    let tipo_especial = '';
+    for(const e of ESPECIAL_MAP) {
+      if(e.re.test(l2)) { tipo_especial = e.te; break; }
     }
+
+    // Parsear montos desde l3 (línea con columnas MONTO_EXENTO / MONTO_AFECTO)
+    // Estructura: si empieza con tabs → solo MONTO_AFECTO (1 número = neto o exe)
+    //             si empieza con espacios/número → [MONTO_EXE  MONTO_AFE] (2 números)
+    let exe = 0, neto = 0;
+    if(l3.trim()) {
+      const nums = [];
+      for(const n of l3.match(/\d[\d.]*/g) || []) {
+        nums.push(parseInt(n.replace(/\./g, '')));
+      }
+      const leadingTabs = l3.match(/^\t+/)?.[0]?.length || 0;
+
+      if(nums.length >= 2) {
+        // Dos columnas: primero EXENTO, segundo AFECTO(neto)
+        exe = nums[0]; neto = nums[1];
+      } else if(nums.length === 1) {
+        if(leadingTabs >= 2) {
+          // Solo columna derecha = MONTO AFECTO
+          // Para NC (T61/T60): si la descripción menciona "ELECTRONICA"
+          // el monto corresponde a la parte exenta del doc referenciado
+          if((tipoMatch.tipo === 61 || tipoMatch.tipo === 60) && /ELECTR/i.test(l2)) {
+            exe = nums[0];   // NC exenta → exe
+          } else {
+            neto = nums[0];  // Normal → neto afecto
+          }
+        } else {
+          // Columna izquierda = MONTO EXENTO
+          exe = nums[0];
+        }
+      }
+    }
+
+    // Calcular IVA y campos especiales
+    let iva = 0, iva_uso_comun = 0, iva_no_rec = 0, iva_ret_total = 0;
+    const fct_prop = '0.60';  // se sobreescribe si el .txt lo menciona
+
+    if(tipo_especial === 'iva_uso_comun') {
+      iva_uso_comun = Math.round(neto * 0.19);
+    } else if(tipo_especial === 'iva_no_rec') {
+      iva_no_rec = Math.round(neto * 0.19);
+    } else if(tipo_especial === 'iva_ret_total') {
+      iva          = Math.round(neto * 0.19);
+      iva_ret_total = iva;
+    } else {
+      // Normal: IVA solo si hay neto afecto
+      iva = neto > 0 ? Math.round(neto * 0.19) : 0;
+    }
+
+    const total = exe + neto + (iva_uso_comun || iva_no_rec || iva);
 
     docs.push({
       tipo:          tipoMatch.tipo,
       folio,
-      obs:           obs || tipoMatch.label + ' N°' + folio,
+      obs:           l2 || tipoMatch.label,
       label:         tipoMatch.label,
-      neto:          0,
-      exe:           0,
-      iva:           0,
-      tipo_especial: '',
-      rut:           rut || '',
-      razon:         '',
-      fecha:         new Date().toISOString().slice(0, 10),
-      confirmado:    false,
+      neto, exe, iva,
+      iva_uso_comun, fct_prop,
+      iva_no_rec,    iva_ret_total,
+      tipo_especial,
+      total,
+      rut: RUT_PROV_DEFAULT, razon: '',
+      fecha: new Date().toISOString().slice(0, 10),
+      confirmado: false,
     });
   }
 
-  // Si parsea al menos 1 documento lo consideramos exitoso
+  // Parsear factor de proporcionalidad desde OBSERVACIONES GENERALES
+  const mFct = bloqueTxt.match(/FACTOR\s+DE\s+PROPORCIONALIDAD[^.\n]*?(\d+\.\d+)/i);
+  if(mFct) {
+    const fct = mFct[1];
+    docs.forEach(d => { if(d.tipo_especial === 'iva_uso_comun') d.fct_prop = fct; });
+  }
+
   if(docs.length > 0) {
-    log(`LibroCompras: ${docs.length} doc(s) detectados en el .txt (completa los montos en el wizard)`, 'ok');
+    log(`LibroCompras: ${docs.length} doc(s) parseados desde el .txt del SII`, 'ok');
   }
   return docs;
 }
+
+// RUT del proveedor por defecto (se puede editar en el wizard)
+const RUT_PROV_DEFAULT = '76354771-K';
 const DOC_TEXT_TIPO = [
   {re:/FACTURA\s+NO\s+AFECTA\s+O\s+EXENTA\s+ELECTR/i, tipo:34},
   {re:/FACTURA\s+DE\s+COMPRA\s+ELECTR/i,              tipo:46},
