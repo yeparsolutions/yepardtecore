@@ -174,79 +174,27 @@ def _construir_libro_xml(
         fecha_str = str(fecha_raw)[:10] if fecha_raw else periodo + "-01"
         rut_doc   = (dte.rut_receptor or "66666666-6").replace(".", "")
         razon_doc = (dte.nombre_receptor or "Consumidor Final")[:50]
-
-        monto_neto  = int(dte.monto_neto  or 0)
-        monto_iva   = int(dte.monto_iva   or 0)
-        monto_total = int(dte.monto_total or 0)
-        monto_exe   = int(getattr(dte, 'monto_exe', 0) or 0)
-
-        # ── Inferir tipo especial IVA desde lo que ya está en BD ────────────
-        # El modelo DTE actual no tiene columnas tipo_especial/iva_no_rec/etc.
-        # Las inferimos desde tipo_dte + montos para no tocar el modelo ni
-        # romper los sets de ventas/boletas/guías que ya funcionan.
-        #
-        # Si las columnas existen (migración futura), se usan directamente.
-        tipo_especial  = getattr(dte, 'tipo_especial', '') or ''
-        iva_uso_comun  = int(getattr(dte, 'iva_uso_comun', 0) or 0)
-        fct_prop       = getattr(dte, 'fct_prop', '0.60') or '0.60'
-        iva_no_rec     = int(getattr(dte, 'iva_no_rec', 0) or 0)
-        cod_iva_no_rec = int(getattr(dte, 'cod_iva_no_rec', 9) or 9)
-        iva_ret_total  = int(getattr(dte, 'iva_ret_total', 0) or 0)
-
-        # Solo inferir si las columnas no existen o están vacías (compatibilidad)
-        if not tipo_especial and not iva_uso_comun and not iva_no_rec and not iva_ret_total:
-            if dte.tipo_dte == 46 and monto_iva > 0:
-                # Doc 46: IVA retenido total.
-                # MntIVA = IVA del documento (se mantiene).
-                # IVARetTotal = mismo valor, informa que fue retenido.
-                # MntTotal = neto + IVA (total del documento emitido por el proveedor).
-                tipo_especial = "iva_ret_total"
-                iva_ret_total = monto_iva
-                # monto_total se mantiene como viene de BD (neto + iva)
-            elif dte.tipo_dte == 33 and monto_iva > 0 and monto_neto > 0:
-                # Doc 33 con IVA no recuperable (entrega gratuita, art. 23 N°5 DL825).
-                # El set de compras SII lo marca como "ENTREGA GRATUITA DEL PROVEEDOR".
-                # En BD está guardado con monto_iva normal porque el DTE original lo trae.
-                # En el LibroCompras se informa como IVANoRec cod.9, MntIVA=0.
-                # Inferimos: si es libro de compras Y el IVA cuadra con neto*19% exacto,
-                # lo tratamos como no recuperable cod.9.
-                iva_calculado = round(monto_neto * 0.19)
-                if tipo_libro == "COMPRA" and monto_iva == iva_calculado and monto_exe == 0:
-                    tipo_especial  = "iva_no_rec"
-                    iva_no_rec     = monto_iva
-                    cod_iva_no_rec = 9
-                    monto_iva      = 0  # MntIVA=0, el IVA va en IVANoRec
-
-        # En LibroCompras las NC/ND recibidas de proveedores son documentos físicos:
-        # tipo 60 (NC física) y tipo 56 (ND física), no electrónicos (61/56).
-        # El SII del set de prueba usa tipo 60 para notas de crédito de compras.
-        tipo_doc_libro = dte.tipo_dte
-        if tipo_libro == "COMPRA":
-            if dte.tipo_dte == 61:
-                tipo_doc_libro = 60
-            elif dte.tipo_dte == 56:
-                tipo_doc_libro = 55
-
         docs.append({
-            "tipo":           tipo_doc_libro,
+            "tipo":           dte.tipo_dte,
             "folio":          dte.folio,
             "fecha":          fecha_str,
             "rut":            rut_doc,
             "razon":          razon_doc,
-            "neto":           monto_neto,
-            "iva":            monto_iva,
-            "exe":            monto_exe,
-            "total":          monto_total,
+            "neto":           int(dte.monto_neto  or 0),
+            "iva":            int(dte.monto_iva   or 0),
+            # Usar monto_exe directo — NO recalcular (rompe casos de IVA especial)
+            "exe":            int(getattr(dte, 'monto_exe', 0) or 0),
+            "total":          int(dte.monto_total or 0),
             "anulado":        getattr(dte, 'anulado', False),
             "ind_traslado":   getattr(dte, 'ind_traslado', None),
             "tipo_despacho":  getattr(dte, 'tipo_despacho', None),
             # Campos especiales IVA (LibroCompras)
-            "tipo_especial":  tipo_especial,
-            "iva_uso_comun":  iva_uso_comun,
-            "fct_prop":       fct_prop,
-            "iva_no_rec":     iva_no_rec,
-            "cod_iva_no_rec": cod_iva_no_rec,
-            "iva_ret_total":  iva_ret_total,
+            "tipo_especial":  getattr(dte, 'tipo_especial', ''),
+            "iva_uso_comun":  getattr(dte, 'iva_uso_comun', 0),
+            "fct_prop":       getattr(dte, 'fct_prop', '0.60'),
+            "iva_no_rec":     getattr(dte, 'iva_no_rec', 0),
+            "cod_iva_no_rec": getattr(dte, 'cod_iva_no_rec', 9),
+            "iva_ret_total":  getattr(dte, 'iva_ret_total', 0),
         })
 
     # ── ResumenPeriodo ────────────────────────────────────────────────────────
@@ -347,16 +295,13 @@ def _construir_libro_xml(
                 etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc.get("cod_iva_no_rec", 9))
                 etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
             elif te == "iva_ret_total":
-                # MntIVA = valor real del IVA del doc (el SII valida neto*tasa)
-                # IVARetTotal = mismo valor, informa que fue retenido
                 etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
                 etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
             else:
-                # Normal: emitir MntIVA
-                # Tipo 60 (NC física) y 55 (ND física) exigen MntIVA siempre presente,
-                # aunque sea 0, porque el schema no acepta detalle sin campo IVA.
-                if doc["iva"] != 0 or doc["tipo"] in (55, 56, 60, 61):
-                    etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
+                # MntIVA es SIEMPRE requerido por el SII en el LibroCV.
+                # El XSD lo acepta con valor 0 (ValorType = integer positivo o negativo).
+                # Omitirlo causa: "LBR-3 Falta [MntIVA MntIVANoRec IVAUsoComun]"
+                etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
             etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
 
     etree.SubElement(envio, f"{{{NS}}}TmstFirma").text = tmst
