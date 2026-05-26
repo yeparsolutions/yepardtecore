@@ -2906,19 +2906,26 @@ async function _generarLibroGuias(){
     // Buscar todos los Documento (pueden estar en EnvioDTE o en DTE directo)
     const documentos = xmlDoc.getElementsByTagNameNS(NSdte, 'Documento');
     for(const doc of documentos){
-      const tpo = doc.getElementsByTagNameNS(NSdte,'TpoDoc')[0]?.textContent?.trim();
+      // EnvioDTE usa 'TipoDTE' dentro de IdDoc/Encabezado, no 'TpoDoc'
+      const tpo = doc.getElementsByTagNameNS(NSdte,'TipoDTE')[0]?.textContent?.trim()
+               || doc.getElementsByTagNameNS(NSdte,'TpoDoc')[0]?.textContent?.trim();
       if(tpo !== '52') continue;
       const folio = parseInt(doc.getElementsByTagNameNS(NSdte,'Folio')[0]?.textContent || '0');
       if(!folio) continue;
+      // MntNeto y MntTotal pueden no existir si la guía tiene total=0 (traslado interno)
+      const netoEl  = doc.getElementsByTagNameNS(NSdte,'MntNeto')[0];
+      const ivaEl   = doc.getElementsByTagNameNS(NSdte,'IVA')[0];
+      const exeEl   = doc.getElementsByTagNameNS(NSdte,'MntExe')[0];
+      const totalEl = doc.getElementsByTagNameNS(NSdte,'MntTotal')[0];
       guias.push({
         folio,
-        fecha:   doc.getElementsByTagNameNS(NSdte,'FchEmis')[0]?.textContent?.trim() || (new Date().toISOString().slice(0,10)),
-        rut:     doc.getElementsByTagNameNS(NSdte,'RUTRecep')[0]?.textContent?.trim() || '66666666-6',
+        fecha:   doc.getElementsByTagNameNS(NSdte,'FchEmis')[0]?.textContent?.trim()    || (new Date().toISOString().slice(0,10)),
+        rut:     doc.getElementsByTagNameNS(NSdte,'RUTRecep')[0]?.textContent?.trim()   || doc.getElementsByTagNameNS(NSdte,'RUTEmisor')[0]?.textContent?.trim() || '66666666-6',
         razon:   (doc.getElementsByTagNameNS(NSdte,'RznSocRecep')[0]?.textContent?.trim() || '').slice(0,50),
-        neto:    parseInt(doc.getElementsByTagNameNS(NSdte,'MntNeto')[0]?.textContent  || '0'),
-        iva:     parseInt(doc.getElementsByTagNameNS(NSdte,'IVA')[0]?.textContent      || '0'),
-        exe:     parseInt(doc.getElementsByTagNameNS(NSdte,'MntExe')[0]?.textContent   || '0'),
-        total:   parseInt(doc.getElementsByTagNameNS(NSdte,'MntTotal')[0]?.textContent || '0'),
+        neto:    parseInt(netoEl?.textContent  || '0'),
+        iva:     parseInt(ivaEl?.textContent   || '0'),
+        exe:     parseInt(exeEl?.textContent   || '0'),
+        total:   parseInt(totalEl?.textContent || '0'),
         anulado: foliosAnulados.has(folio),
       });
     }
