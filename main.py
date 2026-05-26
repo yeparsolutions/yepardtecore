@@ -67,7 +67,7 @@ async def admin():
     """Panel de administración: emisor, certificado, CAFs y certificación SII."""
     contenido = _leer_html("static/admin.html")
     if contenido:
-        return contenido
+        return HTMLResponse(content=contenido, media_type="text/html; charset=utf-8")
     # Si el archivo no existe, devolver página de error clara
     return HTMLResponse(
         status_code=404,
