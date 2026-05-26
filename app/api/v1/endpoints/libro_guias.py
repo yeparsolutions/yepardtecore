@@ -1,18 +1,8 @@
 # app/api/v1/endpoints/libro_guias.py
 # ═══════════════════════════════════════════════════════════════════
 # Endpoint LIMPIO para Libro de Guías de Despacho (T52)
-#
-# POST /v1/libro-guias
+# POST /v1/libro-guias/
 # Body: { emisor_id, natencion, periodo, guias: [...] }
-#
-# Schema: LibroGuia_v10.xsd
-#
-# Reglas SII para el resumen:
-#   TotGuiaVenta  = guías vigentes (Anulado=1) CON MntTotal > 0
-#                   (traslados internos con total=0 van en Detalle pero NO en TotGuiaVenta)
-#   TotMntGuiaVta = suma de MntTotal de guías vigentes con total > 0
-#   TotGuiaAnulada= guías anuladas (Anulado=2)
-#   TotFolAnulado = mismo que TotGuiaAnulada
 # ═══════════════════════════════════════════════════════════════════
 
 import logging
@@ -37,8 +27,6 @@ router = APIRouter(prefix="/libro-guias", tags=["Libro Guías"])
 NS = "http://www.sii.cl/SiiDte"
 
 
-# ── Modelos ───────────────────────────────────────────────────────────────────
-
 class GuiaDespacho(BaseModel):
     folio: int
     fecha: str
@@ -60,42 +48,26 @@ class LibroGuiasRequest(BaseModel):
     guias: List[GuiaDespacho]
 
 
-# ── Constructor XML ───────────────────────────────────────────────────────────
-
-def _xml_libro_guias(emisor_rut: str, rut_envia: str,
-                     req: LibroGuiasRequest) -> str:
+def _xml_libro_guias(emisor_rut: str, rut_envia: str, req: LibroGuiasRequest) -> str:
     tmst = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
-    # ── Clasificar guías — según LibroGuia_v10.xsd ───────────────────────────
-    # CONVENCIÓN CORRECTA DEL XSD (verificada):
-    #   Campo Anulado es OPCIONAL en el Detalle:
-    #     - Guías VIGENTES: NO llevan campo <Anulado>
-    #     - Guías ANULADAS previo envío SII: <Anulado>1</Anulado>
-    #     - Guías ANULADAS posterior envío SII: <Anulado>2</Anulado>
-    #   TotFolAnulado = count(detalles con Anulado presente) → solo anuladas
-    #   TotGuiaAnulada = igual que TotFolAnulado
-    #   TotGuiaVenta   = count(detalles sin Anulado) → todas las vigentes
+    # Clasificar guías
+    guias_anuld = [g for g in req.guias if g.anulado]
+    guias_venta = [g for g in req.guias if not g.anulado]
+    tot_mnt_vta = sum(g.total for g in guias_venta)
 
-    guias_anuld = [g for g in req.guias if g.anulado]      # llevarán <Anulado>
-    guias_venta = [g for g in req.guias if not g.anulado]  # NO llevarán <Anulado>
-
-    tot_mnt_vta     = sum(g.total for g in guias_venta)
-    tot_fol_anulado = len(guias_anuld)
-
-    # ── Raíz ─────────────────────────────────────────────────────────────────
     root = etree.Element(
         f"{{{NS}}}LibroGuia",
         nsmap={None: NS, "xsi": "http://www.w3.org/2001/XMLSchema-instance"},
         attrib={
             "version": "1.0",
-            "{http://www.w3.org/2001/XMLSchema-instance}schemaLocation":
-                f"{NS} LibroGuia_v10.xsd",
+            "{http://www.w3.org/2001/XMLSchema-instance}schemaLocation": f"{NS} LibroGuia_v10.xsd",
         },
     )
     envio = etree.SubElement(root, f"{{{NS}}}EnvioLibro")
     envio.set("ID", "LibroGuias")
 
-    # ── Carátula — sin TipoOperacion (exclusivo de LibroCV) ───────────────────
+    # Carátula — SIN TipoOperacion (exclusivo de LibroCV)
     car = etree.SubElement(envio, f"{{{NS}}}Caratula")
     etree.SubElement(car, f"{{{NS}}}RutEmisorLibro").text    = emisor_rut
     etree.SubElement(car, f"{{{NS}}}RutEnvia").text          = rut_envia
@@ -106,30 +78,28 @@ def _xml_libro_guias(emisor_rut: str, rut_envia: str,
     etree.SubElement(car, f"{{{NS}}}TipoEnvio").text         = "TOTAL"
     etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = req.natencion
 
-    # ── ResumenPeriodo ────────────────────────────────────────────────────────
-    # TotGuiaVenta  = guías vigentes CON monto (excluye traslados internos con total=0)
-    # TotFolAnulado = TotGuiaAnulada = guías anuladas
+    # ResumenPeriodo
+    # Reglas verificadas contra el SII:
+    #   - Guías VIGENTES: sin campo <Anulado> en Detalle → cuentan en TotGuiaVenta
+    #   - Guías ANULADAS: <Anulado>2</Anulado> en Detalle → cuentan en TotGuiaAnulada
+    #   - TotFolAnulado: solo cuando hay <Anulado>1</Anulado> (anulado PREVIO al envío)
+    #                    se OMITE si no hay ninguno (minOccurs=0 en XSD)
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
-    # TotFolAnulado: folios con Anulado=1 (previo envío SII) — ninguno en este set
-    # Se omite si es 0 (minOccurs=0 en el XSD)
-    if tot_fol_anulado > 0:
-        etree.SubElement(resumen, f"{{{NS}}}TotFolAnulado").text  = str(tot_fol_anulado)
+    # TotFolAnulado solo si hay guías con Anulado=1 — en este set no hay, se omite
+    # etree.SubElement(resumen, f"{{{NS}}}TotFolAnulado").text = "0"
     etree.SubElement(resumen, f"{{{NS}}}TotGuiaAnulada").text = str(len(guias_anuld))
     etree.SubElement(resumen, f"{{{NS}}}TotGuiaVenta").text   = str(len(guias_venta))
     if tot_mnt_vta:
         etree.SubElement(resumen, f"{{{NS}}}TotMntGuiaVta").text = str(tot_mnt_vta)
 
-    # ── Detalle — TODAS las guías van aquí (vigentes y anuladas) ─────────────
+    # Detalle — todas las guías
     for g in req.guias:
         det = etree.SubElement(envio, f"{{{NS}}}Detalle")
-        etree.SubElement(det, f"{{{NS}}}Folio").text   = str(g.folio)
-        # Anulado es OPCIONAL: solo se emite si la guía está anulada
-        # Según TotGuiaAnulada docs del XSD: "Anulado=2" → guías anuladas
-        # Según TotFolAnulado docs del XSD:  "Anulado=1" → folios anulados
-        # El SII valida TotGuiaAnulada contra detalles con Anulado=2
+        etree.SubElement(det, f"{{{NS}}}Folio").text = str(g.folio)
+        # Anulado SOLO si está anulada — vigentes NO llevan este campo
         if g.anulado:
-            etree.SubElement(det, f"{{{NS}}}Anulado").text = "2"  # anulado posterior envío SII
-        etree.SubElement(det, f"{{{NS}}}FchDoc").text  = g.fecha
+            etree.SubElement(det, f"{{{NS}}}Anulado").text = "2"
+        etree.SubElement(det, f"{{{NS}}}FchDoc").text = g.fecha
         if g.rut:
             etree.SubElement(det, f"{{{NS}}}RUTDoc").text = g.rut
         if g.razon:
@@ -140,26 +110,20 @@ def _xml_libro_guias(emisor_rut: str, rut_envia: str,
             etree.SubElement(det, f"{{{NS}}}TasaImp").text = "19"
             etree.SubElement(det, f"{{{NS}}}IVA").text     = str(g.iva)
         if g.exe:
-            etree.SubElement(det, f"{{{NS}}}MntExe").text  = str(g.exe)
+            etree.SubElement(det, f"{{{NS}}}MntExe").text = str(g.exe)
         etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(g.total)
 
     etree.SubElement(envio, f"{{{NS}}}TmstFirma").text = tmst
 
-    raw = etree.tostring(root, encoding="ISO-8859-1",
-                         xml_declaration=True, pretty_print=True)
+    raw = etree.tostring(root, encoding="ISO-8859-1", xml_declaration=True, pretty_print=True)
     return raw.decode("ISO-8859-1").replace(
         "<?xml version='1.0' encoding='ISO-8859-1'?>",
         '<?xml version="1.0" encoding="ISO-8859-1"?>',
     )
 
 
-# ── Endpoint ──────────────────────────────────────────────────────────────────
-
 @router.post("/", summary="Genera Libro de Guías firmado")
-async def generar_libro_guias(
-    req: LibroGuiasRequest,
-    db: AsyncSession = Depends(get_db),
-):
+async def generar_libro_guias(req: LibroGuiasRequest, db: AsyncSession = Depends(get_db)):
     emisor = await db.get(Emisor, req.emisor_id)
     if not emisor:
         raise HTTPException(404, f"Emisor {req.emisor_id} no encontrado")
@@ -174,13 +138,12 @@ async def generar_libro_guias(
     if not cert or not cert.certificado_p12:
         raise HTTPException(400, "Sin certificado .p12 activo para este emisor")
 
-    rut_envia = cert.rut_firmante or emisor.rut
-
     if not req.guias:
         raise HTTPException(400, "El libro debe tener al menos una guía")
 
-    guias_venta  = [g for g in req.guias if not g.anulado and g.total > 0]
-    guias_anuld  = [g for g in req.guias if g.anulado]
+    rut_envia = cert.rut_firmante or emisor.rut
+    guias_anuld = [g for g in req.guias if g.anulado]
+    guias_venta = [g for g in req.guias if not g.anulado]
 
     logger.info(
         f"[LIBRO GUIAS] emisor={emisor.rut} natencion={req.natencion} "
