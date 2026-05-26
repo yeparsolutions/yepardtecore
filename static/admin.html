@@ -778,10 +778,18 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
         <div id="compras_wizard_resumen" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px">
           <div id="compras_wizard_resumen_txt" style="color:var(--text3)"></div>
         </div>
-        <label id="lbl_rectifica" style="display:none;align-items:center;gap:8px;font-size:12px;color:var(--text2);cursor:pointer;margin-bottom:8px">
-          <input type="checkbox" id="lw_rectifica" style="accent-color:var(--accent)">
-          Modo RECTIFICA — el SII ya cerró este libro
-        </label>
+        <div id="lbl_rectifica" style="display:none;flex-direction:column;gap:6px;margin-bottom:8px;padding:10px 12px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:8px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);cursor:pointer">
+            <input type="checkbox" id="lw_rectifica" style="accent-color:#f59e0b"
+              onchange="document.getElementById('lw_cod_aut_rec_row').style.display=this.checked?'flex':'none'">
+            Modo RECTIFICA — el SII ya cerró este libro
+          </label>
+          <div id="lw_cod_aut_rec_row" style="display:none;align-items:center;gap:8px;font-size:12px">
+            <span style="color:var(--text3);white-space:nowrap">CodAutRec:</span>
+            <input type="text" id="lw_cod_aut_rec" placeholder="Código entregado por el SII"
+              style="flex:1;padding:5px 8px;border:1px solid var(--border2);border-radius:6px;background:var(--bg);color:var(--text);font-size:12px">
+          </div>
+        </div>
         <button class="btn bp bfull" onclick="generarLibroManual()" id="btn_gen_compras_manual"
                 style="padding:13px;display:none">
           📚 Generar Libro de Compras
@@ -2842,11 +2850,16 @@ async function generarLibroManual(){
 
   // Detectar si es rectificación (checkbox en el wizard)
   const esRectifica = document.getElementById('lw_rectifica')?.checked;
+  const codAutRec   = document.getElementById('lw_cod_aut_rec')?.value?.trim() || '';
+  if(esRectifica && !codAutRec){
+    log('Para RECTIFICA necesitas el CodAutRec que entrega el SII','err'); return;
+  }
   const body = {
     emisor_id: S.id, natencion: nat, periodo: periodoHoy, documentos,
-    tipo_libro: esRectifica ? 'RECTIFICA' : 'ESPECIAL',
+    tipo_libro:  esRectifica ? 'RECTIFICA' : 'ESPECIAL',
+    cod_aut_rec: codAutRec,
   };
-  if(esRectifica) log('Modo RECTIFICA — sobreescribe el libro cerrado','warn');
+  if(esRectifica) log('Modo RECTIFICA — CodAutRec: ' + codAutRec,'warn');
   const btn = document.getElementById('btn_gen_compras_manual');
   btn.disabled=true; btn.textContent='Generando...';
   log('Generando Libro Compras — ' + docs.length + ' docs, tipos: ' + [...new Set(docs.map(d=>d.tipo))].sort().join(','), 'info');
