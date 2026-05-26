@@ -2637,22 +2637,56 @@ async function generarLibroManual(){
   if(!docs.length){ log('Confirma al menos un documento en el wizard','warn'); return; }
 
   const periodoHoy = new Date().toISOString().slice(0,7);
-  const body = {
-    emisor_id: S.id, tipo_libro: LW.tipo, natencion: nat, periodo: periodoHoy,
-    dtes: _lwDocsToApi(docs),
-  };
   const btn = document.getElementById('btn_gen_compras_manual');
-  btn.disabled=true; btn.textContent='Generando...';
-  log(`Generando Libro ${LW.tipo} con ${docs.length} documentos...`,'info');
+  btn.disabled=true; btn.textContent='Guardando set...';
+  log(`Guardando set de compras N° ${nat} con ${docs.length} documentos...`,'info');
+
+  // PASO 1: Guardar el set en BD con el endpoint dinámico
+  const bodySet = {
+    emisor_id:  S.id,
+    natencion:  nat,
+    periodo:    periodoHoy,
+    fch_resol:  '2026-04-19',
+    nro_resol:  '0',
+    fct_prop:   '0.60',
+    documentos: docs.map(d=>({
+      tipo_dte:       d.tipo,
+      folio:          d.folio,
+      fecha_doc:      d.fecha,
+      rut_doc:        d.rut,
+      razon_doc:      d.razon,
+      monto_neto:     d.neto          || 0,
+      monto_exe:      d.exe           || 0,
+      monto_iva:      d.iva           || 0,
+      monto_total:    d.total         || 0,
+      tipo_especial:  d.tipo_especial || '',
+      iva_uso_comun:  d.iva_uso_comun || 0,
+      fct_prop:       d.fct_prop      || '0.60',
+      iva_no_rec:     d.iva_no_rec    || 0,
+      cod_iva_no_rec: d.cod_iva_no_rec|| 9,
+      iva_ret_total:  d.iva_ret_total || 0,
+    })),
+  };
+
   try{
-    const r = await fetch(base()+'/v1/certificacion-libros/manual', {
-      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body),
+    const r1 = await fetch(base()+'/v1/certificacion-libro-compras-din/set', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(bodySet),
     });
-    if(!r.ok){ const t=await r.text(); log('Error '+r.status+': '+t.slice(0,300),'err'); return; }
-    const cd = r.headers.get('Content-Disposition')||'';
-    const m  = cd.match(/filename="([^"]+)"/);
-    S.xmlNombre = m ? m[1] : `LibroCompras_${nat}.xml`;
-    S.xmlBlob   = await r.blob();
+    if(!r1.ok){ const t=await r1.text(); log('Error guardando set: '+r1.status+' '+t.slice(0,200),'err'); return; }
+    const setData = await r1.json();
+    const setId   = setData.set_id;
+    log(`Set guardado — ID ${setId} · ${setData.documentos} documentos`,'ok');
+
+    // PASO 2: Generar el libro desde el set guardado
+    btn.textContent='Generando libro...';
+    const r2 = await fetch(base()+`/v1/certificacion-libro-compras-din/generar-xml/${setId}`, {
+      method:'POST',
+    });
+    if(!r2.ok){ const t=await r2.text(); log('Error generando libro: '+r2.status+' '+t.slice(0,200),'err'); return; }
+    const cd2 = r2.headers.get('Content-Disposition')||'';
+    const m2  = cd2.match(/filename="([^"]+)"/);
+    S.xmlNombre = m2 ? m2[1] : `LibroCompras_${nat}.xml`;
+    S.xmlBlob   = await r2.blob();
     document.getElementById('dl_libro_nombre').textContent = S.xmlNombre;
     document.getElementById('dl_libro_box').style.display  = 'block';
     log(`✓ Libro generado: ${S.xmlNombre}`,'ok');
@@ -2660,7 +2694,8 @@ async function generarLibroManual(){
     box.className='result show ok';
     document.getElementById('r_libro_xml_l').textContent='✓ libro generado';
     document.getElementById('r_libro_xml_l').className='rlbl ok';
-    document.getElementById('r_libro_xml_c').textContent=S.xmlNombre;
+    document.getElementById('r_libro_xml_c').textContent=S.xmlNombre+'
+Set ID: '+setId+' guardado en BD.';
   }catch(e){ log('Error: '+e,'err'); }
   finally{ btn.disabled=false; btn.textContent='📚 Generar Libro de Compras'; }
 }
