@@ -58,7 +58,8 @@ class LibroComprasRequest(BaseModel):
     periodo: str = "2026-05"
     fch_resol: str = "2026-04-19"
     nro_resol: str = "0"
-    tipo_libro: str = "ESPECIAL"   # "ESPECIAL" | "RECTIFICA" (para corregir un libro cerrado)
+    tipo_libro: str = "ESPECIAL"   # "ESPECIAL" | "RECTIFICA"
+    cod_aut_rec: str = ""          # Código de autorización (requerido solo para RECTIFICA)
     documentos: List[DocumentoCompra]
 
 
@@ -98,9 +99,12 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
     etree.SubElement(car, f"{{{NS}}}FchResol").text          = req.fch_resol
     etree.SubElement(car, f"{{{NS}}}NroResol").text          = req.nro_resol
     etree.SubElement(car, f"{{{NS}}}TipoOperacion").text     = "COMPRA"
-    etree.SubElement(car, f"{{{NS}}}TipoLibro").text         = req.tipo_libro  # ESPECIAL o RECTIFICA
+    etree.SubElement(car, f"{{{NS}}}TipoLibro").text         = req.tipo_libro
     etree.SubElement(car, f"{{{NS}}}TipoEnvio").text         = "TOTAL"
     etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = req.natencion
+    # CodAutRec — solo requerido cuando TipoLibro = "RECTIFICA"
+    if req.tipo_libro == "RECTIFICA" and req.cod_aut_rec:
+        etree.SubElement(car, f"{{{NS}}}CodAutRec").text = req.cod_aut_rec
 
     # ── ResumenPeriodo — un TotalesPeriodo por tipo de documento ─────────────
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
