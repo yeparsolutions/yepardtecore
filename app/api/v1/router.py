@@ -12,6 +12,7 @@ from app.api.v1.endpoints import (
     certificacion_dinamica,
     certificacion_libros_dinamico,
     certificacion_libro_compras,
+    certificacion_libro_compras_dinamico,
 )
 
 api_router = APIRouter()
@@ -26,3 +27,4 @@ api_router.include_router(sii_auth.router)
 api_router.include_router(certificacion_dinamica.router)
 api_router.include_router(certificacion_libros_dinamico.router)
 api_router.include_router(certificacion_libro_compras.router)
+api_router.include_router(certificacion_libro_compras_dinamico.router)
