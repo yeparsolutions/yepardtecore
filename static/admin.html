@@ -2801,6 +2801,7 @@ async function generarLibroComprasDedicado(){
   finally{ if(btn){ btn.disabled=false; btn.textContent='⚡ Generar con datos del Set 4841545 (automático)'; } }
 }
 
+// ── Libro Compras — usa /v1/libro-compras/ (endpoint limpio, no lee BD) ────────
 async function generarLibroManual(){
   if(!S.id){ log('Carga el emisor primero','warn'); return; }
   const nat = document.getElementById('libro_natencion').value.trim();
@@ -2809,25 +2810,42 @@ async function generarLibroManual(){
   if(!docs.length){ log('Confirma al menos un documento en el wizard','warn'); return; }
 
   const periodoHoy = new Date().toISOString().slice(0,7);
-  const body = {
-    emisor_id: S.id, tipo_libro: LW.tipo, natencion: nat, periodo: periodoHoy,
-    dtes: _lwDocsToApi(docs),
-  };
+
+  // Solo los docs que el usuario confirmó en el wizard — nada más
+  const documentos = docs.map(d => ({
+    tipo:           d.tipo,
+    folio:          d.folio,
+    fecha:          d.fecha || (periodoHoy + '-01'),
+    rut:            d.rut  || '66666666-6',
+    razon:          d.razon || '',
+    exe:            d.exe  || 0,
+    neto:           d.neto || 0,
+    iva:            d.iva  || 0,
+    tipo_especial:  d.tipo_especial  || '',
+    iva_uso_comun:  d.iva_uso_comun  || 0,
+    fct_prop:       d.fct_prop       || '0.60',
+    iva_no_rec:     d.iva_no_rec     || 0,
+    cod_iva_no_rec: d.cod_iva_no_rec || 9,
+    iva_ret_total:  d.iva_ret_total  || 0,
+    total:          d.total || 0,
+  }));
+
+  const body = { emisor_id: S.id, natencion: nat, periodo: periodoHoy, documentos };
   const btn = document.getElementById('btn_gen_compras_manual');
   btn.disabled=true; btn.textContent='Generando...';
-  log(`Generando Libro ${LW.tipo} con ${docs.length} documentos...`,'info');
+  log('Generando Libro Compras — ' + docs.length + ' docs, tipos: ' + [...new Set(docs.map(d=>d.tipo))].sort().join(','), 'info');
   try{
-    const r = await fetch(base()+'/v1/certificacion-libros/manual', {
+    const r = await fetch(base()+'/v1/libro-compras/', {
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body),
     });
     if(!r.ok){ const t=await r.text(); log('Error '+r.status+': '+t.slice(0,300),'err'); return; }
     const cd = r.headers.get('Content-Disposition')||'';
     const m  = cd.match(/filename="([^"]+)"/);
-    S.xmlNombre = m ? m[1] : `LibroCompras_${nat}.xml`;
+    S.xmlNombre = m ? m[1] : ('LibroCompras_' + nat + '.xml');
     S.xmlBlob   = await r.blob();
     document.getElementById('dl_libro_nombre').textContent = S.xmlNombre;
     document.getElementById('dl_libro_box').style.display  = 'block';
-    log(`✓ Libro generado: ${S.xmlNombre}`,'ok');
+    log('✓ ' + S.xmlNombre + ' generado','ok');
     const box=document.getElementById('r_libro_xml');
     box.className='result show ok';
     document.getElementById('r_libro_xml_l').textContent='✓ libro generado';
@@ -2835,6 +2853,77 @@ async function generarLibroManual(){
     document.getElementById('r_libro_xml_c').textContent=S.xmlNombre;
   }catch(e){ log('Error: '+e,'err'); }
   finally{ btn.disabled=false; btn.textContent='📚 Generar Libro de Compras'; }
+}
+
+// ── Libro Guías — parsea DTE XMLs en el cliente y usa /v1/libro-guias/ ─────
+async function _generarLibroGuias(){
+  if(!S.id){ log('Carga el emisor primero','warn'); return; }
+  const nat = document.getElementById('libro_natencion').value.trim();
+  if(!nat){ log('Ingresa el N° de atención del libro','warn'); return; }
+  if(_libroXMLFiles.length === 0){ log('Sube al menos un XML de EnvioDTE','warn'); return; }
+
+  // Folios marcados como anulados desde la UI
+  const foliosAnulados = new Set(
+    (document.getElementById('guias_folios_anulados')?.value || '')
+      .split(',').map(s => parseInt(s.trim())).filter(Boolean)
+  );
+
+  const guias = [];
+  const NSdte = 'http://www.sii.cl/SiiDte';
+
+  for(const file of _libroXMLFiles){
+    const text   = await file.text();
+    const xmlDoc = new DOMParser().parseFromString(text, 'text/xml');
+    // Buscar todos los Documento (pueden estar en EnvioDTE o en DTE directo)
+    const documentos = xmlDoc.getElementsByTagNameNS(NSdte, 'Documento');
+    for(const doc of documentos){
+      const tpo = doc.getElementsByTagNameNS(NSdte,'TpoDoc')[0]?.textContent?.trim();
+      if(tpo !== '52') continue;
+      const folio = parseInt(doc.getElementsByTagNameNS(NSdte,'Folio')[0]?.textContent || '0');
+      if(!folio) continue;
+      guias.push({
+        folio,
+        fecha:   doc.getElementsByTagNameNS(NSdte,'FchEmis')[0]?.textContent?.trim() || (new Date().toISOString().slice(0,10)),
+        rut:     doc.getElementsByTagNameNS(NSdte,'RUTRecep')[0]?.textContent?.trim() || '66666666-6',
+        razon:   (doc.getElementsByTagNameNS(NSdte,'RznSocRecep')[0]?.textContent?.trim() || '').slice(0,50),
+        neto:    parseInt(doc.getElementsByTagNameNS(NSdte,'MntNeto')[0]?.textContent  || '0'),
+        iva:     parseInt(doc.getElementsByTagNameNS(NSdte,'IVA')[0]?.textContent      || '0'),
+        exe:     parseInt(doc.getElementsByTagNameNS(NSdte,'MntExe')[0]?.textContent   || '0'),
+        total:   parseInt(doc.getElementsByTagNameNS(NSdte,'MntTotal')[0]?.textContent || '0'),
+        anulado: foliosAnulados.has(folio),
+      });
+    }
+  }
+
+  if(!guias.length){ log('No se encontraron Guías T52 en los XMLs subidos','err'); return; }
+  log('LibroGuías: ' + guias.length + ' guías (' + guias.filter(g=>g.anulado).length + ' anuladas)','info');
+
+  const periodoHoy = new Date().toISOString().slice(0,7);
+  const body = { emisor_id: S.id, natencion: nat, periodo: periodoHoy, guias };
+
+  const btn = document.getElementById('btn_libro_xml');
+  btn.disabled=true; btn.textContent='Generando...';
+  try{
+    const r = await fetch(base()+'/v1/libro-guias/', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body),
+    });
+    if(!r.ok){ const t=await r.text(); log('Error '+r.status+': '+t.slice(0,300),'err'); return; }
+    const cd = r.headers.get('Content-Disposition')||'';
+    const m  = cd.match(/filename="([^"]+)"/);
+    S.xmlNombre = m ? m[1] : ('LibroGuias_' + nat + '.xml');
+    S.xmlBlob   = await r.blob();
+    document.getElementById('dl_libro_nombre').textContent = S.xmlNombre;
+    document.getElementById('dl_libro_box').style.display  = 'block';
+    document.getElementById('dl_name5').textContent = S.xmlNombre;
+    document.getElementById('dlbox5').classList.add('show');
+    log('✓ ' + S.xmlNombre + ' generado — ' + guias.length + ' guías','ok');
+    const box=document.getElementById('r_libro_xml');
+    box.className='result show ok';
+    document.getElementById('r_libro_xml_l').className='rlbl ok';
+    document.getElementById('r_libro_xml_l').textContent='✓ libro generado';
+    document.getElementById('r_libro_xml_c').textContent=S.xmlNombre + ' — ' + guias.length + ' guías';
+  }catch(e){ log('Error: '+e,'err'); }
+  finally{ btn.disabled=false; btn.textContent='📚 Generar Libro desde XMLs'; }
 }
 const _libroXMLFiles = [];
 
@@ -2870,8 +2959,12 @@ function removeLibroXML(i){
 
 async function generarLibroDesdeXML(){
   if(!S.id){ log('Carga el emisor primero','warn'); return; }
+  const tipo = document.getElementById('libro_tipo').value;
+
+  // Guías usa el nuevo endpoint limpio — parsea XMLs en el cliente
+  if(tipo === 'guias') { return await _generarLibroGuias(); }
+
   if(_libroXMLFiles.length === 0){ log('Sube al menos un XML de EnvioDTE','warn'); return; }
-  const tipo   = document.getElementById('libro_tipo').value;
   const nat    = document.getElementById('libro_natencion').value.trim();
   if(!nat){ log('Ingresa el N° de atención del libro','warn'); return; }
 
