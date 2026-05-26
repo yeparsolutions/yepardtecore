@@ -2460,15 +2460,17 @@ function abrirLibroWizard(tipo){
   LW.idx  = 0;
 
   if(tipo === 'compras'){
-    // Prioridad: 1) documentos del .txt parseado  2) template hardcodeado
+    // Prioridad: 1) documentos del .txt parseado (si tiene los 7)
+    //            2) template del set 4841545 (fallback siempre completo)
     const setCompras = S.setsDetectados?.find(s => s.key === 'compras');
-    if(setCompras?.docsLibro?.length > 0){
-      // El usuario cargó el .txt del SII → usar esos documentos
-      // Los montos vendrán en 0 — el wizard los muestra para que el usuario los complete
+    if(setCompras?.docsLibro?.length >= 4){
+      // .txt parseado con suficientes docs → usarlos
       LW.docs = setCompras.docsLibro.map(d => ({...d}));
+      log('LibroCompras: ' + LW.docs.length + ' documentos cargados desde el .txt','ok');
     } else {
-      // Sin .txt cargado → template del set 4841545 como referencia
+      // Fallback: template completo del set 4841545
       LW.docs = LIBRO_COMPRAS_DOCS_DEFAULT.map(d => ({...d}));
+      log('LibroCompras: usando template del set 4841545 (revisa y confirma los montos)','info');
     }
   }
   // Inicializar modal
@@ -3102,6 +3104,21 @@ function renderGenSelector(sets){
 
 async function generarXML(setKey, natencion){
   if(!S.id){log('Carga el emisor primero','warn');return;}
+
+  // Libro Compras: usa el wizard → generarLibroManual() → /v1/libro-compras/
+  if(setKey === 'compras'){
+    document.getElementById('libro_natencion').value = natencion;
+    abrirLibroWizard('compras');
+    log('Completa el wizard y haz clic en "📚 Generar Libro de Compras"','info');
+    return;
+  }
+  // Libro Guías: usa el nuevo handler que parsea los XMLs → /v1/libro-guias/
+  if(setKey === 'libro_guias'){
+    document.getElementById('libro_natencion').value = natencion;
+    log('Sube los XMLs de las guías y haz clic en "📚 Generar Libro desde XMLs"','info');
+    return;
+  }
+
   const endpoint=getEndpointMap()[setKey];
   if(!endpoint){res(5,false,'No hay endpoint configurado para el set: '+setKey);return;}
 
