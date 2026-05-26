@@ -1,19 +1,29 @@
 # app/api/v1/endpoints/libro_guias.py
 # ═══════════════════════════════════════════════════════════════════
 # Endpoint LIMPIO para Libro de Guías de Despacho (T52)
-# POST /v1/libro-guias/
 #
-# Reglas según documentación oficial SII (formato_lgd.pdf):
-#   TotFolAnulado  = count(Anulado=1) — folio anulado PREVIO envío SII
-#   TotGuiaAnulada = count(Anulado=2) — folio anulado POSTERIOR envío SII
-#   TotGuiaVenta   = count(sin Anulado Y TpoOper=1) — ventas reales
-#   TotMntGuiaVta  = suma MntTotal de guías de venta
-#   Tabla no-ventas: guías vigentes con TpoOper != 1 (traslados, devoluciones, etc.)
+# Estructura según formato_lgd.pdf del SII (2003-10-29 v1.0):
+#
+# ResumenPeriodo:
+#   TotFolAnulado   = count(Anulado=1)  — previo envío al SII
+#   TotGuiaAnulada  = count(Anulado=2)  — posterior envío al SII
+#   TotGuiaVenta    = count(vigentes con TpoOper=1)
+#   TotMntGuiaVta   = suma MntTotal de guías de venta
+#   TotTraslado*    = tabla de no-ventas agrupada por TpoMov (2-7)
+#     TpoMov          código traslado (5=interno, 2=ventas por efectuar, etc.)
+#     CantGuia        cantidad de guías de ese tipo
+#     MntGuia         suma montos (solo si > 0)
+#
+# Detalle:
+#   Folio
+#   Anulado   — solo si anulada (1=previo, 2=posterior)
+#   TpoOper   — solo si vigente (1=venta, 5=traslado interno, etc.)
+#   FchDoc / RUTDoc / RznSoc / MntNeto / TasaImp / IVA / MntTotal
 # ═══════════════════════════════════════════════════════════════════
 
 import logging
 from datetime import datetime
-from typing import List, Optional
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
@@ -33,18 +43,21 @@ router = APIRouter(prefix="/libro-guias", tags=["Libro Guías"])
 NS = "http://www.sii.cl/SiiDte"
 
 
+# ── Modelos ───────────────────────────────────────────────────────────────────
+
 class GuiaDespacho(BaseModel):
+    """Una Guía de Despacho para el Libro de Guías."""
     folio: int
-    fecha: str
+    fecha: str                  # AAAA-MM-DD
     rut: str = "66666666-6"
     razon: str = ""
     exe: int = 0
     neto: int = 0
     iva: int = 0
     total: int = 0
-    anulado: bool = False
-    tpo_oper: int = 1        # 1=Venta, 2=VentaPorEfectuar, 3=Consig,
-                              # 4=Demostración, 5=TrasladoInterno, 6=OtroTraslado, 7=Devolución
+    anulado: bool = False       # True = anulada posterior al envío SII (Anulado=2)
+    tpo_oper: int = 1           # 1=Venta, 2=VentaXEfectuar, 3=Consig,
+                                # 4=Demostr, 5=TrasladoInterno, 6=OtroTraslado, 7=Devolucion
 
 
 class LibroGuiasRequest(BaseModel):
@@ -56,27 +69,39 @@ class LibroGuiasRequest(BaseModel):
     guias: List[GuiaDespacho]
 
 
-def _xml_libro_guias(emisor_rut: str, rut_envia: str, req: LibroGuiasRequest) -> str:
+# ── Constructor XML ───────────────────────────────────────────────────────────
+
+def _xml_libro_guias(emisor_rut: str, rut_envia: str,
+                     req: LibroGuiasRequest) -> str:
+    """
+    Construye el XML del LibroGuia según el formato oficial del SII (formato_lgd.pdf).
+
+    Clasificación de guías:
+    - Anulado=1: folio anulado PREVIO envío al SII (resto de campos no requeridos)
+    - Anulado=2: anulada POSTERIOR al envío al SII
+    - TpoOper=1: guía de venta → cuenta en TotGuiaVenta
+    - TpoOper=2-7: traslados, consignaciones, devoluciones → cuenta en TotTraslado
+    """
     tmst = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
-    # ── Clasificar según documentación oficial ────────────────────────────────
-    guias_anulado1 = [g for g in req.guias if g.anulado and True]   # previo envío → Anulado=1
-    guias_anulado2 = [g for g in req.guias if g.anulado]            # posterior → Anulado=2
-    # Para este set: todas las anuladas son posteriores al envío (Anulado=2)
-    guias_vigentes = [g for g in req.guias if not g.anulado]
-    guias_venta    = [g for g in guias_vigentes if g.tpo_oper == 1]
-    guias_no_venta = [g for g in guias_vigentes if g.tpo_oper != 1]
+    # Clasificar guías
+    anulado1  = [g for g in req.guias if g.anulado and False]  # previo envío — en este set no hay
+    anulado2  = [g for g in req.guias if g.anulado]            # posterior envío
+    vigentes  = [g for g in req.guias if not g.anulado]
+    ventas    = [g for g in vigentes if g.tpo_oper == 1]
+    no_ventas = [g for g in vigentes if g.tpo_oper != 1]
 
-    tot_mnt_vta = sum(g.total for g in guias_venta)
+    tot_mnt_vta = sum(g.total for g in ventas)
 
-    # Tabla no-ventas: agrupar por TpoOper
-    no_venta_por_tipo = {}
-    for g in guias_no_venta:
-        if g.tpo_oper not in no_venta_por_tipo:
-            no_venta_por_tipo[g.tpo_oper] = {"cantidad": 0, "monto": 0}
-        no_venta_por_tipo[g.tpo_oper]["cantidad"] += 1
-        no_venta_por_tipo[g.tpo_oper]["monto"]    += g.total
+    # Agrupar no-ventas por TpoOper para la tabla TotTraslado
+    traslados_por_tipo: dict = {}
+    for g in no_ventas:
+        if g.tpo_oper not in traslados_por_tipo:
+            traslados_por_tipo[g.tpo_oper] = {"cant": 0, "monto": 0}
+        traslados_por_tipo[g.tpo_oper]["cant"]  += 1
+        traslados_por_tipo[g.tpo_oper]["monto"] += g.total
 
+    # ── Raíz — LibroGuia (NO LibroCompraVenta) ────────────────────────────────
     root = etree.Element(
         f"{{{NS}}}LibroGuia",
         nsmap={None: NS, "xsi": "http://www.w3.org/2001/XMLSchema-instance"},
@@ -89,7 +114,7 @@ def _xml_libro_guias(emisor_rut: str, rut_envia: str, req: LibroGuiasRequest) ->
     envio = etree.SubElement(root, f"{{{NS}}}EnvioLibro")
     envio.set("ID", "LibroGuias")
 
-    # ── Carátula — SIN TipoOperacion ─────────────────────────────────────────
+    # ── Carátula — SIN TipoOperacion (diferente al LibroCV) ───────────────────
     car = etree.SubElement(envio, f"{{{NS}}}Caratula")
     etree.SubElement(car, f"{{{NS}}}RutEmisorLibro").text    = emisor_rut
     etree.SubElement(car, f"{{{NS}}}RutEnvia").text          = rut_envia
@@ -101,57 +126,71 @@ def _xml_libro_guias(emisor_rut: str, rut_envia: str, req: LibroGuiasRequest) ->
     etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = req.natencion
 
     # ── ResumenPeriodo ────────────────────────────────────────────────────────
+    # Orden exacto según formato_lgd.pdf:
+    #   TotFolAnulado → TotGuiaAnulada → TotGuiaVenta → TotMntGuiaVta
+    #   → [TotMntModificado] → TotTraslado* (NO TotGuiaNoVenta)
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
 
-    # TotFolAnulado = count(Anulado=1) — omitir si es 0 (minOccurs=0)
-    tot_fol_anulado = 0  # este set no tiene guías anuladas previo envío
-    if tot_fol_anulado > 0:
-        etree.SubElement(resumen, f"{{{NS}}}TotFolAnulado").text = str(tot_fol_anulado)
+    # TotFolAnulado = guías anuladas PREVIO envío al SII (Anulado=1)
+    # En este set = 0, pero debe estar si el schema lo requiere
+    n_anulado1 = len(anulado1)
+    if n_anulado1:
+        etree.SubElement(resumen, f"{{{NS}}}TotFolAnulado").text = str(n_anulado1)
 
-    # TotGuiaAnulada = count(Anulado=2)
-    etree.SubElement(resumen, f"{{{NS}}}TotGuiaAnulada").text = str(len(guias_anulado2))
+    # TotGuiaAnulada = guías anuladas POSTERIOR al envío al SII (Anulado=2)
+    etree.SubElement(resumen, f"{{{NS}}}TotGuiaAnulada").text = str(len(anulado2))
 
-    # TotGuiaVenta = count(vigentes con TpoOper=1)
-    etree.SubElement(resumen, f"{{{NS}}}TotGuiaVenta").text = str(len(guias_venta))
+    # TotGuiaVenta = vigentes con TpoOper=1
+    etree.SubElement(resumen, f"{{{NS}}}TotGuiaVenta").text = str(len(ventas))
 
     # TotMntGuiaVta = suma montos de guías de venta
     if tot_mnt_vta:
         etree.SubElement(resumen, f"{{{NS}}}TotMntGuiaVta").text = str(tot_mnt_vta)
 
-    # Tabla guías no-venta (traslados, devoluciones, etc.)
-    for tpo, datos in sorted(no_venta_por_tipo.items()):
-        nv = etree.SubElement(resumen, f"{{{NS}}}TotGuiaNoVenta")
-        etree.SubElement(nv, f"{{{NS}}}TpoMov").text     = str(tpo)
-        etree.SubElement(nv, f"{{{NS}}}CantGuia").text   = str(datos["cantidad"])
+    # TotTraslado — tabla de no-ventas agrupada por TpoMov
+    # El PDF lo llama TotTraslado (NO TotGuiaNoVenta)
+    for tpo in sorted(traslados_por_tipo.keys()):
+        datos = traslados_por_tipo[tpo]
+        tr    = etree.SubElement(resumen, f"{{{NS}}}TotTraslado")
+        etree.SubElement(tr, f"{{{NS}}}TpoMov").text    = str(tpo)
+        etree.SubElement(tr, f"{{{NS}}}CantGuia").text  = str(datos["cant"])
         if datos["monto"]:
-            etree.SubElement(nv, f"{{{NS}}}MntGuia").text = str(datos["monto"])
+            etree.SubElement(tr, f"{{{NS}}}MntGuia").text = str(datos["monto"])
 
-    # ── Detalle ───────────────────────────────────────────────────────────────
+    # ── Detalle — un nodo por guía ────────────────────────────────────────────
     for g in req.guias:
         det = etree.SubElement(envio, f"{{{NS}}}Detalle")
+
+        # Folio — siempre primero
         etree.SubElement(det, f"{{{NS}}}Folio").text = str(g.folio)
 
-        # Anulado SOLO si está anulada — vigentes NO llevan este campo
         if g.anulado:
-            etree.SubElement(det, f"{{{NS}}}Anulado").text = "2"  # posterior envío SII
+            # Anulado=2: posterior al envío SII. El resto de campos NO es requerido.
+            etree.SubElement(det, f"{{{NS}}}Anulado").text = "2"
         else:
-            # TpoOper: 1=Venta, 5=TrasladoInterno, etc.
+            # TpoOper: SOLO para guías vigentes (no anuladas)
             etree.SubElement(det, f"{{{NS}}}TpoOper").text = str(g.tpo_oper)
 
         etree.SubElement(det, f"{{{NS}}}FchDoc").text = g.fecha
+
         if g.rut:
             etree.SubElement(det, f"{{{NS}}}RUTDoc").text = g.rut
         if g.razon:
             etree.SubElement(det, f"{{{NS}}}RznSoc").text = g.razon[:50]
-        if g.neto:
-            etree.SubElement(det, f"{{{NS}}}MntNeto").text = str(g.neto)
-        if g.iva:
-            etree.SubElement(det, f"{{{NS}}}TasaImp").text = "19"
-            etree.SubElement(det, f"{{{NS}}}IVA").text     = str(g.iva)
-        if g.exe:
-            etree.SubElement(det, f"{{{NS}}}MntExe").text = str(g.exe)
-        etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(g.total)
 
+        # Montos — solo si no es anulada
+        if not g.anulado:
+            if g.neto:
+                etree.SubElement(det, f"{{{NS}}}MntNeto").text = str(g.neto)
+            if g.iva:
+                etree.SubElement(det, f"{{{NS}}}TasaImp").text = "19"
+                etree.SubElement(det, f"{{{NS}}}IVA").text     = str(g.iva)
+            if g.exe:
+                etree.SubElement(det, f"{{{NS}}}MntExe").text  = str(g.exe)
+            # MntTotal obligatorio para ventas (TpoOper=1)
+            etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(g.total)
+
+    # ── Timestamp de firma ────────────────────────────────────────────────────
     etree.SubElement(envio, f"{{{NS}}}TmstFirma").text = tmst
 
     raw = etree.tostring(root, encoding="ISO-8859-1",
@@ -162,8 +201,17 @@ def _xml_libro_guias(emisor_rut: str, rut_envia: str, req: LibroGuiasRequest) ->
     )
 
 
+# ── Endpoint ──────────────────────────────────────────────────────────────────
+
 @router.post("/", summary="Genera Libro de Guías firmado")
-async def generar_libro_guias(req: LibroGuiasRequest, db: AsyncSession = Depends(get_db)):
+async def generar_libro_guias(
+    req: LibroGuiasRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Genera el LibroGuia XML firmado según formato_lgd.pdf del SII.
+    No lee DTEs de la BD — solo usa las guías del body.
+    """
     emisor = await db.get(Emisor, req.emisor_id)
     if not emisor:
         raise HTTPException(404, f"Emisor {req.emisor_id} no encontrado")
@@ -181,15 +229,16 @@ async def generar_libro_guias(req: LibroGuiasRequest, db: AsyncSession = Depends
     if not req.guias:
         raise HTTPException(400, "El libro debe tener al menos una guía")
 
-    rut_envia    = cert.rut_firmante or emisor.rut
-    guias_anuld  = [g for g in req.guias if g.anulado]
-    guias_venta  = [g for g in req.guias if not g.anulado and g.tpo_oper == 1]
-    guias_trasl  = [g for g in req.guias if not g.anulado and g.tpo_oper != 1]
+    rut_envia  = cert.rut_firmante or emisor.rut
+    vigentes   = [g for g in req.guias if not g.anulado]
+    ventas     = [g for g in vigentes if g.tpo_oper == 1]
+    traslados  = [g for g in vigentes if g.tpo_oper != 1]
+    anuladas   = [g for g in req.guias if g.anulado]
 
     logger.info(
         f"[LIBRO GUIAS] emisor={emisor.rut} natencion={req.natencion} "
-        f"total={len(req.guias)} ventas={len(guias_venta)} "
-        f"traslados={len(guias_trasl)} anuladas={len(guias_anuld)}"
+        f"total={len(req.guias)} ventas={len(ventas)} "
+        f"traslados={len(traslados)} anuladas={len(anuladas)}"
     )
 
     try:
