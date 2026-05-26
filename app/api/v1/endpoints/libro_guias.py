@@ -110,7 +110,10 @@ def _xml_libro_guias(emisor_rut: str, rut_envia: str,
     # TotGuiaVenta  = guías vigentes CON monto (excluye traslados internos con total=0)
     # TotFolAnulado = TotGuiaAnulada = guías anuladas
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
-    etree.SubElement(resumen, f"{{{NS}}}TotFolAnulado").text  = str(tot_fol_anulado)
+    # TotFolAnulado: folios con Anulado=1 (previo envío SII) — ninguno en este set
+    # Se omite si es 0 (minOccurs=0 en el XSD)
+    if tot_fol_anulado > 0:
+        etree.SubElement(resumen, f"{{{NS}}}TotFolAnulado").text  = str(tot_fol_anulado)
     etree.SubElement(resumen, f"{{{NS}}}TotGuiaAnulada").text = str(len(guias_anuld))
     etree.SubElement(resumen, f"{{{NS}}}TotGuiaVenta").text   = str(len(guias_venta))
     if tot_mnt_vta:
