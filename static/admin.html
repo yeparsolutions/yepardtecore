@@ -2917,16 +2917,22 @@ async function _generarLibroGuias(){
       const ivaEl   = doc.getElementsByTagNameNS(NSdte,'IVA')[0];
       const exeEl   = doc.getElementsByTagNameNS(NSdte,'MntExe')[0];
       const totalEl = doc.getElementsByTagNameNS(NSdte,'MntTotal')[0];
+      // IndTraslado en el DTE guía = TpoOper en el libro
+      // 1=Venta, 5=TrasladoInterno, 2=VentaXEfectuar, etc.
+      const indTraslado = parseInt(
+        doc.getElementsByTagNameNS(NSdte,'IndTraslado')[0]?.textContent?.trim() || '1'
+      );
       guias.push({
         folio,
-        fecha:   doc.getElementsByTagNameNS(NSdte,'FchEmis')[0]?.textContent?.trim()    || (new Date().toISOString().slice(0,10)),
-        rut:     doc.getElementsByTagNameNS(NSdte,'RUTRecep')[0]?.textContent?.trim()   || doc.getElementsByTagNameNS(NSdte,'RUTEmisor')[0]?.textContent?.trim() || '66666666-6',
-        razon:   (doc.getElementsByTagNameNS(NSdte,'RznSocRecep')[0]?.textContent?.trim() || '').slice(0,50),
-        neto:    parseInt(netoEl?.textContent  || '0'),
-        iva:     parseInt(ivaEl?.textContent   || '0'),
-        exe:     parseInt(exeEl?.textContent   || '0'),
-        total:   parseInt(totalEl?.textContent || '0'),
-        anulado: foliosAnulados.has(folio),
+        fecha:    doc.getElementsByTagNameNS(NSdte,'FchEmis')[0]?.textContent?.trim()    || (new Date().toISOString().slice(0,10)),
+        rut:      doc.getElementsByTagNameNS(NSdte,'RUTRecep')[0]?.textContent?.trim()   || doc.getElementsByTagNameNS(NSdte,'RUTEmisor')[0]?.textContent?.trim() || '66666666-6',
+        razon:    (doc.getElementsByTagNameNS(NSdte,'RznSocRecep')[0]?.textContent?.trim() || '').slice(0,50),
+        neto:     parseInt(netoEl?.textContent  || '0'),
+        iva:      parseInt(ivaEl?.textContent   || '0'),
+        exe:      parseInt(exeEl?.textContent   || '0'),
+        total:    parseInt(totalEl?.textContent || '0'),
+        anulado:  foliosAnulados.has(folio),
+        tpo_oper: indTraslado,  // del IndTraslado del DTE original
       });
     }
   }
