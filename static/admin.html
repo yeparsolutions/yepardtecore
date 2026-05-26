@@ -2675,7 +2675,7 @@ async function generarLibroManual(){
     if(!r1.ok){ const t=await r1.text(); log('Error guardando set: '+r1.status+' '+t.slice(0,200),'err'); return; }
     const setData = await r1.json();
     const setId   = setData.set_id;
-    log(`Set guardado — ID ${setId} · ${setData.documentos} documentos`,'ok');
+    log('Set guardado - ID '+setId+' - '+setData.documentos+' documentos','ok');
 
     // PASO 2: Generar el libro desde el set guardado
     btn.textContent='Generando libro...';
