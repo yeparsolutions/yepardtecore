@@ -152,8 +152,8 @@ def _xml_libro_guias(emisor_rut: str, rut_envia: str,
     for tpo in sorted(traslados_por_tipo.keys()):
         datos = traslados_por_tipo[tpo]
         tr    = etree.SubElement(resumen, f"{{{NS}}}TotTraslado")
-        etree.SubElement(tr, f"{{{NS}}}TpoMov").text    = str(tpo)
-        etree.SubElement(tr, f"{{{NS}}}CantGuia").text  = str(datos["cant"])
+        etree.SubElement(tr, f"{{{NS}}}TpoTraslado").text = str(tpo)  # XSD: TpoTraslado (no TpoMov)
+        etree.SubElement(tr, f"{{{NS}}}CantGuia").text    = str(datos["cant"])
         if datos["monto"]:
             etree.SubElement(tr, f"{{{NS}}}MntGuia").text = str(datos["monto"])
 
