@@ -118,10 +118,9 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
                 etree.SubElement(inr, f"{{{NS}}}TotMntIVANoRec").text = str(t_nr)
             t_uc = sum(d["iva_uso_comun"] for d in grp)
             if t_uc:
-                fct = grp[0]["fct_prop"]
-                etree.SubElement(tot, f"{{{NS}}}TotIVAUsoComun").text    = str(t_uc)
-                etree.SubElement(tot, f"{{{NS}}}FctProp").text            = fct
-                etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(fct)))
+                # TotalesSegmento: TotOpIVAUsoComun + TotIVAUsoComun (sin FctProp ni TotCredIVAUsoComun)
+                etree.SubElement(tot, f"{{{NS}}}TotOpIVAUsoComun").text = str(sum(1 for d in grp if d["iva_uso_comun"]))
+                etree.SubElement(tot, f"{{{NS}}}TotIVAUsoComun").text   = str(t_uc)
             t_rt = sum(d["iva_ret_total"] for d in grp)
             if t_rt:
                 etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in grp if d["iva_ret_total"]))
