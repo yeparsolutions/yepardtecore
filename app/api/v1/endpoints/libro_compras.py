@@ -94,9 +94,9 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
     etree.SubElement(car, f"{{{NS}}}TipoOperacion").text     = "COMPRA"
     etree.SubElement(car, f"{{{NS}}}TipoLibro").text         = req.tipo_libro
     etree.SubElement(car, f"{{{NS}}}TipoEnvio").text         = req.tipo_envio
+    etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = req.natencion
     if req.cod_aut_rec:
         etree.SubElement(car, f"{{{NS}}}CodAutRec").text     = req.cod_aut_rec
-    etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = req.natencion
 
     # ── ResumenPeriodo ────────────────────────────────────────────────────────
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
