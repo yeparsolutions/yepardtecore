@@ -103,7 +103,7 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
         resumen_seg = etree.SubElement(envio, f"{{{NS}}}ResumenSegmento")
         for tipo_doc in sorted(set(d["tipo"] for d in docs)):
             grp = [d for d in docs if d["tipo"] == tipo_doc]
-            tot = etree.SubElement(resumen_seg, f"{{{NS}}}TotalesPeriodo")
+            tot = etree.SubElement(resumen_seg, f"{{{NS}}}TotalesSegmento")
             etree.SubElement(tot, f"{{{NS}}}TpoDoc").text     = str(tipo_doc)
             etree.SubElement(tot, f"{{{NS}}}TotDoc").text     = str(len(grp))
             etree.SubElement(tot, f"{{{NS}}}TotMntExe").text  = str(sum(d["exe"]  for d in grp))
