@@ -63,9 +63,6 @@ class LibroComprasRequest(BaseModel):
     tipo_envio: str = "TOTAL"       # "TOTAL" | "AJUSTE"
     cod_aut_rec: str = ""          # Código requerido para RECTIFICA/AJUSTE
     documentos: List[DocumentoCompra]
-    # Para AJUSTE: totales del libro original que no cambian
-    # Lista de {tipo, tot_doc, tot_neto, tot_exe, tot_iva, tot_total}
-    totales_originales: list = []
 
 
 # ── Constructor XML ───────────────────────────────────────────────────────────
@@ -168,16 +165,6 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
             etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_rt)
 
         etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in grp))
-
-    # Agregar totales del libro original (para AJUSTE)
-    for orig in (req.totales_originales or []):
-        tot = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
-        etree.SubElement(tot, f"{{{NS}}}TpoDoc").text     = str(orig.get("tipo", 0))
-        etree.SubElement(tot, f"{{{NS}}}TotDoc").text     = str(orig.get("tot_doc", 0))
-        etree.SubElement(tot, f"{{{NS}}}TotMntExe").text  = str(orig.get("tot_exe", 0))
-        etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text = str(orig.get("tot_neto", 0))
-        etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text  = str(orig.get("tot_iva", 0))
-        etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(orig.get("tot_total", 0))
 
     # ── Detalle ───────────────────────────────────────────────────────────────
     for doc in docs:
