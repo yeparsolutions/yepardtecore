@@ -63,6 +63,9 @@ class LibroComprasRequest(BaseModel):
     tipo_envio: str = "TOTAL"       # "TOTAL" | "AJUSTE"
     cod_aut_rec: str = ""          # Código requerido para RECTIFICA/AJUSTE
     documentos: List[DocumentoCompra]
+    # Opcional: ResumenPeriodo explícito (útil para AJUSTE donde el periodo
+    # refleja el estado final del libro, no la suma del segmento)
+    totales_periodo: list = []
 
 
 # ── Constructor XML ───────────────────────────────────────────────────────────
@@ -149,7 +152,36 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
         neto_por_tipo[t]['iva_uc'] += d["iva_uso_comun"]
         neto_por_tipo[t]['iva_ret'] += d["iva_ret_total"]
 
-    tipos_periodo = sorted(neto_por_tipo.keys())
+    # Si se pasan totales_periodo explícitos, usarlos directamente
+    if req.totales_periodo:
+        for tp in req.totales_periodo:
+            tot = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
+            etree.SubElement(tot, f"{{{NS}}}TpoDoc").text     = str(tp.get("tipo"))
+            etree.SubElement(tot, f"{{{NS}}}TotDoc").text     = str(tp.get("tot_doc", 0))
+            etree.SubElement(tot, f"{{{NS}}}TotMntExe").text  = str(tp.get("tot_exe", 0))
+            etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text = str(tp.get("tot_neto", 0))
+            etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text  = str(tp.get("tot_iva", 0))
+            t_nr = tp.get("iva_no_rec", 0)
+            if t_nr:
+                inr = etree.SubElement(tot, f"{{{NS}}}TotIVANoRec")
+                etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text    = str(tp.get("cod_iva_no_rec", 9))
+                etree.SubElement(inr, f"{{{NS}}}TotOpIVANoRec").text  = str(tp.get("tot_doc", 1))
+                etree.SubElement(inr, f"{{{NS}}}TotMntIVANoRec").text = str(t_nr)
+            t_uc = tp.get("iva_uso_comun", 0)
+            if t_uc:
+                fct = tp.get("fct_prop", "0.60")
+                etree.SubElement(tot, f"{{{NS}}}TotIVAUsoComun").text    = str(t_uc)
+                etree.SubElement(tot, f"{{{NS}}}FctProp").text            = fct
+                etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(fct)))
+            t_rt = tp.get("iva_ret_total", 0)
+            if t_rt:
+                etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(tp.get("tot_doc", 1))
+                etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_rt)
+            etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(tp.get("tot_total", 0))
+        # Skip automático
+        tipos_periodo = []
+    else:
+        tipos_periodo = sorted(neto_por_tipo.keys())
 
     for tipo_doc in tipos_periodo:
         if neto_por_tipo:
