@@ -1779,7 +1779,7 @@ function renderMultiSetOverview(sets){
             <span style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${col}">N\u00b0 ${set.natencion}</span>
             <span style="font-size:12px;color:var(--text3)">${set.label}</span>
           </div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text3);margin-top:2px">${set.casos.length} casos${set.esLibro?' \u00b7 <span style="color:#f59e0b">\u1f4da generado desde el set principal</span>':' \u00b7 <span id="val_count_'+si+'">'+validados+'/'+set.casos.length+' validados</span>'}</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text3);margin-top:2px">${set.casos.length} casos${set.esLibro?' \u00b7 <span style="color:#f59e0b">\u{1f4da} generado desde el set principal</span>':' \u00b7 <span id="val_count_'+si+'">'+validados+'/'+set.casos.length+' validados</span>'}</div>
         </div>
         ${set.esLibro
           ? `<button class="btn" onclick="abrirLibroDesdePanel('${set.key}','${set.natencion}')"
@@ -1899,7 +1899,7 @@ function renderModalCaso(si,idx){
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:10px 14px;margin-bottom:10px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <div style="font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">
-          \u1f4ce Caso referenciado \u2014 CASO ${docRef.natencion_ref}-${docRef.num_caso_ref}
+          \u{1f4ce} Caso referenciado \u2014 CASO ${docRef.natencion_ref}-${docRef.num_caso_ref}
           <span style="font-family:'JetBrains Mono',monospace;margin-left:6px;padding:1px 6px;border-radius:4px;background:rgba(59,130,246,.12);color:#60a5fa;border:1px solid rgba(59,130,246,.2)">T${docRef.tipo_doc_ref||'?'}</span>
         </div>
         ${docRef.num_caso_ref&&itemsCasoRef.length>0?
@@ -1963,7 +1963,7 @@ function renderModalCaso(si,idx){
   const itemsHtml=`<table class="items-table"><thead><tr>
   <th style="width:22%" title="NmbItem">Nombre</th>
   <th style="width:12%" title="DscItem \u2014 descripci\u00f3n larga">Desc. <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text4)">DscItem</span></th>
-  <th style="width:8%" title="VlrCodigo \u2014 c\u00f3digo interno">C\u00f3d.</th>
+  <th style="width:8%" title="VlrCodigo \u2014 c\u{00f3d}igo interno">C\u{00f3d}.</th>
   <th style="width:5%" title="UnmdItem \u2014 unidad">Un.</th>
   <th style="width:10%;text-align:right" title="QtyItem \u2014 cantidad">Cantidad</th>
   <th style="width:12%;text-align:right" title="PrcItem \u2014 precio unitario">Precio unit.</th>
@@ -2079,9 +2079,9 @@ function renderModalCaso(si,idx){
               onchange="updateRef(${si},${idx},${ri},'fecha_ref',this.value)">
           </div>
           ${!isSet?`<div class="ref-field">
-            <label>C\u00f3digo Referencia (CodRef)</label>
+            <label>C\u{00f3d}igo Referencia (CodRef)</label>
             <select onchange="updateRef(${si},${idx},${ri},'cod_ref',this.value)">
-              <option value="">Sin c\u00f3digo</option>
+              <option value="">Sin c\u{00f3d}igo</option>
               <option value="1"${ref.cod_ref===1?' selected':''}>1 \u2014 Anula documento</option>
               <option value="2"${ref.cod_ref===2?' selected':''}>2 \u2014 Corrige giro del receptor</option>
               <option value="3"${ref.cod_ref===3?' selected':''}>3 \u2014 Corrige montos / devoluci\u00f3n</option>
@@ -2124,7 +2124,7 @@ function renderModalCaso(si,idx){
     <div style="font-size:11px;color:var(--text4);margin-top:8px">
       ${isFixed
         ? '\u26a0 \u00cdtems fijos \u2014 no modificar.'
-        : '\u270f Puedes modificar cantidades y precios. <strong style="color:#f59e0b">\u26a0 No corrijas la ortograf\u00eda de los nombres</strong> \u2014 el SII valida texto exacto del set.'}
+        : '\u270f Puedes modificar cantidades y precios. <strong style="color:#f59e0b">\u26a0 No corrijas la ortograf\u{00eda} de los nombres</strong> \u2014 el SII valida texto exacto del set.'}
     </div>
     ${buildReceptorSection(si,idx,cd)}`;
 }
@@ -2477,10 +2477,10 @@ function _mostrarPreviewModal(xml, titulo){
   modal.innerHTML = `
     <div style="background:var(--bg);border-radius:12px;width:100%;max-width:920px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden">
       <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-        <span style="font-weight:600;font-size:13px">\u1f50d ${titulo}</span>
+        <span style="font-weight:600;font-size:13px">\u{1f50d} ${titulo}</span>
         <div style="display:flex;gap:10px;align-items:center">
           <button onclick="navigator.clipboard.writeText(document.getElementById('xml_pre').textContent).then(()=>log('XML copiado','ok'))"
-            style="font-size:11px;padding:4px 12px;background:transparent;border:1px solid var(--border2);border-radius:6px;color:var(--text3);cursor:pointer">\u1f4cb Copiar</button>
+            style="font-size:11px;padding:4px 12px;background:transparent;border:1px solid var(--border2);border-radius:6px;color:var(--text3);cursor:pointer">\u{1f4cb} Copiar</button>
           <button onclick="document.getElementById('xml_preview_modal').remove()"
             style="background:transparent;border:none;color:var(--text3);font-size:20px;cursor:pointer">\u00d7</button>
         </div>
@@ -2640,7 +2640,7 @@ async function generarLibroManual(){
   const esAjuste  = document.getElementById('lw_rectifica')?.checked || false;
   const codAutRec = document.getElementById('lw_cod_aut_rec')?.value?.trim() || '';
   if(esAjuste && !codAutRec){
-    log('Para modo AJUSTE necesitas el c\u00f3digo de reemplazo del SII','err'); return;
+    log('Para modo AJUSTE necesitas el c\u{00f3d}igo de reemplazo del SII','err'); return;
   }
 
   const periodoHoy = new Date().toISOString().slice(0,7);
@@ -3786,6 +3786,8 @@ window.onload=function(){
   setTimeout(autoCargar,400);
 };
 
+
+</script>
 
 <!-- MODAL PREVISUALIZADOR XML -->
 <div class="xml-modal-overlay" id="xmlModalOverlay" onclick="handleXmlOverlayClick(event)">
