@@ -128,43 +128,77 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
             etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in grp))
 
     # ── ResumenPeriodo ────────────────────────────────────────────────────────
+    # Para AJUSTE: el ResumenPeriodo refleja el estado FINAL del libro
+    # Solo incluir tipos cuyo resultado neto es positivo (quedan en el libro)
+    # Para TOTAL: incluir todos los tipos del Detalle
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
 
-    for tipo_doc in sorted(set(d["tipo"] for d in docs)):
-        grp = [d for d in docs if d["tipo"] == tipo_doc]
+    # Calcular resultado neto por tipo (para AJUSTE)
+    if req.tipo_envio == "AJUSTE":
+        from collections import defaultdict
+        neto_por_tipo = defaultdict(lambda: {'count':0,'neto':0,'exe':0,'iva':0,'total':0,
+                                              'iva_nr':0,'iva_uc':0,'iva_ret':0})
+        for d in docs:
+            t = d["tipo"]
+            neto_por_tipo[t]['count'] += 1
+            neto_por_tipo[t]['neto']  += d["neto"]
+            neto_por_tipo[t]['exe']   += d["exe"]
+            neto_por_tipo[t]['iva']   += d["iva"]
+            neto_por_tipo[t]['total'] += d["total"]
+            neto_por_tipo[t]['iva_nr'] += d["iva_no_rec"]
+            neto_por_tipo[t]['iva_uc'] += d["iva_uso_comun"]
+            neto_por_tipo[t]['iva_ret'] += d["iva_ret_total"]
+        # Solo tipos con docs positivos restantes
+        tipos_periodo = [t for t in sorted(neto_por_tipo.keys())
+                        if neto_por_tipo[t]['count'] > 0 and neto_por_tipo[t]['total'] >= 0]
+    else:
+        tipos_periodo = sorted(set(d["tipo"] for d in docs))
+        neto_por_tipo = None
+
+    for tipo_doc in tipos_periodo:
+        if neto_por_tipo:
+            v = neto_por_tipo[tipo_doc]
+            tot_doc = v['count']; tot_exe = v['exe']; tot_neto = v['neto']
+            tot_iva = v['iva']; tot_total = v['total']
+            t_nr = v['iva_nr']; t_uc = v['iva_uc']; t_rt = v['iva_ret']
+            grp = [d for d in docs if d["tipo"] == tipo_doc and d["iva_no_rec"]]
+            cod_nr = grp[0]["cod_iva_no_rec"] if grp else 9
+            grp_uc = [d for d in docs if d["tipo"] == tipo_doc and d["iva_uso_comun"]]
+            fct_uc = grp_uc[0]["fct_prop"] if grp_uc else "0.60"
+        else:
+            grp = [d for d in docs if d["tipo"] == tipo_doc]
+            tot_doc = len(grp); tot_exe = sum(d["exe"] for d in grp)
+            tot_neto = sum(d["neto"] for d in grp); tot_iva = sum(d["iva"] for d in grp)
+            tot_total = sum(d["total"] for d in grp)
+            t_nr = sum(d["iva_no_rec"] for d in grp)
+            t_uc = sum(d["iva_uso_comun"] for d in grp)
+            t_rt = sum(d["iva_ret_total"] for d in grp)
+            cod_nr = next((d["cod_iva_no_rec"] for d in grp if d["iva_no_rec"]), 9)
+            fct_uc = next((d["fct_prop"] for d in grp if d["iva_uso_comun"]), "0.60")
+
         tot = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
-
         etree.SubElement(tot, f"{{{NS}}}TpoDoc").text     = str(tipo_doc)
-        etree.SubElement(tot, f"{{{NS}}}TotDoc").text     = str(len(grp))
-        etree.SubElement(tot, f"{{{NS}}}TotMntExe").text  = str(sum(d["exe"]  for d in grp))
-        etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text = str(sum(d["neto"] for d in grp))
-        etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text  = str(sum(d["iva"]  for d in grp))
+        etree.SubElement(tot, f"{{{NS}}}TotDoc").text     = str(tot_doc)
+        etree.SubElement(tot, f"{{{NS}}}TotMntExe").text  = str(tot_exe)
+        etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text = str(tot_neto)
+        etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text  = str(tot_iva)
 
-        # ORDEN CORRECTO según LibroCV_v10.xsd:
-        # TotIVANoRec ANTES de TotIVAUsoComun
-        t_nr = sum(d["iva_no_rec"] for d in grp)
         if t_nr:
-            cod = next(d["cod_iva_no_rec"] for d in grp if d["iva_no_rec"])
             inr = etree.SubElement(tot, f"{{{NS}}}TotIVANoRec")
-            etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text    = str(cod)
-            etree.SubElement(inr, f"{{{NS}}}TotOpIVANoRec").text  = str(sum(1 for d in grp if d["iva_no_rec"]))
+            etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text    = str(cod_nr)
+            etree.SubElement(inr, f"{{{NS}}}TotOpIVANoRec").text  = str(sum(1 for d in docs if d["tipo"]==tipo_doc and d["iva_no_rec"]))
             etree.SubElement(inr, f"{{{NS}}}TotMntIVANoRec").text = str(t_nr)
 
-        # TotIVAUsoComun DESPUÉS de TotIVANoRec
-        t_uc = sum(d["iva_uso_comun"] for d in grp)
         if t_uc:
-            fct = grp[0]["fct_prop"]
             etree.SubElement(tot, f"{{{NS}}}TotIVAUsoComun").text    = str(t_uc)
-            etree.SubElement(tot, f"{{{NS}}}FctProp").text            = fct
-            etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(fct)))
+            etree.SubElement(tot, f"{{{NS}}}FctProp").text            = fct_uc
+            etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(fct_uc)))
 
-        # IVA Retención Total
-        t_rt = sum(d["iva_ret_total"] for d in grp)
         if t_rt:
-            etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in grp if d["iva_ret_total"]))
+            etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in docs if d["tipo"]==tipo_doc and d["iva_ret_total"]))
             etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_rt)
 
-        etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in grp))
+        etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(tot_total)
 
     # ── Detalle ───────────────────────────────────────────────────────────────
     for doc in docs:
