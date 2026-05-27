@@ -98,6 +98,36 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
     if req.cod_aut_rec:
         etree.SubElement(car, f"{{{NS}}}CodAutRec").text     = req.cod_aut_rec
 
+    # ── ResumenSegmento — obligatorio en AJUSTE ──────────────────────────────
+    if req.tipo_envio == "AJUSTE":
+        resumen_seg = etree.SubElement(envio, f"{{{NS}}}ResumenSegmento")
+        for tipo_doc in sorted(set(d["tipo"] for d in docs)):
+            grp = [d for d in docs if d["tipo"] == tipo_doc]
+            tot = etree.SubElement(resumen_seg, f"{{{NS}}}TotalesPeriodo")
+            etree.SubElement(tot, f"{{{NS}}}TpoDoc").text     = str(tipo_doc)
+            etree.SubElement(tot, f"{{{NS}}}TotDoc").text     = str(len(grp))
+            etree.SubElement(tot, f"{{{NS}}}TotMntExe").text  = str(sum(d["exe"]  for d in grp))
+            etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text = str(sum(d["neto"] for d in grp))
+            etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text  = str(sum(d["iva"]  for d in grp))
+            t_nr = sum(d["iva_no_rec"] for d in grp)
+            if t_nr:
+                cod = next(d["cod_iva_no_rec"] for d in grp if d["iva_no_rec"])
+                inr = etree.SubElement(tot, f"{{{NS}}}TotIVANoRec")
+                etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text    = str(cod)
+                etree.SubElement(inr, f"{{{NS}}}TotOpIVANoRec").text  = str(sum(1 for d in grp if d["iva_no_rec"]))
+                etree.SubElement(inr, f"{{{NS}}}TotMntIVANoRec").text = str(t_nr)
+            t_uc = sum(d["iva_uso_comun"] for d in grp)
+            if t_uc:
+                fct = grp[0]["fct_prop"]
+                etree.SubElement(tot, f"{{{NS}}}TotIVAUsoComun").text    = str(t_uc)
+                etree.SubElement(tot, f"{{{NS}}}FctProp").text            = fct
+                etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(fct)))
+            t_rt = sum(d["iva_ret_total"] for d in grp)
+            if t_rt:
+                etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in grp if d["iva_ret_total"]))
+                etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_rt)
+            etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in grp))
+
     # ── ResumenPeriodo ────────────────────────────────────────────────────────
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
 
