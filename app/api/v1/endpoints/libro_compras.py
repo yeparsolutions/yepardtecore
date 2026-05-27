@@ -133,27 +133,23 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
     # Para TOTAL: incluir todos los tipos del Detalle
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
 
-    # Calcular resultado neto por tipo (para AJUSTE)
-    if req.tipo_envio == "AJUSTE":
-        from collections import defaultdict
-        neto_por_tipo = defaultdict(lambda: {'count':0,'neto':0,'exe':0,'iva':0,'total':0,
-                                              'iva_nr':0,'iva_uc':0,'iva_ret':0})
-        for d in docs:
-            t = d["tipo"]
-            neto_por_tipo[t]['count'] += 1
-            neto_por_tipo[t]['neto']  += d["neto"]
-            neto_por_tipo[t]['exe']   += d["exe"]
-            neto_por_tipo[t]['iva']   += d["iva"]
-            neto_por_tipo[t]['total'] += d["total"]
-            neto_por_tipo[t]['iva_nr'] += d["iva_no_rec"]
-            neto_por_tipo[t]['iva_uc'] += d["iva_uso_comun"]
-            neto_por_tipo[t]['iva_ret'] += d["iva_ret_total"]
-        # Solo tipos con docs positivos restantes
-        tipos_periodo = [t for t in sorted(neto_por_tipo.keys())
-                        if neto_por_tipo[t]['count'] > 0 and neto_por_tipo[t]['total'] >= 0]
-    else:
-        tipos_periodo = sorted(set(d["tipo"] for d in docs))
-        neto_por_tipo = None
+    # Para AJUSTE: ResumenPeriodo incluye TODOS los tipos del segmento
+    # con valores netos (pueden ser negativos para tipos que se eliminan)
+    from collections import defaultdict
+    neto_por_tipo = defaultdict(lambda: {'count':0,'neto':0,'exe':0,'iva':0,'total':0,
+                                          'iva_nr':0,'iva_uc':0,'iva_ret':0})
+    for d in docs:
+        t = d["tipo"]
+        neto_por_tipo[t]['count'] += 1
+        neto_por_tipo[t]['neto']  += d["neto"]
+        neto_por_tipo[t]['exe']   += d["exe"]
+        neto_por_tipo[t]['iva']   += d["iva"]
+        neto_por_tipo[t]['total'] += d["total"]
+        neto_por_tipo[t]['iva_nr'] += d["iva_no_rec"]
+        neto_por_tipo[t]['iva_uc'] += d["iva_uso_comun"]
+        neto_por_tipo[t]['iva_ret'] += d["iva_ret_total"]
+
+    tipos_periodo = sorted(neto_por_tipo.keys())
 
     for tipo_doc in tipos_periodo:
         if neto_por_tipo:
