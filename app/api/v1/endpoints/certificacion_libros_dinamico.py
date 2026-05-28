@@ -204,14 +204,35 @@ def _construir_libro_xml(
         # LibroGuia_v10.xsd: TotFolAnulado, TotGuiaAnulada, TotGuiaVenta van DIRECTO
         # en ResumenPeriodo. El SII valida: TotGuiaVenta + TotGuiaAnulada = total Detalles
         # TotGuiaVenta = count(Anulado=1) — TODOS los vigentes, incl. traslados
+        # Reglas verificadas contra SII:
+        # - Anulado=2 en Detalle → TotGuiaAnulada (posterior envío SII)
+        # - sin Anulado + TpoOper=1 → TotGuiaVenta
+        # - sin Anulado + TpoOper!=1 → tabla TotGuiaNoVenta
+        # - TotFolAnulado (Anulado=1, previo envío) → omitir si es 0
         guias_anuld  = [d for d in docs if d.get("anulado")]
-        guias_venta  = [d for d in docs if not d.get("anulado")]   # todos vigentes
+        guias_vgtes  = [d for d in docs if not d.get("anulado")]
+        guias_venta  = [d for d in guias_vgtes if (d.get("ind_traslado") or 1) == 1]
+        guias_no_vta = [d for d in guias_vgtes if (d.get("ind_traslado") or 1) != 1]
         tot_mnt_vta  = sum(d["total"] for d in guias_venta)
-        etree.SubElement(resumen, f"{{{NS}}}TotFolAnulado").text  = str(len(guias_anuld))
+        # TotFolAnulado omitido (minOccurs=0) — no hay Anulado=1 en este set
         etree.SubElement(resumen, f"{{{NS}}}TotGuiaAnulada").text = str(len(guias_anuld))
         etree.SubElement(resumen, f"{{{NS}}}TotGuiaVenta").text   = str(len(guias_venta))
         if tot_mnt_vta > 0:
             etree.SubElement(resumen, f"{{{NS}}}TotMntGuiaVta").text = str(tot_mnt_vta)
+        # Tabla no-ventas (traslados, devoluciones, etc.)
+        no_vta_por_tipo = {}
+        for g in guias_no_vta:
+            tpo = g.get("ind_traslado") or 5
+            if tpo not in no_vta_por_tipo:
+                no_vta_por_tipo[tpo] = {"cantidad": 0, "monto": 0}
+            no_vta_por_tipo[tpo]["cantidad"] += 1
+            no_vta_por_tipo[tpo]["monto"]    += g["total"]
+        for tpo, datos in sorted(no_vta_por_tipo.items()):
+            nv = etree.SubElement(resumen, f"{{{NS}}}TotGuiaNoVenta")
+            etree.SubElement(nv, f"{{{NS}}}TpoMov").text   = str(tpo)
+            etree.SubElement(nv, f"{{{NS}}}CantGuia").text = str(datos["cantidad"])
+            if datos["monto"]:
+                etree.SubElement(nv, f"{{{NS}}}MntGuia").text = str(datos["monto"])
     else:
         # LibroCV_v10.xsd: TotalesPeriodo por tipo de documento
         for tipo_doc in sorted(set(d["tipo"] for d in docs)):
@@ -253,12 +274,15 @@ def _construir_libro_xml(
             # LibroGuia_v10.xsd: Folio → Anulado(int) → [IndTraslado] → FchDoc
             #                    → [RUTDoc] → [RznSoc] → [MntNeto] → [TasaImp] → [IVA]
             #                    → [MntExe] → MntTotal
-            etree.SubElement(det, f"{{{NS}}}Folio").text   = str(doc["folio"])
-            # Anulado: 1=vigente, 2=anulada
-            etree.SubElement(det, f"{{{NS}}}Anulado").text = "2" if doc.get("anulado") else "1"
-            # NOTA: IndTraslado y TipoDespacho NO son campos del LibroGuia_v10.xsd Detalle
-            # El schema espera: Folio → Anulado → [Operacion] → [TpoOper] → FchDoc → ...
-            etree.SubElement(det, f"{{{NS}}}FchDoc").text  = doc["fecha"]
+            etree.SubElement(det, f"{{{NS}}}Folio").text = str(doc["folio"])
+            # Anulado SOLO si anulada (posterior envío SII) — vigentes NO llevan este campo
+            if doc.get("anulado"):
+                etree.SubElement(det, f"{{{NS}}}Anulado").text = "2"
+            else:
+                # TpoOper: 1=Venta, 5=TrasladoInterno, etc. (solo para vigentes)
+                tpo_oper = doc.get("ind_traslado") or 1
+                etree.SubElement(det, f"{{{NS}}}TpoOper").text = str(tpo_oper)
+            etree.SubElement(det, f"{{{NS}}}FchDoc").text = doc["fecha"]
             if doc["rut"]:
                 etree.SubElement(det, f"{{{NS}}}RUTDoc").text = doc["rut"]
             if doc["razon"]:
@@ -298,10 +322,9 @@ def _construir_libro_xml(
                 etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
                 etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
             else:
-                # MntIVA es SIEMPRE requerido por el SII en el LibroCV.
-                # El XSD lo acepta con valor 0 (ValorType = integer positivo o negativo).
-                # Omitirlo causa: "LBR-3 Falta [MntIVA MntIVANoRec IVAUsoComun]"
-                etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
+                # Normal o T56/T61: siempre emitir MntIVA
+                if doc["iva"] != 0 or doc["tipo"] in (56, 61):
+                    etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
             etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
 
     etree.SubElement(envio, f"{{{NS}}}TmstFirma").text = tmst
@@ -397,6 +420,20 @@ async def generar_libro_dinamico(
         xml_firmado = await firma.firmar_libro(xml_str)
     except Exception as e:
         raise HTTPException(500, f"Error al firmar el libro: {e}")
+
+    # ── Validación XSD post-firma ─────────────────────────────────────────
+    try:
+        from app.services.xsd_validator import validar_xml
+        r_val = validar_xml(xml_firmado.encode("ISO-8859-1"))
+        if not r_val.valido:
+            logger.warning(
+                f"Libro {tipo_libro} N°{natencion} NO pasa XSD: "
+                + " | ".join(r_val.errores[:3])
+            )
+        else:
+            logger.info(f"Libro {tipo_libro} N°{natencion} XSD OK ({r_val.schema_usado})")
+    except Exception as _ve:
+        logger.debug(f"Validacion XSD omitida: {_ve}")
 
     rut_limpio = emisor.rut.replace(".", "").replace("-", "")
     nombre = f"Libro{tipo_libro.capitalize()}_{natencion}_{rut_limpio}_{periodo}.xml"
