@@ -2700,6 +2700,8 @@ async function generarLibroManual(){
   }catch(e){log('Error: '+e,'err');}
   finally{btn.disabled=false;btn.textContent='\u{1f4da} Generar Libro de Compras';}
 }
+const _libroXMLFiles = [];
+
 function dpLibroXML(e){ e.preventDefault(); dLv('z_libro_xml'); addLibroXML(e.dataTransfer.files); }
 
 function addLibroXML(files){
