@@ -228,9 +228,9 @@ def _construir_libro_xml(
             no_vta_por_tipo[tpo]["cantidad"] += 1
             no_vta_por_tipo[tpo]["monto"]    += g["total"]
         for tpo, datos in sorted(no_vta_por_tipo.items()):
-            nv = etree.SubElement(resumen, f"{{{NS}}}TotGuiaNoVenta")
-            etree.SubElement(nv, f"{{{NS}}}TpoMov").text   = str(tpo)
-            etree.SubElement(nv, f"{{{NS}}}CantGuia").text = str(datos["cantidad"])
+            nv = etree.SubElement(resumen, f"{{{NS}}}TotTraslado")
+            etree.SubElement(nv, f"{{{NS}}}TpoTraslado").text = str(tpo)
+            etree.SubElement(nv, f"{{{NS}}}CantGuia").text    = str(datos["cantidad"])
             if datos["monto"]:
                 etree.SubElement(nv, f"{{{NS}}}MntGuia").text = str(datos["monto"])
     else:
