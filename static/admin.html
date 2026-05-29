@@ -676,17 +676,18 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
         </div>
         <div class="ep-config-body" id="epConfigBody"></div>
       </div>
-      <button id="btn_enviar_sii" onclick="enviarSetSII([])"
-        style="display:none;width:100%;padding:13px;margin-top:10px;
-          background:var(--accent);border:none;border-radius:10px;
-          color:#000;font-size:14px;font-weight:700;cursor:pointer">
-        &#x1f4e4; Enviar al SII
-      </button>
       <div class="download-box" id="dlbox5">
         <div class="dl-icon">📥</div>
         <div class="dl-name" id="dl_name5"></div>
-        <button class="btn bp" id="btnDescargar5" onclick="descargarXML()" style="padding:11px 28px">Descargar XML</button>
-        <div class="dl-sub">Descargado el XML, súbelo en maullin.sii.cl → Envío de DTE</div>
+        <div style="display:flex;gap:10px;width:100%">
+          <button class="btn bp" id="btnDescargar5" onclick="descargarXML()" style="padding:11px 28px;flex:1">Descargar XML</button>
+          <button id="btn_enviar_sii"
+            style="flex:1;padding:11px;background:#f59e0b;border:none;border-radius:10px;color:#000;font-size:13px;font-weight:700;cursor:pointer"
+            onclick="enviarUltimoSet()">
+            &#x1f4e4; Enviar al SII
+          </button>
+        </div>
+        <div class="dl-sub">Descarga el XML o envíalo directamente al SII</div>
       </div>
       <div class="sii-steps" id="sii_steps5">
         <div class="sii-steps-title">Cómo subir el XML al SII</div>
@@ -3097,26 +3098,7 @@ async function generarXML(setKey, natencion){
     document.getElementById('sii_steps5').classList.add('show');
     done(5,'✓ XML listo');
     res(5,true,`EnvioDTE generado: ${S.xmlNombre}\n${casos} docs firmados.\n${errores!=='0'?'Errores: '+detalleErr:'Sin errores ✓'}\n\nDescárgalo y súbelo en maullin.sii.cl`);
-    // Mostrar botón Enviar al SII — obtiene DTEs BORRADOR recientes
-    const nDocs = parseInt(casos)||0;
-    if(nDocs > 0){
-      const btnEnviar = document.getElementById('btn_enviar_sii');
-      if(btnEnviar){
-        btnEnviar.style.display='block';
-        btnEnviar.disabled=false;
-        btnEnviar.textContent='\u{1f4e4} Enviar al SII ('+nDocs+' docs)';
-        btnEnviar.onclick = async ()=>{
-          // Consultar los DTEs BORRADOR más recientes del emisor
-          try{
-            const rDtes = await fetch(base()+'/v1/dte/emisor/'+S.id+'?estado=BORRADOR&limite='+nDocs);
-            const data = await rDtes.json();
-            const folios = (data.documentos||[]).map(d=>({tipo:d.tipo_dte,folio:d.folio}));
-            if(!folios.length){ log('No hay DTEs en BORRADOR para enviar','warn'); return; }
-            await enviarSetSII(folios);
-          }catch(e){ log('Error obteniendo DTEs: '+e,'err'); }
-        };
-      }
-    }
+
   }catch(e){
     log('Error: '+e,'err');
     res(5,false,'Error: '+String(e));
@@ -3883,6 +3865,28 @@ function dDp(e,fid,zid,cb){e.preventDefault();dLv(zid);const f=e.dataTransfer.fi
 function dpCAFs(e){e.preventDefault();dLv('z4caf');addCAFs(e.dataTransfer.files);}
 
 /* == ENVIAR SET AL SII == */
+async function enviarUltimoSet(){
+  if(!S.id){ log('Carga el emisor primero','warn'); return; }
+  const btn = document.getElementById('btn_enviar_sii');
+  if(btn){ btn.disabled=true; btn.textContent='Consultando DTEs...'; }
+  try{
+    // Obtener DTEs en BORRADOR más recientes
+    const rDtes = await fetch(base()+'/v1/dte/emisor/'+S.id+'?estado=BORRADOR&limite=20');
+    if(!rDtes.ok){ log('Error consultando DTEs','err'); return; }
+    const data = await rDtes.json();
+    const folios = (data.documentos||[]).map(d=>({tipo:d.tipo_dte,folio:d.folio}));
+    if(!folios.length){ log('No hay DTEs en BORRADOR para enviar','warn');
+      if(btn){ btn.disabled=false; btn.textContent='\u{1f4e4} Enviar al SII'; }
+      return;
+    }
+    log('Enviando '+folios.length+' DTEs al SII...','info');
+    await enviarSetSII(folios);
+  }catch(e){
+    log('Error: '+e,'err');
+    if(btn){ btn.disabled=false; btn.textContent='\u{1f4e4} Enviar al SII'; }
+  }
+}
+
 async function enviarSetSII(folios){
   if(!S.id){ log('Carga el emisor primero','warn'); return; }
   if(!folios||!folios.length){ log('Sin folios para enviar','warn'); return; }
