@@ -163,6 +163,23 @@ class SIISender:
         logger.warning(f"[SII ENVIO] url={url_envio}")
         logger.warning(f"[SII ENVIO] sobre_bytes_len={len(sobre_bytes)}")
         logger.warning(f"[SII ENVIO] sobre_inicio={sobre_bytes[:300]}")
+        # Verificar RUT del token vs rutSender
+        try:
+            from cryptography.hazmat.primitives.serialization import pkcs12
+            from cryptography.hazmat.backends import default_backend
+            import re as _re
+            _p12 = token_p12 if token_p12 else p12_bytes
+            _pwd = token_pwd if token_pwd else password
+            if _p12:
+                _, _cert, _ = pkcs12.load_key_and_certificates(_p12, _pwd.encode() if isinstance(_pwd,str) else _pwd, default_backend())
+                subj = _cert.subject.rfc4514_string()
+                m = _re.search(r"(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])", subj, _re.I)
+                rut_cert = m.group(1) if m else "NO_ENCONTRADO"
+                logger.warning(f"[SII AUTH DEBUG] RUT en certificado: {rut_cert}")
+                logger.warning(f"[SII AUTH DEBUG] rutSender enviado: {env_limpio}")
+                logger.warning(f"[SII AUTH DEBUG] Coinciden: {rut_cert.replace('.','').lower() == env_limpio.lower()}")
+        except Exception as _e:
+            logger.warning(f"[SII AUTH DEBUG] Error extrayendo RUT cert: {_e}")
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
