@@ -3064,8 +3064,16 @@ async function generarXML(setKey, natencion){
     const m2=cd2.match(/filename="([^"]+)"/);
     S.xmlNombre=m2?m2[1]:`EnvioDTE_${setKey}_${natencion}.xml`;
     S.xmlBlob=await r2.blob();
+    guardarEnHistorial(S.xmlNombre,S.xmlBlob);
     const casos2=r2.headers.get('X-Casos-Generados')||'?';
     const err2=r2.headers.get('X-Casos-Error')||'0';
+    // Guardar folios del set para envio al SII (desde casoData del set activo)
+    if(set){
+      S.ultimoSetFolios = set.casoData
+        .map((cd,ci)=>({ tipo: parseInt(set.casos[ci]?.tipo_doc||0), folio: cd.folio_asignado }))
+        .filter(f=>f.tipo && f.folio);
+      log('Folios guardados para envio: '+S.ultimoSetFolios.length,'info');
+    }
     log(`\u2713 XML ${setKey} \u2014 ${casos2} docs`,'ok');
     document.getElementById('dl_name5').textContent=S.xmlNombre;
     document.getElementById('dlbox5').classList.add('show');
@@ -3092,9 +3100,13 @@ async function generarXML(setKey, natencion){
     guardarEnHistorial(S.xmlNombre,S.xmlBlob);
     const casos=r.headers.get('X-Casos-Generados')||'?';
     const errores=r.headers.get('X-Casos-Error')||'0';
-    // Guardar folios del set para envio al SII
-    S.ultimoSetFolios = (S.casoData||[]).filter(c=>c.folio&&c.tipo_dte).map(c=>({tipo:c.tipo_dte,folio:c.folio}));
-    log('Folios guardados para envio: '+S.ultimoSetFolios.length,'info');
+    // Guardar folios del set para envio al SII (desde casoData del set activo)
+    if(set){
+      S.ultimoSetFolios = set.casoData
+        .map((cd,ci)=>({ tipo: parseInt(set.casos[ci]?.tipo_doc||0), folio: cd.folio_asignado }))
+        .filter(f=>f.tipo && f.folio);
+      log('Folios guardados para envio: '+S.ultimoSetFolios.length,'info');
+    }
     const detalleErr=r.headers.get('X-Errores-Detalle')||'';
     log(`✓ XML ${setKey} N°${natencion} — ${casos} docs firmados`+(errores!=='0'?` (${errores} error: ${detalleErr})`:''),'ok');
     document.getElementById('dl_name5').textContent=S.xmlNombre;
