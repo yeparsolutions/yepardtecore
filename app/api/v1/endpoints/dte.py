@@ -427,11 +427,15 @@ async def enviar_set_sii(
     firma  = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
     sender = SIISender(ambiente=emisor.ambiente)
 
+    # RutEnvia: usar rut_firmante del cert (ej. 25648612-1), no el RUT del emisor
+    rut_enviador = cert.rut_firmante or firma.rut_certificado or emisor.rut
+    logger.info(f"[ENVIAR-SET] RutEmisor={emisor.rut} RutEnvia={rut_enviador}")
+
     try:
         sobre_xml = await sender.construir_sobre(
             dtes_xml     = xmls_firmados,
             rut_emisor   = emisor.rut,
-            rut_enviador = firma.rut_certificado or emisor.rut,
+            rut_enviador = rut_enviador,
             firma_service= firma,
         )
     except Exception as e:
@@ -443,7 +447,7 @@ async def enviar_set_sii(
         resultado = await sender.enviar_sobre(
             sobre_xml      = sobre_xml,
             rut_emisor     = emisor.rut,
-            rut_enviador   = firma.rut_certificado or emisor.rut,
+            rut_enviador   = rut_enviador,
             p12_bytes      = cert.certificado_p12,
             password       = cert.certificado_password or "",
             auth_p12_bytes = getattr(cert, "certificado_auth_p12", None),
