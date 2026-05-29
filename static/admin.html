@@ -3132,9 +3132,13 @@ function renderHistorial(){
           <div style="font-size:10px;color:var(--text3);margin-top:2px">${item.ts}</div>
         </div>
         <button onclick="descargarDesdeHistorial(${i})"
-          style="flex-shrink:0;padding:6px 14px;background:var(--accent);border:none;
+          style="flex-shrink:0;padding:6px 12px;background:var(--accent);border:none;
           border-radius:6px;color:#000;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">
           \u2b07 Bajar</button>
+        <button onclick="enviarUltimoSet()"
+          style="flex-shrink:0;padding:6px 12px;background:#f59e0b;border:none;
+          border-radius:6px;color:#000;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">
+          \u{1f4e4} SII</button>
       </div>`).join('');
 }
 function descargarDesdeHistorial(i){
