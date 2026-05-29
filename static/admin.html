@@ -3097,6 +3097,26 @@ async function generarXML(setKey, natencion){
     document.getElementById('sii_steps5').classList.add('show');
     done(5,'✓ XML listo');
     res(5,true,`EnvioDTE generado: ${S.xmlNombre}\n${casos} docs firmados.\n${errores!=='0'?'Errores: '+detalleErr:'Sin errores ✓'}\n\nDescárgalo y súbelo en maullin.sii.cl`);
+    // Mostrar botón Enviar al SII — obtiene DTEs BORRADOR recientes
+    const nDocs = parseInt(casos)||0;
+    if(nDocs > 0){
+      const btnEnviar = document.getElementById('btn_enviar_sii');
+      if(btnEnviar){
+        btnEnviar.style.display='block';
+        btnEnviar.disabled=false;
+        btnEnviar.textContent='\u{1f4e4} Enviar al SII ('+nDocs+' docs)';
+        btnEnviar.onclick = async ()=>{
+          // Consultar los DTEs BORRADOR más recientes del emisor
+          try{
+            const rDtes = await fetch(base()+'/v1/dte/emisor/'+S.id+'?estado=BORRADOR&limite='+nDocs);
+            const data = await rDtes.json();
+            const folios = (data.documentos||[]).map(d=>({tipo:d.tipo_dte,folio:d.folio}));
+            if(!folios.length){ log('No hay DTEs en BORRADOR para enviar','warn'); return; }
+            await enviarSetSII(folios);
+          }catch(e){ log('Error obteniendo DTEs: '+e,'err'); }
+        };
+      }
+    }
   }catch(e){
     log('Error: '+e,'err');
     res(5,false,'Error: '+String(e));
