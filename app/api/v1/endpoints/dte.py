@@ -435,7 +435,9 @@ async def enviar_set_sii(
             firma_service= firma,
         )
     except Exception as e:
-        raise HTTPException(500, f"Error armando sobre: {e}")
+        import traceback
+        logger.error(f"[ENVIAR-SET] Error armando sobre: {e}\n{traceback.format_exc()}")
+        raise HTTPException(500, f"Error armando sobre: {type(e).__name__}: {e}")
 
     try:
         resultado = await sender.enviar_sobre(
@@ -448,7 +450,9 @@ async def enviar_set_sii(
             auth_password  = getattr(cert, "certificado_auth_password", None),
         )
     except Exception as e:
-        raise HTTPException(500, f"Error enviando al SII: {e}")
+        import traceback
+        logger.error(f"[ENVIAR-SET] Error enviando al SII: {e}\n{traceback.format_exc()}")
+        raise HTTPException(500, f"Error enviando al SII: {type(e).__name__}: {e}")
 
     # Actualizar estado en BD
     track_id = resultado.get("track_id")
