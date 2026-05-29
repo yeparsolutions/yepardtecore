@@ -162,6 +162,7 @@ class SIISender:
         logger.warning(f"[SII ENVIO] {'BOLETA' if es_envio_boleta else 'DTE'} rutSender={env_limpio} rutCompany={rut_limpio} token={token[:8]}...")
         logger.warning(f"[SII ENVIO] url={url_envio}")
         logger.warning(f"[SII ENVIO] sobre_bytes_len={len(sobre_bytes)}")
+        logger.warning(f"[SII ENVIO] sobre_inicio={sobre_bytes[:300]}")
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
