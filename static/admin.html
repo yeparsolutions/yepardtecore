@@ -676,6 +676,12 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
         </div>
         <div class="ep-config-body" id="epConfigBody"></div>
       </div>
+      <button id="btn_enviar_sii" onclick="enviarSetSII([])"
+        style="display:none;width:100%;padding:13px;margin-top:10px;
+          background:var(--accent);border:none;border-radius:10px;
+          color:#000;font-size:14px;font-weight:700;cursor:pointer">
+        &#x1f4e4; Enviar al SII
+      </button>
       <div class="download-box" id="dlbox5">
         <div class="dl-icon">📥</div>
         <div class="dl-name" id="dl_name5"></div>
@@ -3855,6 +3861,39 @@ function dOv(e,id){e.preventDefault();document.getElementById(id).classList.add(
 function dLv(id){document.getElementById(id).classList.remove('over');}
 function dDp(e,fid,zid,cb){e.preventDefault();dLv(zid);const f=e.dataTransfer.files[0];if(!f)return;const dt=new DataTransfer();dt.items.add(f);document.getElementById(fid).files=dt.files;cb(document.getElementById(fid));}
 function dpCAFs(e){e.preventDefault();dLv('z4caf');addCAFs(e.dataTransfer.files);}
+
+/* == ENVIAR SET AL SII == */
+async function enviarSetSII(folios){
+  if(!S.id){ log('Carga el emisor primero','warn'); return; }
+  if(!folios||!folios.length){ log('Sin folios para enviar','warn'); return; }
+
+  const btn = document.getElementById('btn_enviar_sii');
+  if(btn){ btn.disabled=true; btn.textContent='Enviando al SII...'; }
+  log('Enviando '+folios.length+' DTEs al SII...','info');
+
+  try{
+    const r = await fetch(base()+'/v1/dte/enviar-set',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ emisor_id: S.id, folios }),
+    });
+    const data = await r.json();
+    if(!r.ok){
+      log('Error '+r.status+': '+(data.detail||JSON.stringify(data)),'err');
+      return;
+    }
+    if(data.track_id){
+      log('\u2713 Enviado al SII \u2014 TrackID: '+data.track_id,'ok');
+      log('Estado: '+data.estado+' | Docs: '+data.docs_enviados,'ok');
+      if(btn){ btn.textContent='\u2713 Enviado (TrackID: '+data.track_id+')'; btn.style.background='#10b981'; }
+    } else {
+      log('Enviado sin TrackID: '+JSON.stringify(data),'warn');
+    }
+  }catch(e){
+    log('Error: '+e,'err');
+    if(btn){ btn.disabled=false; btn.textContent='\u{1f4e4} Enviar al SII'; }
+  }
+}
 
 window.onload=function(){
   // Restaurar tema guardado
