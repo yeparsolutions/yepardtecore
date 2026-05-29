@@ -427,9 +427,9 @@ async def enviar_set_sii(
     firma  = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
     sender = SIISender(ambiente=emisor.ambiente)
 
-    # RutEnvia: usar rut_firmante del cert (ej. 25648612-1), no el RUT del emisor
+    # RutEnvia: probar con RUT del emisor para debug STATUS=10
     rut_enviador = cert.rut_firmante or firma.rut_certificado or emisor.rut
-    logger.info(f"[ENVIAR-SET] RutEmisor={emisor.rut} RutEnvia={rut_enviador}")
+    logger.warning(f"[ENVIAR-SET] RutEmisor={emisor.rut} RutEnvia={rut_enviador} cert.rut_firmante={cert.rut_firmante}")
 
     try:
         sobre_xml = await sender.construir_sobre(
