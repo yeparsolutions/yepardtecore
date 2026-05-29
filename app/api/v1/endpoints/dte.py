@@ -21,7 +21,11 @@ from datetime import date
 
 from app.db.base import get_db
 from app.models.dte import DTE
+from app.models.emisor import Emisor
+from app.models.certificado import Certificado
 from app.services.dte_service import DTEService
+from app.services.sii_sender import SIISender
+from app.services.firma_digital import FirmaDigital
 from app.core.security import validar_api_key
 
 logger = logging.getLogger("yepardtecore.endpoints.dte")
@@ -357,3 +361,118 @@ async def descargar_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{nombre_archivo}"'},
     )
+
+# POST /v1/dte/enviar-set
+# Envía al SII un conjunto de DTEs ya guardados en BD
+# Body: { emisor_id, folios: [{tipo, folio}] }
+
+
+class FolioItem(BaseModel):
+    tipo: int
+    folio: int
+
+class EnviarSetRequest(BaseModel):
+    emisor_id: int
+    folios: list[FolioItem]
+
+@router.post("/enviar-set", summary="Envía al SII DTEs ya generados")
+async def enviar_set_sii(
+    body: EnviarSetRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Toma DTEs ya generados en BD (por tipo+folio) y los envía al SII.
+    Retorna track_id y estado del envío.
+    """
+    if not body.folios:
+        raise HTTPException(400, "Debe indicar al menos un folio")
+
+    # Obtener emisor
+    emisor = await db.get(Emisor, body.emisor_id)
+    if not emisor:
+        raise HTTPException(404, f"Emisor {body.emisor_id} no encontrado")
+
+    # Obtener certificado
+    res = await db.execute(
+        select(Certificado).where(
+            Certificado.emisor_id == body.emisor_id,
+            Certificado.activo == True,
+        ).limit(1)
+    )
+    cert = res.scalar_one_or_none()
+    if not cert:
+        raise HTTPException(400, "Sin certificado activo")
+
+    # Buscar DTEs en BD
+    xmls_firmados = []
+    no_encontrados = []
+    for item in body.folios:
+        res = await db.execute(
+            select(DTE).where(
+                DTE.emisor_id == body.emisor_id,
+                DTE.tipo_dte  == item.tipo,
+                DTE.folio     == item.folio,
+            ).limit(1)
+        )
+        dte = res.scalar_one_or_none()
+        if not dte or not dte.xml_firmado:
+            no_encontrados.append(f"T{item.tipo}-F{item.folio}")
+            continue
+        xmls_firmados.append(dte.xml_firmado)
+
+    if not xmls_firmados:
+        raise HTTPException(404, f"No se encontraron DTEs: {no_encontrados}")
+
+    # Construir sobre y enviar
+    firma  = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
+    sender = SIISender(ambiente=emisor.ambiente)
+
+    try:
+        sobre_xml = await sender.construir_sobre(
+            dtes_xml     = xmls_firmados,
+            rut_emisor   = emisor.rut,
+            rut_enviador = firma.rut_certificado or emisor.rut,
+            firma_service= firma,
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Error armando sobre: {e}")
+
+    try:
+        resultado = await sender.enviar_sobre(
+            sobre_xml      = sobre_xml,
+            rut_emisor     = emisor.rut,
+            rut_enviador   = firma.rut_certificado or emisor.rut,
+            p12_bytes      = cert.certificado_p12,
+            password       = cert.certificado_password or "",
+            auth_p12_bytes = getattr(cert, "certificado_auth_p12", None),
+            auth_password  = getattr(cert, "certificado_auth_password", None),
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Error enviando al SII: {e}")
+
+    # Actualizar estado en BD
+    track_id = resultado.get("track_id")
+    if track_id:
+        for item in body.folios:
+            res = await db.execute(
+                select(DTE).where(
+                    DTE.emisor_id == body.emisor_id,
+                    DTE.tipo_dte  == item.tipo,
+                    DTE.folio     == item.folio,
+                ).limit(1)
+            )
+            dte = res.scalar_one_or_none()
+            if dte:
+                dte.track_id = str(track_id)
+                dte.estado   = "ENVIADO"
+        await db.commit()
+
+    return {
+        "ok":             True,
+        "track_id":       track_id,
+        "estado":         resultado.get("estado"),
+        "mensaje":        resultado.get("mensaje"),
+        "docs_enviados":  len(xmls_firmados),
+        "no_encontrados": no_encontrados,
+        "ambiente":       emisor.ambiente,
+    }
