@@ -35,11 +35,22 @@ public class FirmaDTE {
     public static void main(String[] args) throws Exception {
         if (args.length < 4) {
             System.err.println("Uso: java FirmaDTE <modo> <xml_b64> <pfx_b64> <password> [doc_id]");
+            System.err.println("     java FirmaDTE <modo> - <pfx_b64> <password>  (xml por stdin)");
             System.exit(1);
         }
 
         String modo     = args[0];
-        byte[] xmlBytes = Base64.getDecoder().decode(args[1]);
+        // Si xml_b64 es "-", leer el XML desde stdin (evita limite de args del OS)
+        byte[] xmlBytes;
+        if (args[1].equals("-")) {
+            ByteArrayOutputStream buf = new ByteArrayOutputStream();
+            byte[] chunk = new byte[8192];
+            int n;
+            while ((n = System.in.read(chunk)) != -1) buf.write(chunk, 0, n);
+            xmlBytes = Base64.getDecoder().decode(buf.toByteArray());
+        } else {
+            xmlBytes = Base64.getDecoder().decode(args[1]);
+        }
         byte[] pfxBytes = Base64.getDecoder().decode(args[2]);
         String password = args[3];
 
