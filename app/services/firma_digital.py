@@ -59,18 +59,24 @@ def _java_disponible() -> bool:
 
 def _firmar_sobre_con_java(sobre_xml_bytes: bytes, pfx_bytes: bytes, password: str,
                            modo: str = "firmar-sobre") -> bytes:
-    """Usa Java para firmar el SetDTE del sobre o el EnvioLibro del libro."""
-    import tempfile
-    xml_b64 = base64.b64encode(sobre_xml_bytes).decode()
+    """Usa Java para firmar el SetDTE.
+    Pasa el XML via stdin (con '-') para evitar 'Argument list too long'.
+    """
+    xml_b64 = base64.b64encode(sobre_xml_bytes)  # bytes, para stdin
     pfx_b64 = base64.b64encode(pfx_bytes).decode()
 
     cmd = ["java", "-cp", _JAVA_CLASS_DIR, "FirmaDTE",
-           modo, xml_b64, pfx_b64, password]
+           modo, "-", pfx_b64, password]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    result = subprocess.run(
+        cmd,
+        input=xml_b64,          # bytes via stdin
+        capture_output=True,
+        timeout=60,
+    )
 
     if result.returncode != 0:
-        raise RuntimeError(f"FirmaDTE.java [firmar-sobre] error: {result.stderr[:300]}")
+        raise RuntimeError(f"FirmaDTE.java [firmar-sobre] error: {result.stderr.decode()[:300]}")
     if not result.stdout:
         raise RuntimeError("FirmaDTE.java [firmar-sobre]: sin output")
 
