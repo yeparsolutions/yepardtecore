@@ -322,11 +322,13 @@ def firmar_dtes_y_sobre_con_java(sobre_xml: str, p12_bytes: bytes, password: str
     pfx_b64 = _b64.b64encode(p12_bytes).decode()
     pwd_str = password if isinstance(password, str) else password.decode()
 
-    cmd = ["java", "-cp", java_dir, "FirmaDTE", "firmar-sobre", xml_b64, pfx_b64, pwd_str]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    # Pasar XML via stdin para evitar "Argument list too long"
+    xml_b64_bytes = _b64.b64encode(sobre_con_dtes)  # bytes para stdin
+    cmd = ["java", "-cp", java_dir, "FirmaDTE", "firmar-sobre", "-", pfx_b64, pwd_str]
+    result = subprocess.run(cmd, input=xml_b64_bytes, capture_output=True, timeout=60)
 
     if result.returncode != 0:
-        raise RuntimeError(f"FirmaDTE.java [firmar-sobre] error: {result.stderr[:300]}")
+        raise RuntimeError(f"FirmaDTE.java [firmar-sobre] error: {result.stderr.decode()[:300]}")
     if not result.stdout:
         raise RuntimeError("FirmaDTE.java [firmar-sobre]: sin output")
 
