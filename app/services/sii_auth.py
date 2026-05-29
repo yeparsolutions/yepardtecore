@@ -14,6 +14,7 @@
 # ══════════════════════════════════════════════════════════════
 
 import httpx
+from app.services.http_client import get_sii_client
 import hashlib
 import subprocess
 import tempfile
@@ -104,7 +105,7 @@ class SIIAuth:
             '</soapenv:Envelope>'
         )
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with get_sii_client(timeout=15.0) as client:
             response = await client.post(
                 self.url_semilla,
                 content=soap_body.encode("utf-8"),
@@ -251,7 +252,7 @@ class SIIAuth:
             '</soapenv:Envelope>'
         )
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with get_sii_client(timeout=15.0) as client:
             response = await client.post(
                 self.url_token,
                 content=soap_body.encode("utf-8"),
