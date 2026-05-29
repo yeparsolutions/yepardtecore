@@ -9,7 +9,6 @@
 
 import logging
 import httpx
-from app.services.http_client import get_sii_client
 from lxml import etree
 from datetime import datetime, timezone, timedelta
 from app.core.config import settings
@@ -160,12 +159,12 @@ class SIISender:
             "archivo":    (nombre, sobre_bytes, "text/xml;charset=ISO-8859-1"),
         }
 
-        logger.info(f"[SII ENVIO] {'BOLETA' if es_envio_boleta else 'DTE'} rutSender={env_limpio} rutCompany={rut_limpio} token={token[:8]}...")
-        logger.info(f"[SII ENVIO] url={url_envio}")
-        logger.info(f"[SII ENVIO] sobre_bytes_len={len(sobre_bytes)}")
+        logger.warning(f"[SII ENVIO] {'BOLETA' if es_envio_boleta else 'DTE'} rutSender={env_limpio} rutCompany={rut_limpio} token={token[:8]}...")
+        logger.warning(f"[SII ENVIO] url={url_envio}")
+        logger.warning(f"[SII ENVIO] sobre_bytes_len={len(sobre_bytes)}")
 
         try:
-            async with get_sii_client(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(url_envio, headers=headers, files=files)
 
             logger.info(f"[SII RAW] HTTP={response.status_code} body={response.text[:2000]}")
@@ -226,7 +225,7 @@ class SIISender:
         url        = (f"https://{host}.sii.cl/cgi_dte/UPL/DTEUpload"
                       f"?rutEmisor={rut_limpio}&trackId={track_id}")
         try:
-            async with get_sii_client(timeout=15.0) as client:
+            async with httpx.AsyncClient(timeout=15.0) as client:
                 response = await client.get(url)
             if response.status_code != 200:
                 return {"estado": "ERROR", "mensaje": f"HTTP {response.status_code}"}
