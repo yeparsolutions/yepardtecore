@@ -144,7 +144,7 @@ class SIISender:
             url_envio = self.url_upload
 
         rut_limpio = self.limpiar_rut(rut_emisor)
-        env_limpio = self.limpiar_rut(rut_emisor)  # TEMPORAL: usar RUT emisor hasta tener cert con RUT
+        env_limpio = self.limpiar_rut(rut_enviador)
         timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
         nombre     = f"{rut_limpio}_{timestamp}.xml"
         sobre_bytes= sobre_xml.encode("ISO-8859-1")
