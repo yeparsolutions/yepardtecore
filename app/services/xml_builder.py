@@ -198,6 +198,9 @@ class XMLBuilder:
         self._build_encabezado(doc_el)
 
         for idx, item in enumerate(d.items, start=1):
+            # Filtrar ítems decorativos (solo guiones) que vienen del txt del SII
+            if item.nombre and set(item.nombre.strip()) == {'-'}:
+                continue
             self._build_detalle(doc_el, item, idx,
                                 forzar_monto_cero=d.forzar_monto_cero)
 
@@ -389,3 +392,4 @@ class XMLBuilder:
                 etree.SubElement(r, f"{{{NS}}}CodRef").text = str(ref.cod_ref)
             if ref.razon_ref:
                 etree.SubElement(r, f"{{{NS}}}RazonRef").text = ref.razon_ref[:90]
+                
