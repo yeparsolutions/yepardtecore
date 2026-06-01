@@ -11,6 +11,7 @@ from app.api.v1.endpoints import (
     sii_auth,
     certificacion_dinamica,
     certificacion_libros_dinamico,
+    certificacion_boletas,
     certificacion_libro_compras,
     libro_compras,   # endpoint limpio LibroCompras
     libro_guias,     # endpoint limpio LibroGuías
@@ -27,6 +28,7 @@ api_router.include_router(certificados.router)
 api_router.include_router(sii_auth.router)
 api_router.include_router(certificacion_dinamica.router)
 api_router.include_router(certificacion_libros_dinamico.router)
+api_router.include_router(certificacion_boletas.router)
 api_router.include_router(certificacion_libro_compras.router)
 api_router.include_router(libro_compras.router)   # POST /v1/libro-compras/
 api_router.include_router(libro_guias.router)     # POST /v1/libro-guias/
