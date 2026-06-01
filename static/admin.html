@@ -1492,58 +1492,62 @@ function cargarSet(file){
 }
 
 function parsearTxtBoletas(txt){
-  // Parser para el formato especial del Set de Prueba de Boleta Electrónica
-  // Formato: CASO-N seguido de columnas Item / Cantidad / Precio Unitario con IVA
-  const casos = [];
-  const bloques = txt.split(/CASO-\d+/i).slice(1);
-  const numerosRe = txt.match(/CASO-(\d+)/gi)||[];
+  // Parser para formato Set de Prueba de Boleta Electrónica
+  // Detecta CASO-N al inicio de línea para evitar falsos positivos
   const natencion = 'SET_BOLETA';
+  const casos = [];
 
-  bloques.forEach((bloque, bi)=>{
-    const nCaso = parseInt((numerosRe[bi]||'CASO-1').replace(/CASO-/i,''));
+  // Usar regex con inicio de línea ^
+  const casoRe = /^CASO-(\d+)\s*$/gim;
+  const matches = [...txt.matchAll(casoRe)];
+
+  matches.forEach((m, mi)=>{
+    const nCaso = parseInt(m[1]);
+    const start = m.index + m[0].length;
+    const end   = mi+1 < matches.length ? matches[mi+1].index : txt.length;
+    const bloque = txt.slice(start, end);
     const lineas = bloque.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
 
-    // Leer observación del bloque completo (puede venir antes o después de ítems)
+    // Leer observación (viene después de ítems)
     let observacion = '';
     const obsLinea = lineas.find(l=>/^OBSERVACI/i.test(l));
     if(obsLinea) observacion = obsLinea.replace(/^OBSERVACI[OÓ]N[^:]*:/i,'').trim().replace(/^"|"$/g,'').trim();
 
-    // Unidad especial desde observación
-    const unidadObs = /kg/i.test(observacion) ? 'Kg' : '';
+    const unidadObs = /\bkg\b/i.test(observacion) ? 'Kg' : '';
 
-    // Filtrar líneas de ítems (excluir encabezados, separadores, observaciones)
+    // Filtrar líneas de ítems
     const itemLineas = lineas.filter(l=>{
       if(/^=+$/.test(l)) return false;
-      if(/^Item\s/i.test(l)) return false;
+      if(/^Item\b/i.test(l)) return false;
       if(/^OBSERVACI/i.test(l)) return false;
+      if(/^\*/.test(l)) return false;
       return true;
     });
 
     const items = [];
     for(const linea of itemLineas){
-      // Cada línea: Nombre		Cantidad		Precio
       const partes = linea.split(/\t+/).map(p=>p.trim()).filter(p=>p);
       if(partes.length < 2) continue;
       const nombre = partes[0];
       if(!nombre || /^\d+$/.test(nombre)) continue;
       const cantidad = parseFloat(partes[1])||1;
-      const precio   = parseFloat((partes[2]||'0').replace(/\./g,'').replace(',','.'))||0;
+      // Quitar separadores de miles (punto) antes de parsear
+      const precioStr = (partes[2]||'0').replace(/\./g,'').replace(',','.');
+      const precio = parseFloat(precioStr)||0;
 
-      // Detectar exento: por nombre del ítem o por observación (ítem 2+)
       const exento = /exento/i.test(nombre) ||
                      (/exento/i.test(observacion) && items.length >= 1);
 
       items.push({
-        nombre,
-        cantidad,
-        precio_unitario: precio,  // precio CON IVA — el backend convierte
+        nombre, cantidad,
+        precio_unitario: precio,
         exento,
         unidad: unidadObs || (partes[3]||''),
         descuento_pct: 0,
       });
     }
 
-    if(items.length===0) return;
+    if(items.length === 0) return;
 
     casos.push({
       numero_caso: nCaso,
