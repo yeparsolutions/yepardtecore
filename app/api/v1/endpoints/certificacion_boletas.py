@@ -150,14 +150,22 @@ async def generar_xml_boletas(
             razon_ref=f"CASO-{caso.numero_caso}",
         )]
 
+        # Receptor: siempre usar genérico para boletas de ventas (set de prueba)
+        rut_recep = caso.rut_receptor or "66666666-6"
+        nom_recep = caso.nombre_receptor or "Consumidor Final"
+        # Forzar genérico si viene vacío o es el receptor de prueba del admin
+        if not rut_recep or rut_recep in ("77777777-7", "0"):
+            rut_recep = "66666666-6"
+            nom_recep = "Consumidor Final"
+
         input_b = InputBoleta(
             tipo_dte=caso.tipo_dte,
             folio=folio,
             fecha_emision=fecha_emision,
             emisor=emisor_b,
             receptor=ReceptorBoleta(
-                rut=caso.rut_receptor,
-                razon_social=caso.nombre_receptor,
+                rut=rut_recep,
+                razon_social=nom_recep,
             ),
             items=items_b,
             referencias=refs,
