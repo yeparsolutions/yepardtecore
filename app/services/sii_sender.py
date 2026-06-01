@@ -149,13 +149,23 @@ class SIISender:
         nombre     = f"{rut_limpio}_{timestamp}.xml"
         sobre_bytes= sobre_xml.encode("ISO-8859-1")
 
+        # Separar RUT y DV para el multipart (requerido por el SII)
+        def split_rut(rut):
+            partes = rut.replace(".", "").split("-")
+            return partes[0], partes[1] if len(partes) > 1 else "0"
+
+        rut_num, dv_company = split_rut(rut_limpio)
+        env_num, dv_sender  = split_rut(env_limpio)
+
         headers = {
             "User-Agent": "Mozilla/4.0 (compatible; PROG 1.0; Windows NT 5.0; YeparDTEcore)",
             "Cookie":     f"TOKEN={token}",
         }
         files = {
-            "rutSender":  (None, env_limpio),
-            "rutCompany": (None, rut_limpio),
+            "rutSender":  (None, env_num),
+            "dvSender":   (None, dv_sender),
+            "rutCompany": (None, rut_num),
+            "dvCompany":  (None, dv_company),
             "archivo":    (nombre, sobre_bytes, "text/xml;charset=ISO-8859-1"),
         }
 
