@@ -19,13 +19,13 @@ SII_UPLOAD_CERT = "https://maullin.sii.cl/cgi_dte/UPL/DTEUpload"
 SII_UPLOAD_PROD = "https://palena.sii.cl/cgi_dte/UPL/DTEUpload"
 
 # Boletas electrónicas usan servidor REST distinto (Instructivo Técnico Boleta 2021)
-SII_BOLETA_UPLOAD_CERT = "https://maullin.sii.cl/cgi_dte/UPL/DTEUpload"
-SII_BOLETA_UPLOAD_PROD = "https://palena.sii.cl/cgi_dte/UPL/DTEUpload"
+SII_BOLETA_UPLOAD_CERT = "https://maullin.sii.cl/cgi_boleta/UPL/DTEUpload"
+SII_BOLETA_UPLOAD_PROD = "https://palena.sii.cl/cgi_boleta/UPL/DTEUpload"
 
-# Token semilla para boletas — usar mismo endpoint que DTE (maullin2 no tiene DNS público)
-SII_BOLETA_SEMILLA_CERT = "https://maullin.sii.cl/DTEWS/CrSeed.jws"
-SII_BOLETA_TOKEN_CERT   = "https://maullin.sii.cl/DTEWS/GetTokenFromSeed.jws"
-SII_BOLETA_SEMILLA_PROD = "https://palena.sii.cl/DTEWS/CrSeed.jws"
+# Token semilla para boletas (endpoint REST distinto)
+SII_BOLETA_SEMILLA_CERT = "https://maullin2.sii.cl/boleta.electronica.DTE/ws/getEstadoEnvio"
+SII_BOLETA_TOKEN_CERT   = "https://maullin2.sii.cl/boleta.electronica.DTE/ws/getToken"
+SII_BOLETA_SEMILLA_PROD = "https://rahue.sii.cl/boleta.electronica.DTE/ws/getEstadoEnvio"
 SII_BOLETA_TOKEN_PROD   = "https://rahue.sii.cl/boleta.electronica.DTE/ws/getToken"
 SII_NS          = "http://www.sii.cl/SiiDte"
 XSI_NS          = "http://www.w3.org/2001/XMLSchema-instance"
@@ -149,11 +149,9 @@ class SIISender:
         nombre     = f"{rut_limpio}_{timestamp}.xml"
         sobre_bytes= sobre_xml.encode("ISO-8859-1")
 
-        # Separar RUT y DV para el multipart (requerido por el SII)
         def split_rut(rut):
             partes = rut.replace(".", "").split("-")
             return partes[0], partes[1] if len(partes) > 1 else "0"
-
         rut_num, dv_company = split_rut(rut_limpio)
         env_num, dv_sender  = split_rut(env_limpio)
 
