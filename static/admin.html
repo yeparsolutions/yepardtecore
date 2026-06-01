@@ -2902,7 +2902,8 @@ async function generarXML(setKey, natencion){
            || S.setsDetectados.find(s=>s.natencion===String(natencion));
 
   // Construir body dinámico con todos los datos editados en el admin
-  const usarDinamico = endpoint.includes('/certificacion-dinamica/');
+  const usarDinamico = endpoint.includes('/certificacion-dinamica/') || endpoint.includes('/certificacion-boletas/');
+  const esBoleta = endpoint.includes('/certificacion-boletas/');
   let fetchOptions = {method:'POST'};
 
   if(usarDinamico && set){
@@ -3002,6 +3003,18 @@ async function generarXML(setKey, natencion){
             }];
           }
 
+          // Para boletas: el precio viene CON IVA del txt del SII
+          // El backend de boletas espera precio_con_iva, no precio_unitario
+          if(esBoleta){
+            return (cd.items||[]).map(it=>({
+              nombre:          it.nombre||'',
+              cantidad:        Number(it.cantidad)||0,
+              precio_con_iva:  Number(it.precio_unitario)||0,
+              exento:          it.exento||false,
+              unidad:          it.unidad||'',
+              codigo:          it.codigo_val||'',
+            }));
+          }
           return (cd.items||[]).map(it=>({
             nombre:          it.nombre||'',
             descripcion:     it.descripcion||it.nombre||'',
@@ -3027,23 +3040,33 @@ async function generarXML(setKey, natencion){
       };
     });
 
-    const body = {
-      emisor_id: S.id,
-      set_key:   setKey,
-      sets: [{
-        natencion:     set.natencion,
-        label:         set.label||setKey,
-        fecha_emision: new Date().toISOString().split('T')[0],
+    let body;
+    if(esBoleta){
+      // Endpoint de boletas usa schema diferente
+      body = {
+        emisor_id: S.id,
+        natencion: set.natencion,
         casos,
-      }],
-    };
+      };
+    } else {
+      body = {
+        emisor_id: S.id,
+        set_key:   setKey,
+        sets: [{
+          natencion:     set.natencion,
+          label:         set.label||setKey,
+          fecha_emision: new Date().toISOString().split('T')[0],
+          casos,
+        }],
+      };
+    }
 
     fetchOptions = {
       method:  'POST',
       headers: {'Content-Type':'application/json'},
       body:    JSON.stringify(body),
     };
-    log(`Enviando ${casos.length} casos al endpoint dinámico...`,'info');
+    log(`Enviando ${casos.length} casos al endpoint ${esBoleta?'boletas':'dinámico'}...`,'info');
   } else {
     // Libros: endpoint dinámico con tipo_libro + natencion como params
     const tipoLibroMap = {ventas:'ventas', compras:'compras', libro_guias:'guias'};
