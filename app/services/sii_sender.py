@@ -19,8 +19,8 @@ SII_UPLOAD_CERT = "https://maullin.sii.cl/cgi_dte/UPL/DTEUpload"
 SII_UPLOAD_PROD = "https://palena.sii.cl/cgi_dte/UPL/DTEUpload"
 
 # Boletas electrónicas usan servidor REST distinto (Instructivo Técnico Boleta 2021)
-SII_BOLETA_UPLOAD_CERT = "https://maullin.sii.cl/cgi_boleta/UPL/DTEUpload"
-SII_BOLETA_UPLOAD_PROD = "https://palena.sii.cl/cgi_boleta/UPL/DTEUpload"
+SII_BOLETA_UPLOAD_CERT = "https://maullin.sii.cl/cgi_dte/UPL/DTEUpload"
+SII_BOLETA_UPLOAD_PROD = "https://palena.sii.cl/cgi_dte/UPL/DTEUpload"
 
 # Token semilla para boletas (endpoint REST distinto)
 SII_BOLETA_SEMILLA_CERT = "https://maullin2.sii.cl/boleta.electronica.DTE/ws/getEstadoEnvio"
