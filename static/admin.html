@@ -594,7 +594,7 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
       <div class="uzone" id="z4" ondragover="dOv(event,'z4')" ondragleave="dLv('z4')" ondrop="dpSet(event)">
         <input type="file" id="fset" accept=".txt" onchange="cargarSet(this.files[0])">
         <div class="uicon">📄</div>
-        <div class="utxt"><strong>Arrastra el .txt del SII o haz clic</strong>El archivo con "SET BASICO - NUMERO DE ATENCION: ..."</div>
+        <div class="utxt"><strong>Arrastra el .txt del SII o haz clic</strong>El archivo con "SET BASICO - NUMERO DE ATENCION: ..." o "SII SET DE PRUEBA DE BOLETA"</div>
       </div>
 
       <!-- Vista general de casos una vez cargado -->
@@ -1491,7 +1491,81 @@ function cargarSet(file){
   rd.readAsText(file,'ISO-8859-1');
 }
 
+function parsearTxtBoletas(txt){
+  // Parser para el formato especial del Set de Prueba de Boleta Electrónica
+  // Formato: CASO-N seguido de columnas Item / Cantidad / Precio Unitario con IVA
+  const casos = [];
+  const bloques = txt.split(/CASO-\d+/i).slice(1);
+  const numerosRe = txt.match(/CASO-(\d+)/gi)||[];
+  const natencion = 'SET_BOLETA';
+
+  bloques.forEach((bloque, bi)=>{
+    const nCaso = parseInt((numerosRe[bi]||'CASO-1').replace(/CASO-/i,''));
+    const lineas = bloque.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+
+    // Buscar observación
+    let observacion = '';
+    const obsIdx = lineas.findIndex(l=>/^OBSERVACI/i.test(l));
+    if(obsIdx>=0) observacion = lineas[obsIdx].replace(/^OBSERVACI[OÓ]N[^:]*:/i,'').trim().replace(/^"|"$/g,'').trim();
+
+    // Saltear línea de encabezado de columnas
+    const itemLineas = lineas.filter(l=>{
+      if(/^=+$/.test(l)) return false;
+      if(/^Item/i.test(l)) return false;
+      if(/^OBSERVACI/i.test(l)) return false;
+      return true;
+    });
+
+    const items = [];
+    for(const linea of itemLineas){
+      // Cada línea tiene: Nombre		Cantidad		Precio
+      const partes = linea.split(/\t+/).map(p=>p.trim()).filter(p=>p);
+      if(partes.length < 2) continue;
+      const nombre = partes[0];
+      if(!nombre || /^\d+$/.test(nombre)) continue;
+      const cantidad = parseFloat(partes[1])||1;
+      const precio = parseFloat((partes[2]||'0').replace(/[.,]/g,m=>m===','?'.':''))||0;
+
+      // Caso 4: ítem exento según observación
+      const exento = /exento/i.test(observacion) && items.length >= 1;
+
+      items.push({
+        nombre,
+        cantidad,
+        precio_unitario: precio,  // precio CON IVA — el backend lo convierte
+        exento,
+        unidad: partes[3]||'',
+        descuento_pct: 0,
+      });
+    }
+
+    if(items.length===0) return;
+
+    // Unidad especial: Caso 5 menciona Kg en observación
+    if(/kg/i.test(observacion)&&items.length>0){
+      items[items.length-1].unidad = 'Kg';
+    }
+
+    casos.push({
+      numero_caso: nCaso,
+      tipo_doc: 39,
+      items,
+      receptor: {rut:'66666666-6',razon_social:'Consumidor Final',giro:'',direccion:'',comuna:'',ciudad:''},
+      referencias:[{tipo_doc_ref:'SET',folio_ref:0,fecha_ref:new Date().toISOString().split('T')[0],cod_ref:null,razon_ref:`CASO-${nCaso}`,num_caso_ref:null}],
+      ind_traslado:0, ind_despacho:0, desc_global:0,
+    });
+  });
+
+  if(!casos.length) return null;
+  return [{key:'boletas', label:'Set Boletas', natencion, casos, esLibro:false}];
+}
+
 function parsearTxtMultiSet(txt){
+  // Detectar formato especial de boletas (sin NUMERO DE ATENCION)
+  if(/SII\s+SET\s+DE\s+PRUEBA\s+DE\s+BOLETA/i.test(txt)){
+    return parsearTxtBoletas(txt);
+  }
+
   const sets = [];
   // Buscar cada header de set: "SET XXXX - NUMERO DE ATENCIÓN: NNNNN"
   // El .txt real usa tanto ATENCION como ATENCIÓN (con tilde)
