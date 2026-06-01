@@ -3151,11 +3151,30 @@ function renderHistorial(){
           style="flex-shrink:0;padding:6px 12px;background:var(--accent);border:none;
           border-radius:6px;color:#000;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">
           \u2b07 Bajar</button>
-        <button onclick="enviarUltimoSet()"
+        <button onclick="enviarDesdeHistorial(${i})"
           style="flex-shrink:0;padding:6px 12px;background:#f59e0b;border:none;
           border-radius:6px;color:#000;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">
           \u{1f4e4} SII</button>
       </div>`).join('');
+}
+async function enviarDesdeHistorial(i){
+  const item = S.xmlHistorial[i];
+  if(!item){ log('No se encontró el XML en historial','warn'); return; }
+  try{
+    const txt = await item.blob.text();
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(txt, 'text/xml');
+    const dtes = xmlDoc.querySelectorAll('Documento');
+    const folios = [];
+    dtes.forEach(d=>{
+      const tipo = parseInt(d.querySelector('TipoDTE')?.textContent||'0');
+      const folio = parseInt(d.querySelector('Folio')?.textContent||'0');
+      if(tipo && folio) folios.push({tipo, folio});
+    });
+    if(!folios.length){ log('No se encontraron folios en el XML','warn'); return; }
+    log('Enviando '+folios.length+' DTEs al SII desde historial...','info');
+    await enviarSetSII(folios);
+  }catch(e){ log('Error extrayendo folios: '+e,'err'); }
 }
 function descargarDesdeHistorial(i){
   const item = S.xmlHistorial[i];
