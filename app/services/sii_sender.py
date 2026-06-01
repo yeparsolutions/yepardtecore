@@ -172,10 +172,11 @@ class SIISender:
         logger.info(f"[SII ENVIO] sobre_bytes_len={len(sobre_bytes)}")
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
                 response = await client.post(url_envio, headers=headers, files=files)
 
             logger.info(f"[SII RAW] HTTP={response.status_code} body={response.text[:2000]}")
+            logger.info(f"[SII RAW] headers={dict(response.headers)}")
 
             if response.status_code != 200:
                 return {"track_id": None, "estado": "ERROR_HTTP",
