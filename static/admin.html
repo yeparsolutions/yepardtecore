@@ -1503,48 +1503,47 @@ function parsearTxtBoletas(txt){
     const nCaso = parseInt((numerosRe[bi]||'CASO-1').replace(/CASO-/i,''));
     const lineas = bloque.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
 
-    // Buscar observación
+    // Leer observación del bloque completo (puede venir antes o después de ítems)
     let observacion = '';
-    const obsIdx = lineas.findIndex(l=>/^OBSERVACI/i.test(l));
-    if(obsIdx>=0) observacion = lineas[obsIdx].replace(/^OBSERVACI[OÓ]N[^:]*:/i,'').trim().replace(/^"|"$/g,'').trim();
+    const obsLinea = lineas.find(l=>/^OBSERVACI/i.test(l));
+    if(obsLinea) observacion = obsLinea.replace(/^OBSERVACI[OÓ]N[^:]*:/i,'').trim().replace(/^"|"$/g,'').trim();
 
-    // Saltear línea de encabezado de columnas
+    // Unidad especial desde observación
+    const unidadObs = /kg/i.test(observacion) ? 'Kg' : '';
+
+    // Filtrar líneas de ítems (excluir encabezados, separadores, observaciones)
     const itemLineas = lineas.filter(l=>{
       if(/^=+$/.test(l)) return false;
-      if(/^Item/i.test(l)) return false;
+      if(/^Item\s/i.test(l)) return false;
       if(/^OBSERVACI/i.test(l)) return false;
       return true;
     });
 
     const items = [];
     for(const linea of itemLineas){
-      // Cada línea tiene: Nombre		Cantidad		Precio
+      // Cada línea: Nombre		Cantidad		Precio
       const partes = linea.split(/\t+/).map(p=>p.trim()).filter(p=>p);
       if(partes.length < 2) continue;
       const nombre = partes[0];
       if(!nombre || /^\d+$/.test(nombre)) continue;
       const cantidad = parseFloat(partes[1])||1;
-      const precio = parseFloat((partes[2]||'0').replace(/[.,]/g,m=>m===','?'.':''))||0;
+      const precio   = parseFloat((partes[2]||'0').replace(/\./g,'').replace(',','.'))||0;
 
-      // Caso 4: ítem exento según observación
-      const exento = /exento/i.test(observacion) && items.length >= 1;
+      // Detectar exento: por nombre del ítem o por observación (ítem 2+)
+      const exento = /exento/i.test(nombre) ||
+                     (/exento/i.test(observacion) && items.length >= 1);
 
       items.push({
         nombre,
         cantidad,
-        precio_unitario: precio,  // precio CON IVA — el backend lo convierte
+        precio_unitario: precio,  // precio CON IVA — el backend convierte
         exento,
-        unidad: partes[3]||'',
+        unidad: unidadObs || (partes[3]||''),
         descuento_pct: 0,
       });
     }
 
     if(items.length===0) return;
-
-    // Unidad especial: Caso 5 menciona Kg en observación
-    if(/kg/i.test(observacion)&&items.length>0){
-      items[items.length-1].unidad = 'Kg';
-    }
 
     casos.push({
       numero_caso: nCaso,
