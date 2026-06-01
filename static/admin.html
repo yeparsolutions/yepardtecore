@@ -1516,9 +1516,10 @@ function parsearTxtBoletas(txt){
     const unidadObs = /\bkg\b/i.test(observacion) ? 'Kg' : '';
 
     // Filtrar líneas de ítems
+    // IMPORTANTE: filtrar el encabezado "Item ... Cantidad ... Precio" pero NO "item afecto 1"
     const itemLineas = lineas.filter(l=>{
       if(/^=+$/.test(l)) return false;
-      if(/^Item\b/i.test(l)) return false;
+      if(/^Item\s*(\t|\s{2,}).*Cantidad/i.test(l)) return false;  // encabezado de columnas
       if(/^OBSERVACI/i.test(l)) return false;
       if(/^\*/.test(l)) return false;
       return true;
