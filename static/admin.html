@@ -4117,7 +4117,7 @@ async function descargarCOF(){
     const r = await fetch(base()+'/v1/certificacion-boletas/generar-cof',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ emisor_id: S.id, enviar_sii: false, sec_envio: 1 }),
+      body: JSON.stringify({ emisor_id: S.id, enviar_sii: false, sec_envio: (S.cofSecEnvio||1) }),
     });
     if(!r.ok){
       const e = await r.json().catch(()=>({}));
@@ -4150,7 +4150,7 @@ async function enviarCOF(){
     const r = await fetch(base()+'/v1/certificacion-boletas/generar-cof',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ emisor_id: S.id, enviar_sii: true, sec_envio: 1 }),
+      body: JSON.stringify({ emisor_id: S.id, enviar_sii: true, sec_envio: (S.cofSecEnvio||1) }),
     });
     const data = await r.json();
     if(!r.ok){
@@ -4161,6 +4161,7 @@ async function enviarCOF(){
     if(data.track_id){
       log('\u2713 COF enviado \u2014 TrackID: '+data.track_id,'ok');
       log('Boletas: '+data.boletas,'ok');
+      S.cofSecEnvio = (S.cofSecEnvio||1) + 1;
       if(btn){ btn.textContent='\u2713 COF OK ('+data.track_id+')'; btn.style.background='#10b981'; }
     } else {
       log('COF sin TrackID: '+JSON.stringify(data),'warn');
