@@ -130,7 +130,7 @@ async def generar_xml_boletas(
                 CAF.emisor_id == body.emisor_id,
                 CAF.tipo_dte  == tipo,
                 CAF.activo    == True,
-            ).order_by(CAF.folio_desde)
+            ).order_by(CAF.folio_desde).limit(1)
         )).scalar_one_or_none()
         if not caf:
             raise HTTPException(404, f"No hay CAF activo para tipo {tipo}")
