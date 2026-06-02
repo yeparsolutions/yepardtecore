@@ -366,7 +366,7 @@ class EnviarXMLDirectoRequest(BaseModel):
     xml_sobre: str   # EnvioBOLETA o EnvioDTE ya firmado, como string
 
 
-@router.post("/enviar-xml-directo")
+@router.post("/sobre/enviar-directo")
 async def enviar_xml_directo(
     body: EnviarXMLDirectoRequest,
     db:  AsyncSession = Depends(get_db),
