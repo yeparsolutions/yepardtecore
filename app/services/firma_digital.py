@@ -141,6 +141,31 @@ class FirmaDigital:
         )
         return xml_timbrado
 
+    async def firmar_cof(self, cof_xml: str) -> str:
+        """
+        Firma el ConsumoFolios con Java modo firmar-cof.
+        Sin fallback Python — si Java falla, lanza excepción visible.
+        """
+        import asyncio
+        p12_bytes = self._p12_bytes
+        password  = self._password
+
+        def _firmar():
+            return _firmar_sobre_con_java(
+                cof_xml.encode("ISO-8859-1"), p12_bytes, password,
+                modo="firmar-cof"
+            )
+
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _firmar)
+        xml_str = result.decode("ISO-8859-1")
+        xml_str = xml_str.replace(
+            "<?xml version='1.0' encoding='ISO-8859-1'?>",
+            '<?xml version="1.0" encoding="ISO-8859-1"?>'
+        )
+        logger.info("[FIRMA COF] Firmado con Java OK")
+        return xml_str
+
     async def firmar_libro(self, libro_xml: str) -> str:
         """
         Firma el LibroCompraVenta con XMLDSig.
