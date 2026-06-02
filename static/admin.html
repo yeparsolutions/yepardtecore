@@ -686,6 +686,11 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
             onclick="enviarUltimoSet()">
             &#x1f4e4; Enviar al SII
           </button>
+          <button id="btn_enviar_cof"
+            style="flex:1;padding:11px;background:#8b5cf6;border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:700;cursor:pointer"
+            onclick="enviarCOF()">
+            &#x1f4cb; Enviar COF
+          </button>
         </div>
         <div class="dl-sub">Descarga el XML o envíalo directamente al SII</div>
       </div>
@@ -4103,6 +4108,46 @@ async function enviarSetSII(folios){
   }catch(e){
     log('Error: '+e,'err');
     if(btn){ btn.disabled=false; btn.textContent='\u{1f4e4} Enviar al SII'; }
+  }
+}
+
+async function enviarCOF(){
+  // El COF (Consumo de Folios) es el cierre de caja diario de boletas.
+  // El SII lo compara con los DTEs — deben coincidir los montos.
+  if(!S.id){ log('Carga el emisor primero','warn'); return; }
+  const btn = document.getElementById('btn_enviar_cof');
+  if(btn){ btn.disabled=true; btn.textContent='Generando COF...'; }
+  log('Generando y enviando Consumo de Folios al SII...','info');
+  try{
+    const r = await fetch(base()+'/v1/certificacion-boletas/generar-cof',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        emisor_id:  S.id,
+        enviar_sii: true,
+        sec_envio:  1,
+      }),
+    });
+    const data = await r.json();
+    if(!r.ok){
+      log('Error '+r.status+': '+(data.detail||JSON.stringify(data)),'err');
+      if(btn){ btn.disabled=false; btn.textContent='\u{1f4cb} Enviar COF'; }
+      return;
+    }
+    if(data.track_id){
+      log('\u2713 COF enviado al SII \u2014 TrackID: '+data.track_id,'ok');
+      log('Boletas incluidas: '+data.boletas,'ok');
+      if(btn){ btn.textContent='\u2713 COF Enviado ('+data.track_id+')'; btn.style.background='#10b981'; }
+    } else if(data.ok === false){
+      log('COF rechazado: '+(data.mensaje||JSON.stringify(data)),'err');
+      if(btn){ btn.disabled=false; btn.textContent='\u{1f4cb} Enviar COF'; }
+    } else {
+      log('COF enviado: '+JSON.stringify(data),'warn');
+      if(btn){ btn.disabled=false; btn.textContent='\u{1f4cb} Enviar COF'; }
+    }
+  }catch(e){
+    log('Error COF: '+e,'err');
+    if(btn){ btn.disabled=false; btn.textContent='\u{1f4cb} Enviar COF'; }
   }
 }
 
