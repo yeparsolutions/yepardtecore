@@ -145,7 +145,7 @@ async def generar_xml_boletas(
             tipo_doc_ref="SET",
             folio_ref=folio,
             fecha_ref=fecha_emision,
-            cod_ref=None,
+            cod_ref="SET",
             razon_ref=f"CASO-{caso.numero_caso}",
         )]
 
