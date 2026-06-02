@@ -202,16 +202,20 @@ async def generar_xml_boletas(
         monto_total  = _extraer_monto_total(xml_str)
         it1_nombre   = caso.items[0].nombre if caso.items else "PRODUCTO"
 
-        xml_timbrado_bytes = await firma.firmar_dte(
-            xml_bytes     = xml_bytes,
-            folio         = folio,
-            tipo_dte      = caso.tipo_dte,
-            xml_caf       = caf.xml_caf,
-            fecha_emision = fecha_emision.isoformat(),
-            rut_emisor    = emisor.rut,
-            monto_total   = monto_total,
-            it1_nombre    = it1_nombre,
-        )
+        try:
+            xml_timbrado_bytes = await firma.firmar_dte(
+                xml_bytes     = xml_bytes,
+                folio         = folio,
+                tipo_dte      = caso.tipo_dte,
+                xml_caf       = caf.xml_caf,
+                fecha_emision = fecha_emision.isoformat(),
+                rut_emisor    = emisor.rut,
+                monto_total   = monto_total,
+                it1_nombre    = it1_nombre,
+            )
+        except Exception as e:
+            logger.error(f"[BOLETA] Error timbrando folio {folio}: {e}", exc_info=True)
+            raise HTTPException(500, f"Error timbrando folio {folio}: {str(e)}")
         xml_timbrado_str = xml_timbrado_bytes.decode("ISO-8859-1")
         xmls_timbrados.append(xml_timbrado_str)
 
