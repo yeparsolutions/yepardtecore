@@ -391,5 +391,9 @@ class XMLBuilderBoleta:
             if ref.folio_ref:
                 etree.SubElement(r, f"{{{NS}}}FolioRef").text = str(ref.folio_ref)
 
+        # CodRef: para sets de prueba SII usar "SET"
+        if ref.cod_ref:
+            etree.SubElement(r, f"{{{NS}}}CodRef").text = str(ref.cod_ref)[:18]
+
         if ref.razon_ref:
             etree.SubElement(r, f"{{{NS}}}RazonRef").text = ref.razon_ref[:90]
