@@ -129,14 +129,13 @@ async def generar_xml_boletas(
 
         items_b = []
         for it in caso.items:
-            precio_neto = (
-                it.precio_con_iva if it.exento
-                else _precio_con_iva_a_neto(it.precio_con_iva)
-            )
+            # El builder de boletas trata MontoItem como BRUTO (con IVA)
+            # y calcula MntNeto = sum(MontoItem) / 1.19
+            # Por tanto pasamos el precio CON IVA directamente como precio_unitario
             items_b.append(ItemBoleta(
                 nombre=it.nombre,
                 cantidad=it.cantidad,
-                precio_unitario=precio_neto,
+                precio_unitario=it.precio_con_iva,  # bruto con IVA — builder divide internamente
                 exento=it.exento,
                 unidad=it.unidad,
                 codigo=it.codigo,
