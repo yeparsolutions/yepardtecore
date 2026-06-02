@@ -3282,7 +3282,7 @@ async function enviarDesdeHistorial(i){
       const btn = document.querySelector('[onclick="enviarUltimoSet()"]');
       if(btn){ btn.disabled=true; btn.textContent='Enviando...'; }
       try{
-        const r = await fetch(`${API}/v1/dte/enviar-xml-directo`,{
+        const r = await fetch(`${API}/v1/dte/sobre/enviar-directo`,{
           method:'POST',
           headers:{'Content-Type':'application/json'},
           body: JSON.stringify({emisor_id: S.id, xml_sobre: txt}),
