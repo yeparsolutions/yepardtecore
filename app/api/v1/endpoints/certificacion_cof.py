@@ -240,24 +240,39 @@ async def generar_cof(
     )
     todos_dtes = resultado.scalars().all()
 
-    # Filtrar por fecha de emisión leyendo el XML.
-    # Si hay múltiples registros para el mismo folio (reintentos del día),
-    # quedarse solo con el más reciente — ese es el que el SII recibió.
-    # Analogía: si reescribiste un cheque, el banco solo cuenta el último.
-    dtes_por_folio: dict[int, object] = {}
+    # Tomar los 5 DTEs más recientes del día (el último set enviado).
+    # Analogía: el cajero solo cuenta el último turno, no todos los del día.
+    # Los reintentos anteriores del mismo día se ignoran.
+    dtes_del_dia_todos = []
     for dte in todos_dtes:
         xml_str = dte.xml_firmado or ''
         fch_emis = re.search(r'<FchEmis>([^<]+)</FchEmis>', xml_str)
-        if not fch_emis or fch_emis.group(1) != fecha.isoformat():
-            continue
+        if fch_emis and fch_emis.group(1) == fecha.isoformat():
+            dtes_del_dia_todos.append(dte)
+
+    # Ordenar por id descendente y tomar los 5 más recientes
+    dtes_del_dia_todos.sort(key=lambda d: d.id, reverse=True)
+    # Agrupar por folio — solo el más reciente de cada folio
+    dtes_por_folio: dict[int, object] = {}
+    for dte in dtes_del_dia_todos:
+        xml_str = dte.xml_firmado or ''
         folio_xml = re.search(r'<Folio>(\d+)</Folio>', xml_str)
         if not folio_xml:
             continue
         folio_n = int(folio_xml.group(1))
-        # Conservar el más reciente (mayor id = más reciente)
-        if folio_n not in dtes_por_folio or dte.id > dtes_por_folio[folio_n].id:
+        if folio_n not in dtes_por_folio:
             dtes_por_folio[folio_n] = dte
-    dtes_del_dia = list(dtes_por_folio.values())
+    # Tomar el grupo de folios más alto (el set más reciente)
+    if dtes_por_folio:
+        folios_ordenados = sorted(dtes_por_folio.keys())
+        folio_maximo = max(folios_ordenados)
+        folio_minimo_set = folio_maximo - 4  # sets de 5 boletas
+        dtes_del_dia = [
+            dtes_por_folio[f] for f in folios_ordenados
+            if f >= folio_minimo_set
+        ]
+    else:
+        dtes_del_dia = []
 
     if not dtes_del_dia:
         raise HTTPException(404, f"No hay boletas para la fecha {fecha.isoformat()}")
@@ -282,9 +297,15 @@ async def generar_cof(
         ambiente     = emisor.ambiente or 'certificacion',
     )
 
-    # 4. Firmar el COF con Java modo firmar-cof (sin fallback Python)
-    # FirmaDTE.java busca DocumentoConsumoFolios directamente.
-    cof_firmado = await firma.firmar_cof(cof_xml)
+    # 4. Compactar y firmar el COF con Java modo firmar-cof
+    # El XML indentado altera el digest — compactarlo antes de firmar
+    # garantiza que el digest que calcula Java coincida con el que verifica el SII.
+    # Analogía: planchar el papel antes de sellar — el sello queda exacto.
+    from lxml import etree as _etree
+    _parser = _etree.XMLParser(remove_blank_text=True)
+    _root   = _etree.fromstring(cof_xml.encode('ISO-8859-1'), _parser)
+    cof_compacto = b'<?xml version="1.0" encoding="ISO-8859-1"?>\n' +                    _etree.tostring(_root, encoding='ISO-8859-1', xml_declaration=False)
+    cof_firmado = await firma.firmar_cof(cof_compacto.decode('ISO-8859-1'))
 
     logger.info(f"[COF] XML firmado OK — {len(dtes_del_dia)} boletas")
 
