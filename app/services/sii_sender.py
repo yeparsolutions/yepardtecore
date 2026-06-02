@@ -2,8 +2,9 @@
 # ══════════════════════════════════════════════════════════════
 # Servicio de envio al SII — v2.2
 #
-# FIX v2.2: eliminar xsi:schemaLocation del EnvioBOLETA
-#   → causa SCH-00001: Invalid Schema Name en maullin.sii.cl
+# FIX v2.3: restaurar xsi:schemaLocation en EnvioBOLETA y EnvioDTE
+#   → el SII REQUIERE schemaLocation para identificar el schema
+#   → sin él responde SCH-00001: Invalid Schema Name
 #
 # FIX v2.1: boletas y facturas usan el mismo endpoint
 #   maullin.sii.cl/cgi_dte/UPL/DTEUpload — sin maullin2
@@ -106,9 +107,18 @@ class SIISender:
         #   que no puede resolver → SCH-00001: Invalid Schema Name
         # EnvioDTE: tampoco es necesario — omitir en ambos casos
         # ──────────────────────────────────────────────────────────────────
+        # schemaLocation es REQUERIDO por el portal del SII para identificar
+        # el schema a usar. Sin él responde SCH-00001: Invalid Schema Name.
+        # El nombre correcto es EnvioBOLETA_v11.xsd para boletas
+        # y EnvioDTE_v10.xsd para facturas/guías.
+        if es_boleta:
+            schema_loc = f'xsi:schemaLocation="{NS} EnvioBOLETA_v11.xsd"'
+        else:
+            schema_loc = f'xsi:schemaLocation="{NS} EnvioDTE_v10.xsd"'
+
         sobre_sin_firmas = (
             f'<?xml version="1.0" encoding="ISO-8859-1"?>\n'
-            f'<{tag} xmlns="{NS}" xmlns:xsi="{XSI_NS}" version="1.0">'
+            f'<{tag} xmlns="{NS}" xmlns:xsi="{XSI_NS}" version="1.0" {schema_loc}>'
             f'{set_str}'
             f'</{tag}>'
         )
