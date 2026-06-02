@@ -77,6 +77,8 @@ public class FirmaDTE {
             firmarSobre(doc, privKey, cert);
         } else if (modo.equals("firmar-libro")) {
             firmarLibro(doc, privKey, cert);
+        } else if (modo.equals("firmar-cof")) {
+            firmarCOF(doc, privKey, cert);
         } else {
             System.err.println("Modo desconocido: " + modo);
             System.exit(1);
@@ -216,6 +218,45 @@ public class FirmaDTE {
 
         Element envioEl = doc.getDocumentElement();
         DOMSignContext dsc = new DOMSignContext(privKey, envioEl);
+        signature.sign(dsc);
+    }
+
+    // ── MODO: firmar-cof ──────────────────────────────────────────────────────
+    // Firma el ConsumoFolios — estructura idéntica al libro pero con
+    // el elemento DocumentoConsumoFolios ID="RCOF_01"
+    static void firmarCOF(Document doc, PrivateKey privKey, X509Certificate cert)
+            throws Exception {
+        XMLSignatureFactory fac = XMLSignatureFactory.getInstance("DOM");
+
+        NodeList cofNodes = doc.getElementsByTagNameNS(NS_SII, "DocumentoConsumoFolios");
+        if (cofNodes.getLength() == 0) cofNodes = doc.getElementsByTagName("DocumentoConsumoFolios");
+        String cofId = ((Element) cofNodes.item(0)).getAttribute("ID");
+        if (cofId == null || cofId.isEmpty()) cofId = "RCOF_01";
+
+        Reference ref = fac.newReference(
+                "#" + cofId,
+                fac.newDigestMethod(DigestMethod.SHA1, null),
+                Collections.singletonList(
+                        fac.newTransform(Transform.ENVELOPED, (TransformParameterSpec) null)),
+                null, null);
+
+        SignedInfo si = fac.newSignedInfo(
+                fac.newCanonicalizationMethod(CanonicalizationMethod.INCLUSIVE,
+                        (C14NMethodParameterSpec) null),
+                fac.newSignatureMethod(SignatureMethod.RSA_SHA1, null),
+                Collections.singletonList(ref));
+
+        KeyInfoFactory kif = fac.getKeyInfoFactory();
+        KeyValue kv   = kif.newKeyValue(cert.getPublicKey());
+        X509Data x509 = kif.newX509Data(Collections.singletonList(cert));
+        KeyInfo  ki   = kif.newKeyInfo(Arrays.asList(kv, x509));
+
+        XMLSignature signature = fac.newXMLSignature(si, ki);
+
+        ((Element) cofNodes.item(0)).setIdAttribute("ID", true);
+
+        Element rootEl = doc.getDocumentElement();
+        DOMSignContext dsc = new DOMSignContext(privKey, rootEl);
         signature.sign(dsc);
     }
 
