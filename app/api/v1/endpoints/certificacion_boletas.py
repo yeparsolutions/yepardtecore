@@ -2,9 +2,20 @@
 # ══════════════════════════════════════════════════════════════
 # Endpoint para certificación de Boletas Electrónicas (T39/T41)
 # POST /v1/certificacion-boletas/generar-xml
+#
+# FIX v2.0: insertar TED real con CAF antes de armar el sobre.
+#   El flujo correcto es idéntico al de facturas:
+#     1. XMLBuilderBoleta → DTE con placeholder <TED><DD/></TED>
+#     2. firma.firmar_dte() → reemplaza placeholder con TED real (CAF)
+#     3. construir_sobre() → arma EnvioBOLETA con DTEs ya timbrados
+#     4. firmar_sobre() → firma DTEs in-tree + Java firma SetDTE
+#
+#   Analogía: el TED es el timbre notarial de la boleta.
+#   Sin él el SII ve un sobre con documentos sin sello → SCH-00001.
 # ══════════════════════════════════════════════════════════════
 
 import logging
+import re
 from datetime import date
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
@@ -29,7 +40,7 @@ logger = logging.getLogger("yepardtecore.cert_boletas")
 router = APIRouter(prefix="/certificacion-boletas", tags=["Certificacion Boletas"])
 
 
-# ── Schemas ───────────────────────────────────────────────────
+# ── Schemas de entrada ────────────────────────────────────────
 
 class ItemBoletaInput(BaseModel):
     nombre:         str
@@ -54,10 +65,16 @@ class GenerarBoletasRequest(BaseModel):
     fecha:      Optional[str] = None   # YYYY-MM-DD, default hoy
 
 
-# ── Helpers ───────────────────────────────────────────────────
+# ── Helper: extraer MntTotal del XML generado ─────────────────
 
-def _precio_con_iva_a_neto(precio_bruto: float, tasa: float = 19.0) -> float:
-    return round(precio_bruto / (1 + tasa / 100), 6)
+def _extraer_monto_total(xml_str: str) -> int:
+    """
+    Lee MntTotal del XML de la boleta.
+    Analogía: antes de poner el timbre en el sobre,
+    verificamos cuánto dice el cheque adentro.
+    """
+    m = re.search(r'<MntTotal>(\d+)</MntTotal>', xml_str)
+    return int(m.group(1)) if m else 0
 
 
 # ── Endpoint ──────────────────────────────────────────────────
@@ -67,7 +84,7 @@ async def generar_xml_boletas(
     body: GenerarBoletasRequest,
     db:   AsyncSession = Depends(get_db),
 ):
-    # 1. Cargar emisor y certificado
+    # ── 1. Cargar emisor y certificado ────────────────────────
     emisor = (await db.execute(
         select(Emisor).where(Emisor.id == body.emisor_id)
     )).scalar_one_or_none()
@@ -88,6 +105,7 @@ async def generar_xml_boletas(
         else date.today()
     )
 
+    # Instanciar firma digital (timbra TED + firma XMLDSig)
     firma = FirmaDigital(
         p12_bytes=bytes(cert.certificado_p12),
         password=cert.certificado_password,
@@ -103,7 +121,7 @@ async def generar_xml_boletas(
         acteco=emisor.acteco or "620200",
     )
 
-    # 2. Obtener CAFs necesarios
+    # ── 2. Obtener CAFs necesarios ────────────────────────────
     tipos_necesarios = list({c.tipo_dte for c in body.casos})
     cafs: dict[int, CAF] = {}
     for tipo in tipos_necesarios:
@@ -118,8 +136,11 @@ async def generar_xml_boletas(
             raise HTTPException(404, f"No hay CAF activo para tipo {tipo}")
         cafs[tipo] = caf
 
-    # 3. Generar XMLs individuales
-    xmls_sin_firmar: list[str] = []
+    # ── 3. Generar y TIMBRAR cada DTE ─────────────────────────
+    # El timbre TED es el sello notarial que el SII exige en cada boleta.
+    # Sin él el portal rechaza el sobre con SCH-00001 aunque el XML
+    # esté estructuralmente correcto.
+    xmls_timbrados: list[str] = []
     folios_asignados: dict[int, int] = {}
 
     for caso in body.casos:
@@ -127,15 +148,15 @@ async def generar_xml_boletas(
         folio = caf.folio_actual
         folios_asignados[caso.numero_caso] = folio
 
+        # Construir items para el builder
         items_b = []
         for it in caso.items:
-            # El builder de boletas trata MontoItem como BRUTO (con IVA)
-            # y calcula MntNeto = sum(MontoItem) / 1.19
-            # Por tanto pasamos el precio CON IVA directamente como precio_unitario
+            # precio_con_iva viene del set SII (precio bruto)
+            # El builder divide por 1.19 internamente para calcular MntNeto
             items_b.append(ItemBoleta(
                 nombre=it.nombre,
                 cantidad=it.cantidad,
-                precio_unitario=it.precio_con_iva,  # bruto con IVA — builder divide internamente
+                precio_unitario=it.precio_con_iva,
                 exento=it.exento,
                 unidad=it.unidad,
                 codigo=it.codigo,
@@ -149,10 +170,9 @@ async def generar_xml_boletas(
             razon_ref=f"CASO-{caso.numero_caso}",
         )]
 
-        # Receptor: siempre usar genérico para boletas de ventas (set de prueba)
+        # Receptor: genérico para boletas de ventas
         rut_recep = caso.rut_receptor or "66666666-6"
         nom_recep = caso.nombre_receptor or "Consumidor Final"
-        # Forzar genérico si viene vacío o es el receptor de prueba del admin
         if not rut_recep or rut_recep in ("77777777-7", "0"):
             rut_recep = "66666666-6"
             nom_recep = "Consumidor Final"
@@ -171,47 +191,75 @@ async def generar_xml_boletas(
             observacion=caso.observacion,
         )
 
+        # Paso 3a: construir XML con placeholder TED vacío
         xml_bytes = XMLBuilderBoleta(input_b).construir()
         xml_str   = xml_bytes.decode("ISO-8859-1")
-        xmls_sin_firmar.append(xml_str)
 
-        # Actualizar folio_actual
+        # Paso 3b: TIMBRAR — insertar TED real con datos del CAF
+        # Esto es lo que faltaba: generar_xml_con_ted reemplaza <TED><DD/></TED>
+        # con el timbre electrónico firmado con la llave privada del CAF.
+        # Sin este paso el SII ve el sello en blanco → SCH-00001.
+        monto_total  = _extraer_monto_total(xml_str)
+        it1_nombre   = caso.items[0].nombre if caso.items else "PRODUCTO"
+
+        xml_timbrado_bytes = await firma.firmar_dte(
+            xml_bytes     = xml_bytes,
+            folio         = folio,
+            tipo_dte      = caso.tipo_dte,
+            xml_caf       = caf.xml_caf,
+            fecha_emision = fecha_emision.isoformat(),
+            rut_emisor    = emisor.rut,
+            monto_total   = monto_total,
+            it1_nombre    = it1_nombre,
+        )
+        xml_timbrado_str = xml_timbrado_bytes.decode("ISO-8859-1")
+        xmls_timbrados.append(xml_timbrado_str)
+
+        logger.info(
+            f"[BOLETA] Folio {folio} timbrado OK "
+            f"(tipo={caso.tipo_dte}, total={monto_total})"
+        )
+
+        # Actualizar folio_actual en el CAF
         await db.execute(
             update(CAF).where(CAF.id == caf.id).values(folio_actual=folio + 1)
         )
         caf.folio_actual = folio + 1
 
-        # Guardar DTE en BD
+        # Guardar DTE en BD con el XML ya timbrado
         db.add(DTE(
             emisor_id=body.emisor_id,
             tipo_dte=caso.tipo_dte,
             folio=folio,
             folio_fmt=f"B-{folio:08d}",
-            rut_receptor=caso.rut_receptor,
-            nombre_receptor=caso.nombre_receptor,
+            rut_receptor=rut_recep,
+            nombre_receptor=nom_recep,
             monto_neto=0,
             monto_iva=0,
-            monto_total=0,
+            monto_total=monto_total,
             tasa_iva=19,
             estado="BORRADOR",
-            xml_firmado=xml_str,
+            xml_firmado=xml_timbrado_str,
             ambiente=emisor.ambiente or "certificacion",
         ))
 
     await db.commit()
 
-    # 4. Construir y firmar sobre EnvioBOLETA via SIISender
-    sender = SIISender()
+    # ── 4. Construir sobre EnvioBOLETA y firmarlo ─────────────
+    # construir_sobre llama a firma_service.firmar_sobre que:
+    #   - Firma cada DTE in-tree con Python
+    #   - Firma el SetDTE con Java
+    sender       = SIISender()
     rut_enviador = cert.rut_firmante or firma.rut_certificado or emisor.rut
 
-    sobre_sin_firmas = await sender.construir_sobre(
-        dtes_xml=xmls_sin_firmar,
-        rut_emisor=emisor.rut,
-        rut_enviador=rut_enviador,
-        firma_service=firma,
+    sobre_firmado = await sender.construir_sobre(
+        dtes_xml     = xmls_timbrados,   # DTEs YA timbrados con TED real
+        rut_emisor   = emisor.rut,
+        rut_enviador = rut_enviador,
+        firma_service= firma,
     )
 
-    # 5. Retornar XML
+    # ── 5. Retornar XML ───────────────────────────────────────
     rut_limpio = emisor.rut.replace("-", "").replace(".", "")
     filename   = (
         f"EnvioBOLETA_{body.natencion}_boletas_{rut_limpio}_"
@@ -219,7 +267,7 @@ async def generar_xml_boletas(
     )
 
     return Response(
-        content=sobre_sin_firmas.encode("ISO-8859-1"),
+        content=sobre_firmado.encode("ISO-8859-1"),
         media_type="application/xml",
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
