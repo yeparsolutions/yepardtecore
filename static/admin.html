@@ -691,6 +691,11 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
             onclick="enviarCOF()">
             &#x1f4cb; Enviar COF
           </button>
+          <button id="btn_descargar_cof"
+            style="flex:1;padding:11px;background:#6366f1;border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:700;cursor:pointer"
+            onclick="descargarCOF()">
+            &#x2b07;&#xfe0f; Descargar COF
+          </button>
         </div>
         <div class="dl-sub">Descarga el XML o envíalo directamente al SII</div>
       </div>
@@ -1017,7 +1022,7 @@ const ENDPOINT_DEFAULTS = {
   basico2:     ENDPOINT_DINAMICO,
   exentas:     ENDPOINT_DINAMICO,
   guias:       ENDPOINT_DINAMICO,
-  boletas:     ENDPOINT_DINAMICO,
+  boletas:     '/v1/certificacion-boletas/generar-xml',
   compras:     ENDPOINT_LIBROS,   // libros: un único endpoint dinámico
   ventas:      ENDPOINT_LIBROS,
   libro_guias: ENDPOINT_LIBROS,
@@ -3180,7 +3185,7 @@ async function generarXML(setKey, natencion){
     }
     const cd2=r2.headers.get('Content-Disposition')||'';
     const m2=cd2.match(/filename="([^"]+)"/);
-    S.xmlNombre=m2?m2[1]:`EnvioDTE_${setKey}_${natencion}.xml`;
+    const _pref2=(setKey==='boletas'?'EnvioBOLETA':'EnvioDTE');S.xmlNombre=m2?m2[1]:`${_pref2}_${setKey}_${natencion}.xml`;
     S.xmlBlob=await r2.blob();
     guardarEnHistorial(S.xmlNombre,S.xmlBlob);
     const casos2=r2.headers.get('X-Casos-Generados')||'?';
@@ -3213,7 +3218,7 @@ async function generarXML(setKey, natencion){
     }
     const cd=r.headers.get('Content-Disposition')||'';
     const match=cd.match(/filename="([^"]+)"/);
-    S.xmlNombre=match?match[1]:`EnvioDTE_${setKey}_${natencion}.xml`;
+    const _pref3=(setKey==='boletas'?'EnvioBOLETA':'EnvioDTE');S.xmlNombre=match?match[1]:`${_pref3}_${setKey}_${natencion}.xml`;
     S.xmlBlob=await r.blob();
     guardarEnHistorial(S.xmlNombre,S.xmlBlob);
     const casos=r.headers.get('X-Casos-Generados')||'?';
@@ -4065,33 +4070,25 @@ async function enviarSetSII(folios){
   log('Enviando '+folios.length+' DTEs al SII...','info');
 
   try{
-    // Para boletas: el XML firmado ya está en S.xmlBlob — enviarlo directo
-    // sin reconstruir desde BD. Para facturas/guías: usar /v1/dte/enviar-set.
-    // Analogía: ya tenemos el sobre sellado en la mano,
-    // no tiene sentido volver a la oficina a pedir que lo re-armen.
+    // Boletas: el XML firmado ya está en S.xmlBlob — enviarlo directo.
+    // Facturas/guías: reconstruir el sobre desde folios en BD.
     const esBoleta = S.xmlNombre && S.xmlNombre.startsWith('EnvioBOLETA');
-
-    let r, data;
-
+    let r;
     if(esBoleta && S.xmlBlob){
-      // Boletas: leer el XML del blob y enviarlo al endpoint directo
       const xmlText = await S.xmlBlob.text();
-      const body = { emisor_id: S.id, xml_sobre: xmlText };
       r = await fetch(base()+'/v1/enviar-sobre/directo',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body: JSON.stringify(body),
+        body: JSON.stringify({ emisor_id: S.id, xml_sobre: xmlText }),
       });
     } else {
-      // Facturas, guías, notas: reconstruir el sobre desde los folios en BD
       r = await fetch(base()+'/v1/dte/enviar-set',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ emisor_id: S.id, folios }),
       });
     }
-
-    data = await r.json();
+    const data = await r.json();
     if(!r.ok){
       log('Error '+r.status+': '+(data.detail||JSON.stringify(data)),'err');
       if(btn){ btn.disabled=false; btn.textContent='\u{1f4e4} Enviar al SII'; }
@@ -4111,38 +4108,62 @@ async function enviarSetSII(folios){
   }
 }
 
+async function descargarCOF(){
+  // Descarga el COF como XML para subirlo manualmente al SII
+  if(!S.id){ log('Carga el emisor primero','warn'); return; }
+  const btn = document.getElementById('btn_descargar_cof');
+  if(btn){ btn.disabled=true; btn.textContent='Generando...'; }
+  try{
+    const r = await fetch(base()+'/v1/certificacion-boletas/generar-cof',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ emisor_id: S.id, enviar_sii: false, sec_envio: 1 }),
+    });
+    if(!r.ok){
+      const e = await r.json().catch(()=>({}));
+      log('Error COF: '+(e.detail||r.status),'err');
+      if(btn){ btn.disabled=false; btn.textContent='\u2b07\ufe0f Descargar COF'; }
+      return;
+    }
+    const blob = await r.blob();
+    const cd   = r.headers.get('Content-Disposition')||'';
+    const m    = cd.match(/filename="([^"]+)"/);
+    const nombre = m ? m[1] : 'ConsumoFolios.xml';
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href=url; a.download=nombre; a.click();
+    URL.revokeObjectURL(url);
+    log('\u2713 COF descargado: '+nombre,'ok');
+    if(btn){ btn.disabled=false; btn.textContent='\u2b07\ufe0f Descargar COF'; }
+  }catch(e){
+    log('Error: '+e,'err');
+    if(btn){ btn.disabled=false; btn.textContent='\u2b07\ufe0f Descargar COF'; }
+  }
+}
+
 async function enviarCOF(){
-  // El COF (Consumo de Folios) es el cierre de caja diario de boletas.
-  // El SII lo compara con los DTEs — deben coincidir los montos.
   if(!S.id){ log('Carga el emisor primero','warn'); return; }
   const btn = document.getElementById('btn_enviar_cof');
-  if(btn){ btn.disabled=true; btn.textContent='Generando COF...'; }
+  if(btn){ btn.disabled=true; btn.textContent='Enviando COF...'; }
   log('Generando y enviando Consumo de Folios al SII...','info');
   try{
     const r = await fetch(base()+'/v1/certificacion-boletas/generar-cof',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        emisor_id:  S.id,
-        enviar_sii: true,
-        sec_envio:  1,
-      }),
+      body: JSON.stringify({ emisor_id: S.id, enviar_sii: true, sec_envio: 1 }),
     });
     const data = await r.json();
     if(!r.ok){
-      log('Error '+r.status+': '+(data.detail||JSON.stringify(data)),'err');
+      log('Error COF: '+(data.detail||JSON.stringify(data)),'err');
       if(btn){ btn.disabled=false; btn.textContent='\u{1f4cb} Enviar COF'; }
       return;
     }
     if(data.track_id){
-      log('\u2713 COF enviado al SII \u2014 TrackID: '+data.track_id,'ok');
-      log('Boletas incluidas: '+data.boletas,'ok');
-      if(btn){ btn.textContent='\u2713 COF Enviado ('+data.track_id+')'; btn.style.background='#10b981'; }
-    } else if(data.ok === false){
-      log('COF rechazado: '+(data.mensaje||JSON.stringify(data)),'err');
-      if(btn){ btn.disabled=false; btn.textContent='\u{1f4cb} Enviar COF'; }
+      log('\u2713 COF enviado \u2014 TrackID: '+data.track_id,'ok');
+      log('Boletas: '+data.boletas,'ok');
+      if(btn){ btn.textContent='\u2713 COF OK ('+data.track_id+')'; btn.style.background='#10b981'; }
     } else {
-      log('COF enviado: '+JSON.stringify(data),'warn');
+      log('COF sin TrackID: '+JSON.stringify(data),'warn');
       if(btn){ btn.disabled=false; btn.textContent='\u{1f4cb} Enviar COF'; }
     }
   }catch(e){
