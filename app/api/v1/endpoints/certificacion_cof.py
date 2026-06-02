@@ -240,13 +240,24 @@ async def generar_cof(
     )
     todos_dtes = resultado.scalars().all()
 
-    # Filtrar por fecha de emisión leyendo el XML
-    dtes_del_dia = []
+    # Filtrar por fecha de emisión leyendo el XML.
+    # Si hay múltiples registros para el mismo folio (reintentos del día),
+    # quedarse solo con el más reciente — ese es el que el SII recibió.
+    # Analogía: si reescribiste un cheque, el banco solo cuenta el último.
+    dtes_por_folio: dict[int, object] = {}
     for dte in todos_dtes:
         xml_str = dte.xml_firmado or ''
         fch_emis = re.search(r'<FchEmis>([^<]+)</FchEmis>', xml_str)
-        if fch_emis and fch_emis.group(1) == fecha.isoformat():
-            dtes_del_dia.append(dte)
+        if not fch_emis or fch_emis.group(1) != fecha.isoformat():
+            continue
+        folio_xml = re.search(r'<Folio>(\d+)</Folio>', xml_str)
+        if not folio_xml:
+            continue
+        folio_n = int(folio_xml.group(1))
+        # Conservar el más reciente (mayor id = más reciente)
+        if folio_n not in dtes_por_folio or dte.id > dtes_por_folio[folio_n].id:
+            dtes_por_folio[folio_n] = dte
+    dtes_del_dia = list(dtes_por_folio.values())
 
     if not dtes_del_dia:
         raise HTTPException(404, f"No hay boletas para la fecha {fecha.isoformat()}")
@@ -271,12 +282,25 @@ async def generar_cof(
         ambiente     = emisor.ambiente or 'certificacion',
     )
 
-    # 4. Firmar el COF con Java modo firmar-cof
-    # Java garantiza el digest XMLDSig correcto que el SII acepta.
-    cof_firmado = await _firmar_cof_java(
-        cof_xml,
-        bytes(cert.certificado_p12),
-        cert.certificado_password,
+    # 4. Firmar el COF usando firmar_libro de firma_digital
+    # Renombramos DocumentoConsumoFolios → EnvioLibro para que Java
+    # lo encuentre con firmar-libro (ya probado y funciona con el SII).
+    # Después revertimos el tag en el resultado.
+    cof_para_firma = cof_xml.replace(
+        '<DocumentoConsumoFolios ID="RCOF_01">',
+        '<EnvioLibro ID="RCOF_01">'
+    ).replace(
+        '</DocumentoConsumoFolios>',
+        '</EnvioLibro>'
+    )
+    cof_firmado_tmp = await firma.firmar_libro(cof_para_firma)
+    # Revertir el tag al nombre correcto del SII
+    cof_firmado = cof_firmado_tmp.replace(
+        '<EnvioLibro ID="RCOF_01">',
+        '<DocumentoConsumoFolios ID="RCOF_01">'
+    ).replace(
+        '</EnvioLibro>',
+        '</DocumentoConsumoFolios>'
     )
 
     logger.info(f"[COF] XML firmado OK — {len(dtes_del_dia)} boletas")
