@@ -1,8 +1,12 @@
 # app/services/sii_sender.py
 # ══════════════════════════════════════════════════════════════
-# Servicio de envio al SII — v2.0
+# Servicio de envio al SII — v2.1
 #
-# FIX CRÍTICO: re-firma cada DTE DESPUÉS de insertarlo en el
+# FIX CRÍTICO v2.1: boletas y facturas usan el mismo endpoint
+# maullin.sii.cl/cgi_dte/UPL/DTEUpload en certificación.
+# maullin2.sii.cl no tiene DNS público desde Railway.
+#
+# FIX v2.0: re-firma cada DTE DESPUÉS de insertarlo en el
 # árbol del EnvioDTE. El DigestValue debe calcularse en el
 # contexto del sobre para que el SII pueda verificarlo.
 # ══════════════════════════════════════════════════════════════
@@ -18,15 +22,6 @@ logger = logging.getLogger("yepardtecore.dte")
 SII_UPLOAD_CERT = "https://maullin.sii.cl/cgi_dte/UPL/DTEUpload"
 SII_UPLOAD_PROD = "https://palena.sii.cl/cgi_dte/UPL/DTEUpload"
 
-# Boletas electrónicas usan servidor REST distinto (Instructivo Técnico Boleta 2021)
-SII_BOLETA_UPLOAD_CERT = "https://maullin.sii.cl/cgi_dte/UPL/DTEUpload"
-SII_BOLETA_UPLOAD_PROD = "https://palena.sii.cl/cgi_dte/UPL/DTEUpload"
-
-# Token semilla para boletas (endpoint REST distinto)
-SII_BOLETA_SEMILLA_CERT = "https://maullin2.sii.cl/boleta.electronica.DTE/ws/getEstadoEnvio"
-SII_BOLETA_TOKEN_CERT   = "https://maullin2.sii.cl/boleta.electronica.DTE/ws/getToken"
-SII_BOLETA_SEMILLA_PROD = "https://rahue.sii.cl/boleta.electronica.DTE/ws/getEstadoEnvio"
-SII_BOLETA_TOKEN_PROD   = "https://rahue.sii.cl/boleta.electronica.DTE/ws/getToken"
 SII_NS          = "http://www.sii.cl/SiiDte"
 XSI_NS          = "http://www.w3.org/2001/XMLSchema-instance"
 XMLDSIG_NS      = "http://www.w3.org/2000/09/xmldsig#"
@@ -37,10 +32,7 @@ class SIISender:
 
     def __init__(self, ambiente: str = "certificacion"):
         self.ambiente   = ambiente
-        self.url_upload      = SII_UPLOAD_CERT if ambiente == "certificacion" else SII_UPLOAD_PROD
-        self.url_upload_bol  = SII_BOLETA_UPLOAD_CERT if ambiente == "certificacion" else SII_BOLETA_UPLOAD_PROD
-        self.url_token_bol   = SII_BOLETA_TOKEN_CERT  if ambiente == "certificacion" else SII_BOLETA_TOKEN_PROD
-        self.url_semilla_bol = SII_BOLETA_SEMILLA_CERT if ambiente == "certificacion" else SII_BOLETA_SEMILLA_PROD
+        self.url_upload = SII_UPLOAD_CERT if ambiente == "certificacion" else SII_UPLOAD_PROD
 
     @staticmethod
     def limpiar_rut(rut: str) -> str:
@@ -53,7 +45,7 @@ class SIISender:
     async def construir_sobre(self, dtes_xml: list[str], rut_emisor: str,
                         rut_enviador: str, firma_service) -> str:
         """
-        Construye el sobre EnvioDTE SIN firmar y delega a Java
+        Construye el sobre EnvioDTE/EnvioBOLETA SIN firmar y delega a Java
         para que firme todos los DTEs y el SetDTE dentro del contexto DOM correcto.
         """
         NS    = SII_NS
@@ -62,8 +54,7 @@ class SIISender:
         rut_emisor   = self.limpiar_rut(rut_emisor)
         rut_enviador = self.limpiar_rut(rut_enviador)
 
-        # Detectar tipos de DTE
-        # Detectar tipos con regex para evitar problemas de encoding
+        # Detectar tipos de DTE con regex para evitar problemas de encoding
         import re as _re
         tipos_en_sobre: dict[int, int] = {}
         for dte_xml in dtes_xml:
@@ -80,7 +71,6 @@ class SIISender:
             tag         = "EnvioDTE"
             schema_name = "EnvioDTE_v10.xsd"
 
-        # Resolución del contribuyente — misma para boletas y facturas
         fch_resol = getattr(self, 'fch_resol', '2026-04-19')
         nro_resol = getattr(self, 'nro_resol', '0')
         tmst      = (ahora + timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%S")
@@ -99,7 +89,6 @@ class SIISender:
                 s = s[s.index('?>') + 2:].lstrip()
             dtes_str.append(s.strip())
 
-        # Construir sobre como STRING puro sin firmas
         caratula = (
             f'<Caratula version="1.0">'
             f'<RutEmisor>{rut_emisor}</RutEmisor>'
@@ -123,35 +112,34 @@ class SIISender:
         # Java firma todos los DTEs y el SetDTE dentro del árbol completo
         return await firma_service.firmar_sobre(sobre_sin_firmas)
 
-
     async def enviar_sobre(self, sobre_xml: str, rut_emisor: str,
                            rut_enviador: str,
                            p12_bytes: bytes = None,
                            password: str = None,
                            auth_p12_bytes: bytes = None,
                            auth_password: str = None) -> dict:
-        # Determinar si es envío de boletas (URL y token distintos)
-        es_envio_boleta = sobre_xml.strip().find("EnvioBOLETA") > 0 or "EnvioBOLETA" in sobre_xml[:500]
+        """
+        Envía un sobre XML (EnvioDTE o EnvioBOLETA) al SII.
 
+        v2.1: siempre usa maullin/palena estándar y token DTE normal.
+        No intentar maullin2 — no tiene DNS público desde Railway.
+        """
         token_p12 = auth_p12_bytes or p12_bytes
         token_pwd = auth_password or password
 
-        if es_envio_boleta:
-            token = await self._obtener_token_boleta(token_p12, token_pwd)
-            url_envio = self.url_upload_bol
-        else:
-            token = await self._obtener_token(token_p12, token_pwd)
-            url_envio = self.url_upload
+        token     = await self._obtener_token(token_p12, token_pwd)
+        url_envio = self.url_upload   # siempre el estándar para boletas y facturas
 
         rut_limpio = self.limpiar_rut(rut_emisor)
         env_limpio = self.limpiar_rut(rut_enviador)
         timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
         nombre     = f"{rut_limpio}_{timestamp}.xml"
-        sobre_bytes= sobre_xml.encode("ISO-8859-1")
+        sobre_bytes = sobre_xml.encode("ISO-8859-1")
 
         def split_rut(rut):
             partes = rut.replace(".", "").split("-")
             return partes[0], partes[1] if len(partes) > 1 else "0"
+
         rut_num, dv_company = split_rut(rut_limpio)
         env_num, dv_sender  = split_rut(env_limpio)
 
@@ -167,7 +155,8 @@ class SIISender:
             "archivo":    (nombre, sobre_bytes, "text/xml;charset=ISO-8859-1"),
         }
 
-        logger.info(f"[SII ENVIO] {'BOLETA' if es_envio_boleta else 'DTE'} rutSender={env_limpio} rutCompany={rut_limpio} token={token[:8]}...")
+        es_boleta = "EnvioBOLETA" in sobre_xml[:500]
+        logger.info(f"[SII ENVIO] {'BOLETA' if es_boleta else 'DTE'} rutSender={env_limpio} rutCompany={rut_limpio} token={token[:8]}...")
         logger.info(f"[SII ENVIO] url={url_envio}")
         logger.info(f"[SII ENVIO] sobre_bytes_len={len(sobre_bytes)}")
 
@@ -278,22 +267,4 @@ class SIISender:
             from app.services.sii_auth import obtener_token_cached
             return await obtener_token_cached(p12_bytes, password, self.ambiente)
         logger.warning("[SII AUTH] Usando token 'prueba' — sin certificado")
-        return "prueba"
-
-    async def _obtener_token_boleta(self, p12_bytes: bytes = None,
-                                    password: str = None) -> str:
-        """
-        Token para boletas electrónicas — usa endpoints REST distintos.
-        Flujo: GET semilla → firmar → POST token (URLs maullin2/rahue).
-        Si falla, cae de vuelta al token DTE normal.
-        """
-        if p12_bytes and password:
-            from app.services.sii_auth import obtener_token_boleta_cached
-            try:
-                return await obtener_token_boleta_cached(p12_bytes, password, self.ambiente)
-            except Exception as e:
-                logger.warning(f"[SII AUTH BOLETA] falló ({e}) — usando token DTE como fallback")
-                from app.services.sii_auth import obtener_token_cached
-                return await obtener_token_cached(p12_bytes, password, self.ambiente)
-        logger.warning("[SII AUTH BOLETA] Usando token 'prueba' — sin certificado")
         return "prueba"
