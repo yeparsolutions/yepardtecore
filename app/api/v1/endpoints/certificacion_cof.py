@@ -282,26 +282,9 @@ async def generar_cof(
         ambiente     = emisor.ambiente or 'certificacion',
     )
 
-    # 4. Firmar el COF usando firmar_libro de firma_digital
-    # Renombramos DocumentoConsumoFolios → EnvioLibro para que Java
-    # lo encuentre con firmar-libro (ya probado y funciona con el SII).
-    # Después revertimos el tag en el resultado.
-    cof_para_firma = cof_xml.replace(
-        '<DocumentoConsumoFolios ID="RCOF_01">',
-        '<EnvioLibro ID="RCOF_01">'
-    ).replace(
-        '</DocumentoConsumoFolios>',
-        '</EnvioLibro>'
-    )
-    cof_firmado_tmp = await firma.firmar_libro(cof_para_firma)
-    # Revertir el tag al nombre correcto del SII
-    cof_firmado = cof_firmado_tmp.replace(
-        '<EnvioLibro ID="RCOF_01">',
-        '<DocumentoConsumoFolios ID="RCOF_01">'
-    ).replace(
-        '</EnvioLibro>',
-        '</DocumentoConsumoFolios>'
-    )
+    # 4. Firmar el COF con Java modo firmar-cof (sin fallback Python)
+    # FirmaDTE.java busca DocumentoConsumoFolios directamente.
+    cof_firmado = await firma.firmar_cof(cof_xml)
 
     logger.info(f"[COF] XML firmado OK — {len(dtes_del_dia)} boletas")
 
