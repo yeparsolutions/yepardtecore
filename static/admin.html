@@ -1012,7 +1012,7 @@ const ENDPOINT_DEFAULTS = {
   basico2:     ENDPOINT_DINAMICO,
   exentas:     ENDPOINT_DINAMICO,
   guias:       ENDPOINT_DINAMICO,
-  boletas:     '/v1/certificacion-boletas/generar-xml',
+  boletas:     ENDPOINT_DINAMICO,
   compras:     ENDPOINT_LIBROS,   // libros: un único endpoint dinámico
   ventas:      ENDPOINT_LIBROS,
   libro_guias: ENDPOINT_LIBROS,
@@ -3175,7 +3175,7 @@ async function generarXML(setKey, natencion){
     }
     const cd2=r2.headers.get('Content-Disposition')||'';
     const m2=cd2.match(/filename="([^"]+)"/);
-    const _pref2=(setKey==='boletas'?'EnvioBOLETA':'EnvioDTE');S.xmlNombre=m2?m2[1]:`${_pref2}_${setKey}_${natencion}.xml`;
+    S.xmlNombre=m2?m2[1]:`EnvioDTE_${setKey}_${natencion}.xml`;
     S.xmlBlob=await r2.blob();
     guardarEnHistorial(S.xmlNombre,S.xmlBlob);
     const casos2=r2.headers.get('X-Casos-Generados')||'?';
@@ -3208,7 +3208,7 @@ async function generarXML(setKey, natencion){
     }
     const cd=r.headers.get('Content-Disposition')||'';
     const match=cd.match(/filename="([^"]+)"/);
-    const _pref3=(setKey==='boletas'?'EnvioBOLETA':'EnvioDTE');S.xmlNombre=match?match[1]:`${_pref3}_${setKey}_${natencion}.xml`;
+    S.xmlNombre=match?match[1]:`EnvioDTE_${setKey}_${natencion}.xml`;
     S.xmlBlob=await r.blob();
     guardarEnHistorial(S.xmlNombre,S.xmlBlob);
     const casos=r.headers.get('X-Casos-Generados')||'?';
@@ -4060,22 +4060,45 @@ async function enviarSetSII(folios){
   log('Enviando '+folios.length+' DTEs al SII...','info');
 
   try{
-    const r = await fetch(base()+'/v1/dte/enviar-set',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ emisor_id: S.id, folios }),
-    });
-    const data = await r.json();
+    // Para boletas: el XML firmado ya está en S.xmlBlob — enviarlo directo
+    // sin reconstruir desde BD. Para facturas/guías: usar /v1/dte/enviar-set.
+    // Analogía: ya tenemos el sobre sellado en la mano,
+    // no tiene sentido volver a la oficina a pedir que lo re-armen.
+    const esBoleta = S.xmlNombre && S.xmlNombre.startsWith('EnvioBOLETA');
+
+    let r, data;
+
+    if(esBoleta && S.xmlBlob){
+      // Boletas: leer el XML del blob y enviarlo al endpoint directo
+      const xmlText = await S.xmlBlob.text();
+      const body = { emisor_id: S.id, xml_sobre: xmlText };
+      r = await fetch(base()+'/v1/enviar-sobre/directo',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(body),
+      });
+    } else {
+      // Facturas, guías, notas: reconstruir el sobre desde los folios en BD
+      r = await fetch(base()+'/v1/dte/enviar-set',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ emisor_id: S.id, folios }),
+      });
+    }
+
+    data = await r.json();
     if(!r.ok){
       log('Error '+r.status+': '+(data.detail||JSON.stringify(data)),'err');
+      if(btn){ btn.disabled=false; btn.textContent='\u{1f4e4} Enviar al SII'; }
       return;
     }
     if(data.track_id){
       log('\u2713 Enviado al SII \u2014 TrackID: '+data.track_id,'ok');
-      log('Estado: '+data.estado+' | Docs: '+data.docs_enviados,'ok');
+      log('Estado: '+data.estado,'ok');
       if(btn){ btn.textContent='\u2713 Enviado (TrackID: '+data.track_id+')'; btn.style.background='#10b981'; }
     } else {
       log('Enviado sin TrackID: '+JSON.stringify(data),'warn');
+      if(btn){ btn.disabled=false; btn.textContent='\u{1f4e4} Enviar al SII'; }
     }
   }catch(e){
     log('Error: '+e,'err');
