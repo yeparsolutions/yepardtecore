@@ -1,14 +1,15 @@
 # app/services/sii_sender.py
 # ══════════════════════════════════════════════════════════════
-# Servicio de envio al SII — v2.1
+# Servicio de envio al SII — v2.2
 #
-# FIX CRÍTICO v2.1: boletas y facturas usan el mismo endpoint
-# maullin.sii.cl/cgi_dte/UPL/DTEUpload en certificación.
-# maullin2.sii.cl no tiene DNS público desde Railway.
+# FIX v2.2: eliminar xsi:schemaLocation del EnvioBOLETA
+#   → causa SCH-00001: Invalid Schema Name en maullin.sii.cl
+#
+# FIX v2.1: boletas y facturas usan el mismo endpoint
+#   maullin.sii.cl/cgi_dte/UPL/DTEUpload — sin maullin2
 #
 # FIX v2.0: re-firma cada DTE DESPUÉS de insertarlo en el
-# árbol del EnvioDTE. El DigestValue debe calcularse en el
-# contexto del sobre para que el SII pueda verificarlo.
+#   árbol del EnvioDTE para DigestValue correcto.
 # ══════════════════════════════════════════════════════════════
 
 import logging
@@ -22,10 +23,10 @@ logger = logging.getLogger("yepardtecore.dte")
 SII_UPLOAD_CERT = "https://maullin.sii.cl/cgi_dte/UPL/DTEUpload"
 SII_UPLOAD_PROD = "https://palena.sii.cl/cgi_dte/UPL/DTEUpload"
 
-SII_NS          = "http://www.sii.cl/SiiDte"
-XSI_NS          = "http://www.w3.org/2001/XMLSchema-instance"
-XMLDSIG_NS      = "http://www.w3.org/2000/09/xmldsig#"
-TIPOS_BOLETA    = {39, 41}
+SII_NS     = "http://www.sii.cl/SiiDte"
+XSI_NS     = "http://www.w3.org/2001/XMLSchema-instance"
+XMLDSIG_NS = "http://www.w3.org/2000/09/xmldsig#"
+TIPOS_BOLETA = {39, 41}
 
 
 class SIISender:
@@ -43,10 +44,14 @@ class SIISender:
         return rut
 
     async def construir_sobre(self, dtes_xml: list[str], rut_emisor: str,
-                        rut_enviador: str, firma_service) -> str:
+                              rut_enviador: str, firma_service) -> str:
         """
         Construye el sobre EnvioDTE/EnvioBOLETA SIN firmar y delega a Java
         para que firme todos los DTEs y el SetDTE dentro del contexto DOM correcto.
+
+        FIX SCH-00001: el EnvioBOLETA NO lleva xsi:schemaLocation.
+        El SII de certificación rechaza cualquier schemaLocation que
+        no pueda resolver internamente — omitirlo es la solución correcta.
         """
         NS    = SII_NS
         ahora = datetime.now(timezone.utc)
@@ -54,7 +59,7 @@ class SIISender:
         rut_emisor   = self.limpiar_rut(rut_emisor)
         rut_enviador = self.limpiar_rut(rut_enviador)
 
-        # Detectar tipos de DTE con regex para evitar problemas de encoding
+        # Detectar tipos con regex (evita problemas de encoding)
         import re as _re
         tipos_en_sobre: dict[int, int] = {}
         for dte_xml in dtes_xml:
@@ -64,24 +69,17 @@ class SIISender:
                 tipos_en_sobre[t] = tipos_en_sobre.get(t, 0) + 1
 
         es_boleta = bool(tipos_en_sobre) and all(t in TIPOS_BOLETA for t in tipos_en_sobre)
-        if es_boleta:
-            tag         = "EnvioBOLETA"
-            schema_name = "EnvioBOLETA_v11.xsd"
-        else:
-            tag         = "EnvioDTE"
-            schema_name = "EnvioDTE_v10.xsd"
+        tag = "EnvioBOLETA" if es_boleta else "EnvioDTE"
 
         fch_resol = getattr(self, 'fch_resol', '2026-04-19')
         nro_resol = getattr(self, 'nro_resol', '0')
         tmst      = (ahora + timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%S")
 
-        # Construir SubTotDTE
         subtot = "".join(
             f"<SubTotDTE><TpoDTE>{t}</TpoDTE><NroDTE>{c}</NroDTE></SubTotDTE>"
             for t, c in sorted(tipos_en_sobre.items())
         )
 
-        # Construir DTEs como strings (sin XML declaration)
         dtes_str = []
         for dte_xml in dtes_xml:
             s = dte_xml
@@ -101,15 +99,20 @@ class SIISender:
             f'</Caratula>'
         )
         set_str = f'<SetDTE ID="SetDoc">{caratula}{"".join(dtes_str)}</SetDTE>'
+
+        # ── FIX SCH-00001 ──────────────────────────────────────────────────
+        # EnvioBOLETA: NO incluir xsi:schemaLocation
+        #   El SII lo interpreta como referencia a un schema externo
+        #   que no puede resolver → SCH-00001: Invalid Schema Name
+        # EnvioDTE: tampoco es necesario — omitir en ambos casos
+        # ──────────────────────────────────────────────────────────────────
         sobre_sin_firmas = (
             f'<?xml version="1.0" encoding="ISO-8859-1"?>\n'
-            f'<{tag} xmlns="{NS}" xmlns:xsi="{XSI_NS}" version="1.0" '
-            f'xsi:schemaLocation="{NS} {schema_name}">'
+            f'<{tag} xmlns="{NS}" xmlns:xsi="{XSI_NS}" version="1.0">'
             f'{set_str}'
             f'</{tag}>'
         )
 
-        # Java firma todos los DTEs y el SetDTE dentro del árbol completo
         return await firma_service.firmar_sobre(sobre_sin_firmas)
 
     async def enviar_sobre(self, sobre_xml: str, rut_emisor: str,
@@ -120,20 +123,18 @@ class SIISender:
                            auth_password: str = None) -> dict:
         """
         Envía un sobre XML (EnvioDTE o EnvioBOLETA) al SII.
-
-        v2.1: siempre usa maullin/palena estándar y token DTE normal.
-        No intentar maullin2 — no tiene DNS público desde Railway.
+        Siempre usa maullin/palena estándar y token DTE normal.
         """
         token_p12 = auth_p12_bytes or p12_bytes
         token_pwd = auth_password or password
 
         token     = await self._obtener_token(token_p12, token_pwd)
-        url_envio = self.url_upload   # siempre el estándar para boletas y facturas
+        url_envio = self.url_upload
 
-        rut_limpio = self.limpiar_rut(rut_emisor)
-        env_limpio = self.limpiar_rut(rut_enviador)
-        timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
-        nombre     = f"{rut_limpio}_{timestamp}.xml"
+        rut_limpio  = self.limpiar_rut(rut_emisor)
+        env_limpio  = self.limpiar_rut(rut_enviador)
+        timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
+        nombre      = f"{rut_limpio}_{timestamp}.xml"
         sobre_bytes = sobre_xml.encode("ISO-8859-1")
 
         def split_rut(rut):
@@ -156,21 +157,25 @@ class SIISender:
         }
 
         es_boleta = "EnvioBOLETA" in sobre_xml[:500]
-        logger.info(f"[SII ENVIO] {'BOLETA' if es_boleta else 'DTE'} rutSender={env_limpio} rutCompany={rut_limpio} token={token[:8]}...")
-        logger.info(f"[SII ENVIO] url={url_envio}")
-        logger.info(f"[SII ENVIO] sobre_bytes_len={len(sobre_bytes)}")
+        logger.info(f"[SII ENVIO] {'BOLETA' if es_boleta else 'DTE'} "
+                    f"rutSender={env_limpio} rutCompany={rut_limpio} "
+                    f"token={token[:8]}...")
+        logger.info(f"[SII ENVIO] url={url_envio} bytes={len(sobre_bytes)}")
 
         try:
             async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
                 response = await client.post(url_envio, headers=headers, files=files)
 
-            logger.info(f"[SII RAW] HTTP={response.status_code} body={response.text[:2000]}")
-            logger.info(f"[SII RAW] headers={dict(response.headers)}")
+            logger.info(f"[SII RAW] HTTP={response.status_code} "
+                        f"body={response.text[:2000]}")
 
             if response.status_code != 200:
-                return {"track_id": None, "estado": "ERROR_HTTP",
-                        "mensaje": f"SII respondio HTTP {response.status_code}",
-                        "raw": response.text[:500]}
+                return {
+                    "track_id": None,
+                    "estado":   "ERROR_HTTP",
+                    "mensaje":  f"SII respondio HTTP {response.status_code}",
+                    "raw":      response.text[:500],
+                }
 
             return self._parsear_respuesta_upload(response.text)
 
@@ -233,12 +238,12 @@ class SIISender:
 
     def _parsear_estado_track(self, response_text: str) -> dict:
         estados_sii = {
-            "EPR": ("PENDIENTE",  "Enviado, Pendiente de Revision"),
-            "LPR": ("PENDIENTE",  "En proceso de revision"),
-            "RCT": ("ACEPTADO",   "Recibido Conforme Total"),
-            "RPR": ("REPAROS",    "Aceptado con Reparos"),
-            "RFR": ("RECHAZADO",  "Rechazado — revisar errores"),
-            "DNK": ("DESCONOCIDO","TrackID no encontrado"),
+            "EPR": ("PENDIENTE",   "Enviado, Pendiente de Revision"),
+            "LPR": ("PENDIENTE",   "En proceso de revision"),
+            "RCT": ("ACEPTADO",    "Recibido Conforme Total"),
+            "RPR": ("REPAROS",     "Aceptado con Reparos"),
+            "RFR": ("RECHAZADO",   "Rechazado — revisar errores"),
+            "DNK": ("DESCONOCIDO", "TrackID no encontrado"),
         }
         try:
             root   = etree.fromstring(response_text.encode())
