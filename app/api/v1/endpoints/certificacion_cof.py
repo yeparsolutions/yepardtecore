@@ -65,110 +65,34 @@ def _wrap64(s: str) -> str:
     return '\n' + '\n'.join(textwrap.wrap(clean, 64)) + '\n'
 
 
-def _firmar_cof(cof_xml: str, p12_bytes: bytes, password: str) -> str:
+
+async def _firmar_cof_java(cof_xml: str, p12_bytes: bytes, password: str) -> str:
     """
-    Firma el ConsumoFolios con XMLDSig.
-    
-    Analogía: es como el contador que pone su firma y sello
-    en el cierre de caja — sin eso el SII no lo acepta.
-    
-    El COF usa enveloped-signature (la firma va DENTRO del documento)
-    a diferencia del EnvioBOLETA que usa la firma FUERA del SetDTE.
+    Firma el ConsumoFolios usando Java modo firmar-cof.
+    FirmaDTE.java busca DocumentoConsumoFolios y firma con enveloped-signature.
+    El mismo mecanismo que firmar-libro, pero para el tag del COF.
     """
-    from lxml import etree
-    from cryptography.hazmat.primitives.serialization import pkcs12
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import padding
-    from cryptography.hazmat.backends import default_backend
-    import io
+    import asyncio, base64 as _b64, subprocess, os
 
-    # Cargar certificado
-    pwd = password.encode('utf-8') if isinstance(password, str) else password
-    priv_key, cert, _ = pkcs12.load_key_and_certificates(
-        p12_bytes, pwd, backend=default_backend()
-    )
-    cert_der = cert.public_bytes(serialization.Encoding.DER)
-    pub_key  = cert.public_key()
-    pub_nums = pub_key.public_numbers()
+    java_dir = os.environ.get("FIRMA_JAVA_DIR", "/app")
+    xml_bytes = cof_xml.encode("ISO-8859-1")
+    xml_b64   = _b64.b64encode(xml_bytes)
+    pfx_b64   = _b64.b64encode(p12_bytes).decode()
+    pwd_str   = password if isinstance(password, str) else password.decode()
 
-    # Parsear el COF
-    parser = etree.XMLParser(remove_blank_text=False)
-    root   = etree.fromstring(cof_xml.encode('utf-8'), parser)
+    cmd = ["java", "-cp", java_dir, "FirmaDTE", "firmar-cof", "-", pfx_b64, pwd_str]
 
-    # El elemento a firmar es DocumentoConsumoFolios
-    doc_el  = root.find(f'{{{NS_SII}}}DocumentoConsumoFolios')
-    doc_id  = doc_el.get('ID', 'RCOF_01')
+    def _run():
+        result = subprocess.run(cmd, input=xml_b64, capture_output=True, timeout=60)
+        if result.returncode != 0:
+            raise RuntimeError(f"FirmaDTE [firmar-cof]: {result.stderr.decode()[:300]}")
+        if not result.stdout:
+            raise RuntimeError("FirmaDTE [firmar-cof]: sin output")
+        return _b64.b64decode(result.stdout).decode("ISO-8859-1")
 
-    # Calcular DigestValue del DocumentoConsumoFolios (c14n standalone)
-    doc_bytes  = etree.tostring(doc_el)
-    doc_alone  = etree.fromstring(doc_bytes)
-    doc_c14n   = etree.tostring(doc_alone, method='c14n',
-                                exclusive=False, with_comments=False)
-    digest_val = base64.b64encode(hashlib.sha1(doc_c14n).digest()).decode()
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _run)
 
-    # Construir SignedInfo
-    signed_info_xml = (
-        f'<SignedInfo xmlns="{NS_DS}">'
-        f'<CanonicalizationMethod Algorithm="{C14N}"/>'
-        f'<SignatureMethod Algorithm="{RSA_SHA1}"/>'
-        f'<Reference URI="#{doc_id}">'
-        f'<Transforms>'
-        f'<Transform Algorithm="{ENVLP}"/>'
-        f'</Transforms>'
-        f'<DigestMethod Algorithm="{SHA1_URI}"/>'
-        f'<DigestValue>{digest_val}</DigestValue>'
-        f'</Reference>'
-        f'</SignedInfo>'
-    )
-    si_el   = etree.fromstring(signed_info_xml.encode())
-    si_c14n = etree.tostring(
-        etree.fromstring(etree.tostring(si_el)),
-        method='c14n', exclusive=False, with_comments=False
-    )
-
-    # Firmar
-    sig_bytes = priv_key.sign(si_c14n, padding.PKCS1v15(), hashes.SHA1())
-    sig_b64   = base64.b64encode(sig_bytes).decode()
-
-    # Construir módulo y exponente RSA
-    n_bytes = pub_nums.n.to_bytes((pub_nums.n.bit_length() + 7) // 8, 'big')
-    e_bytes = pub_nums.e.to_bytes((pub_nums.e.bit_length() + 7) // 8, 'big')
-    mod_b64 = base64.b64encode(n_bytes).decode()
-    exp_b64 = base64.b64encode(e_bytes).decode()
-    cert_b64 = base64.b64encode(cert_der).decode()
-
-    # Agregar Signature al root (enveloped — va dentro del ConsumoFolios)
-    sig_xml = (
-        f'<Signature xmlns="{NS_DS}">'
-        f'<SignedInfo>'
-        f'<CanonicalizationMethod Algorithm="{C14N}"/>'
-        f'<SignatureMethod Algorithm="{RSA_SHA1}"/>'
-        f'<Reference URI="#{doc_id}">'
-        f'<Transforms><Transform Algorithm="{ENVLP}"/></Transforms>'
-        f'<DigestMethod Algorithm="{SHA1_URI}"/>'
-        f'<DigestValue>{digest_val}</DigestValue>'
-        f'</Reference>'
-        f'</SignedInfo>'
-        f'<SignatureValue>{_wrap64(sig_b64)}</SignatureValue>'
-        f'<KeyInfo>'
-        f'<KeyValue><RSAKeyValue>'
-        f'<Modulus>{_wrap64(mod_b64)}</Modulus>'
-        f'<Exponent>{exp_b64}</Exponent>'
-        f'</RSAKeyValue></KeyValue>'
-        f'<X509Data>'
-        f'<X509Certificate>{_wrap64(cert_b64)}</X509Certificate>'
-        f'</X509Data>'
-        f'</KeyInfo>'
-        f'</Signature>'
-    )
-    sig_el = etree.fromstring(sig_xml.encode())
-    root.append(sig_el)
-
-    body = etree.tostring(root, encoding='unicode')
-    return '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + body
-
-
-# ── Función principal: construir el XML del COF ───────────────
 
 def _construir_cof_xml(
     rut_emisor:   str,
@@ -347,8 +271,9 @@ async def generar_cof(
         ambiente     = emisor.ambiente or 'certificacion',
     )
 
-    # 4. Firmar el COF
-    cof_firmado = _firmar_cof(
+    # 4. Firmar el COF con Java modo firmar-cof
+    # Java garantiza el digest XMLDSig correcto que el SII acepta.
+    cof_firmado = await _firmar_cof_java(
         cof_xml,
         bytes(cert.certificado_p12),
         cert.certificado_password,
