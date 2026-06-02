@@ -21,11 +21,7 @@ from datetime import date
 
 from app.db.base import get_db
 from app.models.dte import DTE
-from app.models.emisor import Emisor
-from app.models.certificado import Certificado
 from app.services.dte_service import DTEService
-from app.services.sii_sender import SIISender
-from app.services.firma_digital import FirmaDigital
 from app.core.security import validar_api_key
 
 logger = logging.getLogger("yepardtecore.endpoints.dte")
@@ -362,125 +358,63 @@ async def descargar_pdf(
         headers={"Content-Disposition": f'attachment; filename="{nombre_archivo}"'},
     )
 
-# POST /v1/dte/enviar-set
-# Envía al SII un conjunto de DTEs ya guardados en BD
-# Body: { emisor_id, folios: [{tipo, folio}] }
 
+# ── Envío directo de XML pre-firmado ──────────────────────────────────────────
 
-class FolioItem(BaseModel):
-    tipo: int
-    folio: int
-
-class EnviarSetRequest(BaseModel):
+class EnviarXMLDirectoRequest(BaseModel):
     emisor_id: int
-    folios: list[FolioItem]
+    xml_sobre: str   # EnvioBOLETA o EnvioDTE ya firmado, como string
 
-@router.post("/enviar-set", summary="Envía al SII DTEs ya generados")
-async def enviar_set_sii(
-    body: EnviarSetRequest,
-    db: AsyncSession = Depends(get_db),
+
+@router.post("/enviar-xml-directo")
+async def enviar_xml_directo(
+    body: EnviarXMLDirectoRequest,
+    db:  AsyncSession = Depends(get_db),
 ):
     """
-    Toma DTEs ya generados en BD (por tipo+folio) y los envía al SII.
-    Retorna track_id y estado del envío.
+    Recibe un EnvioBOLETA (o EnvioDTE) completamente firmado y lo envía al SII.
+    Usado desde el historial del admin cuando el sobre ya está generado.
+    El sobre se re-firma con timestamp fresco antes de enviar.
     """
-    if not body.folios:
-        raise HTTPException(400, "Debe indicar al menos un folio")
+    from app.models.emisor import Emisor
+    from app.models.certificado import Certificado
+    from app.services.sii_sender import SIISender
+    from app.services.firma_digital import FirmaDigital
+    from sqlalchemy import select as sa_select
 
-    # Obtener emisor
-    emisor = await db.get(Emisor, body.emisor_id)
+    emisor = (await db.execute(
+        sa_select(Emisor).where(Emisor.id == body.emisor_id)
+    )).scalar_one_or_none()
     if not emisor:
-        raise HTTPException(404, f"Emisor {body.emisor_id} no encontrado")
+        raise HTTPException(404, "Emisor no encontrado")
 
-    # Obtener certificado
-    res = await db.execute(
-        select(Certificado).where(
+    cert = (await db.execute(
+        sa_select(Certificado).where(
             Certificado.emisor_id == body.emisor_id,
             Certificado.activo == True,
         ).limit(1)
-    )
-    cert = res.scalar_one_or_none()
+    )).scalar_one_or_none()
     if not cert:
-        raise HTTPException(400, "Sin certificado activo")
+        raise HTTPException(404, "Certificado no encontrado")
 
-    # Buscar DTEs en BD
-    xmls_firmados = []
-    no_encontrados = []
-    for item in body.folios:
-        res = await db.execute(
-            select(DTE).where(
-                DTE.emisor_id == body.emisor_id,
-                DTE.tipo_dte  == item.tipo,
-                DTE.folio     == item.folio,
-            ).limit(1)
-        )
-        dte = res.scalar_one_or_none()
-        if not dte or not dte.xml_firmado:
-            no_encontrados.append(f"T{item.tipo}-F{item.folio}")
-            continue
-        xmls_firmados.append(dte.xml_firmado)
-
-    if not xmls_firmados:
-        raise HTTPException(404, f"No se encontraron DTEs: {no_encontrados}")
-
-    # Construir sobre y enviar
-    firma  = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
-    sender = SIISender(ambiente=emisor.ambiente)
-
-    # RutEnvia: probar con RUT del emisor para debug STATUS=10
+    firma = FirmaDigital(
+        p12_bytes=bytes(cert.certificado_p12),
+        password=cert.certificado_password,
+    )
     rut_enviador = cert.rut_firmante or firma.rut_certificado or emisor.rut
-    logger.warning(f"[ENVIAR-SET] RutEmisor={emisor.rut} RutEnvia={rut_enviador} cert.rut_firmante={cert.rut_firmante}")
+    sender = SIISender(ambiente=emisor.ambiente or "certificacion")
 
-    try:
-        sobre_xml = await sender.construir_sobre(
-            dtes_xml     = xmls_firmados,
-            rut_emisor   = emisor.rut,
-            rut_enviador = rut_enviador,
-            firma_service= firma,
-        )
-    except Exception as e:
-        import traceback
-        logger.error(f"[ENVIAR-SET] Error armando sobre: {e}\n{traceback.format_exc()}")
-        raise HTTPException(500, f"Error armando sobre: {type(e).__name__}: {e}")
-
-    try:
-        resultado = await sender.enviar_sobre(
-            sobre_xml      = sobre_xml,
-            rut_emisor     = emisor.rut,
-            rut_enviador   = rut_enviador,
-            p12_bytes      = cert.certificado_p12,
-            password       = cert.certificado_password or "",
-            auth_p12_bytes = getattr(cert, "certificado_auth_p12", None),
-            auth_password  = getattr(cert, "certificado_auth_password", None),
-        )
-    except Exception as e:
-        import traceback
-        logger.error(f"[ENVIAR-SET] Error enviando al SII: {e}\n{traceback.format_exc()}")
-        raise HTTPException(500, f"Error enviando al SII: {type(e).__name__}: {e}")
-
-    # Actualizar estado en BD
-    track_id = resultado.get("track_id")
-    if track_id:
-        for item in body.folios:
-            res = await db.execute(
-                select(DTE).where(
-                    DTE.emisor_id == body.emisor_id,
-                    DTE.tipo_dte  == item.tipo,
-                    DTE.folio     == item.folio,
-                ).limit(1)
-            )
-            dte = res.scalar_one_or_none()
-            if dte:
-                dte.track_id = str(track_id)
-                dte.estado   = "ENVIADO"
-        await db.commit()
-
+    resultado = await sender.enviar_sobre(
+        sobre_xml=body.xml_sobre,
+        rut_emisor=emisor.rut,
+        rut_enviador=rut_enviador,
+        p12_bytes=bytes(cert.certificado_p12),
+        password=cert.certificado_password,
+    )
     return {
-        "ok":             True,
-        "track_id":       track_id,
-        "estado":         resultado.get("estado"),
-        "mensaje":        resultado.get("mensaje"),
-        "docs_enviados":  len(xmls_firmados),
-        "no_encontrados": no_encontrados,
-        "ambiente":       emisor.ambiente,
+        "ok":          resultado.get("track_id") is not None or resultado.get("estado") == "RECIBIDO",
+        "track_id":    resultado.get("track_id"),
+        "estado":      resultado.get("estado"),
+        "mensaje":     resultado.get("mensaje"),
+        "ambiente":    emisor.ambiente or "certificacion",
     }
