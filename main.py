@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from app.core.config import settings
 from app.api.v1.router import api_router
+from app.api.public.router import router as public_router
 from app.db.base import engine, Base
 
 @asynccontextmanager
