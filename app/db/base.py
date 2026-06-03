@@ -49,3 +49,4 @@ from app.models.emisor      import Emisor       # noqa
 from app.models.caf         import CAF          # noqa
 from app.models.dte         import DTE, ItemDTE # noqa
 from app.models.certificado import Certificado  # noqa
+from app.models.libro_compras_set import SetLibroCompras, ItemSetLibroCompras  # noqa
