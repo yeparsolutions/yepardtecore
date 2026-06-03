@@ -1,8 +1,6 @@
 # app/db/base.py
 # ══════════════════════════════════════════════════════════════
 # Configuración de la base de datos con SQLAlchemy async
-# Analogia: si la base de datos es una bodega, SQLAlchemy es
-# el bodeguero que sabe dónde está cada cosa y cómo pedirla.
 # ══════════════════════════════════════════════════════════════
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
@@ -29,11 +27,6 @@ class Base(DeclarativeBase):
 
 # ── Dependency de FastAPI ─────────────────────────────────────
 async def get_db() -> AsyncSession:
-    """
-    Genera una sesión de BD para cada request.
-    El 'finally' garantiza que la sesión siempre se cierra,
-    aunque ocurra un error — evita fugas de conexiones.
-    """
     async with AsyncSessionLocal() as session:
         try:
             yield session
@@ -49,4 +42,3 @@ from app.models.emisor      import Emisor       # noqa
 from app.models.caf         import CAF          # noqa
 from app.models.dte         import DTE, ItemDTE # noqa
 from app.models.certificado import Certificado  # noqa
-from app.models.libro_compras_set import SetLibroCompras, ItemSetLibroCompras  # noqa
