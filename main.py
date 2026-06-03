@@ -39,7 +39,7 @@ app.add_middleware(
 )
 
 # ── API ───────────────────────────────────────────────────────
-app.include_router(api_router, prefix=settings.API_PREFIX)
+app.include_router(public_router)
 
 # ── Estáticos ─────────────────────────────────────────────────
 if not os.path.exists("static"):
