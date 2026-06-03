@@ -418,3 +418,119 @@ async def enviar_xml_directo(
         "mensaje":     resultado.get("mensaje"),
         "ambiente":    emisor.ambiente or "certificacion",
     }
+
+
+# ── Enviar set de DTEs al SII por folios ──────────────────────────────────
+class FolioRef(BaseModel):
+    tipo: int
+    folio: int
+
+class EnviarSetRequest(BaseModel):
+    emisor_id: int
+    folios: list[FolioRef]
+
+@router.post("/enviar-set")
+async def enviar_set_al_sii(
+    body: EnviarSetRequest,
+    db:   AsyncSession = Depends(get_db),
+):
+    """
+    Toma una lista de {tipo, folio}, busca los DTEs en BD,
+    construye el sobre y lo envía al SII.
+    Retorna track_id si fue aceptado.
+    """
+    from app.models.emisor import Emisor
+    from app.models.certificado import Certificado
+    from app.services.sii_sender import SIISender
+    from app.services.firma_digital import FirmaDigital
+    from sqlalchemy import select as sa_select, and_
+
+    emisor = (await db.execute(
+        sa_select(Emisor).where(Emisor.id == body.emisor_id)
+    )).scalar_one_or_none()
+    if not emisor:
+        raise HTTPException(404, "Emisor no encontrado")
+
+    cert = (await db.execute(
+        sa_select(Certificado).where(
+            Certificado.emisor_id == body.emisor_id,
+            Certificado.activo == True,
+        ).limit(1)
+    )).scalar_one_or_none()
+    if not cert:
+        raise HTTPException(404, "Certificado no encontrado")
+
+    # Buscar DTEs en BD
+    dtes_xml   = []
+    encontrados = []
+    no_encontrados = []
+
+    for ref in body.folios:
+        resultado = await db.execute(
+            sa_select(DTE).where(
+                and_(
+                    DTE.emisor_id == body.emisor_id,
+                    DTE.tipo_dte  == ref.tipo,
+                    DTE.folio     == ref.folio,
+                )
+            ).limit(1)
+        )
+        dte_obj = resultado.scalar_one_or_none()
+        if dte_obj and dte_obj.xml_firmado:
+            dtes_xml.append(dte_obj.xml_firmado)
+            encontrados.append({"tipo": ref.tipo, "folio": ref.folio})
+        else:
+            no_encontrados.append({"tipo": ref.tipo, "folio": ref.folio})
+
+    if not dtes_xml:
+        raise HTTPException(422, "No se encontraron DTEs con XML firmado para los folios indicados")
+
+    firma = FirmaDigital(
+        p12_bytes=bytes(cert.certificado_p12),
+        password=cert.certificado_password,
+    )
+    rut_enviador = cert.rut_firmante or firma.rut_certificado or emisor.rut
+    sender = SIISender(ambiente=emisor.ambiente or "certificacion")
+
+    try:
+        sobre_xml = await sender.construir_sobre(
+            dtes_xml=dtes_xml,
+            rut_emisor=emisor.rut,
+            rut_enviador=rut_enviador,
+            firma_service=firma,
+        )
+        resultado = await sender.enviar_sobre(
+            sobre_xml=sobre_xml,
+            rut_emisor=emisor.rut,
+            rut_enviador=rut_enviador,
+            p12_bytes=bytes(cert.certificado_p12),
+            password=cert.certificado_password,
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, f"Error enviando al SII: {e}")
+
+    ok = resultado.get("track_id") is not None or resultado.get("estado") == "RECIBIDO"
+    if ok:
+        # Actualizar estado de los DTEs enviados
+        for ref in encontrados:
+            await db.execute(
+                sa_select(DTE).where(
+                    and_(
+                        DTE.emisor_id == body.emisor_id,
+                        DTE.tipo_dte  == ref["tipo"],
+                        DTE.folio     == ref["folio"],
+                    )
+                )
+            )
+
+    return {
+        "ok":           ok,
+        "track_id":     resultado.get("track_id"),
+        "estado":       resultado.get("estado"),
+        "mensaje":      resultado.get("mensaje"),
+        "docs_enviados": len(encontrados),
+        "no_encontrados": no_encontrados,
+        "ambiente":     emisor.ambiente or "certificacion",
+    }
