@@ -173,7 +173,7 @@ class SIISender:
         logger.info(f"[SII ENVIO] url={url_envio} bytes={len(sobre_bytes)}")
 
         try:
-            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
                 response = await client.post(url_envio, headers=headers, files=files)
 
             logger.info(f"[SII RAW] HTTP={response.status_code} "
