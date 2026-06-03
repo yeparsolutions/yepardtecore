@@ -4,6 +4,5 @@ from app.models.caf import CAF
 from app.models.dte import DTE, ItemDTE
 from app.models.usuario import Usuario
 from app.models.certificado import Certificado
-from app.models.libro_compras_set import SetLibroCompras, ItemSetLibroCompras
 
-__all__ = ["Emisor", "CAF", "DTE", "ItemDTE", "Usuario", "Certificado", "SetLibroCompras", "ItemSetLibroCompras"]
+__all__ = ["Emisor", "CAF", "DTE", "ItemDTE", "Usuario", "Certificado"]
