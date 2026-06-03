@@ -17,7 +17,8 @@ router = APIRouter(prefix="/enviar-sobre", tags=["Enviar Sobre"])
 
 class EnviarSobreRequest(BaseModel):
     emisor_id: int
-    xml_sobre: str   # EnvioBOLETA o EnvioDTE ya firmado
+    xml_sobre: str | None = None       # XML como string (legacy)
+    xml_sobre_b64: str | None = None   # XML en base64 (preserva ISO-8859-1)
 
 
 @router.post("/directo")
@@ -48,8 +49,15 @@ async def enviar_sobre_directo(
     rut_enviador = cert.rut_firmante or firma.rut_certificado or emisor.rut
     sender = SIISender(ambiente=emisor.ambiente or "certificacion")
 
+    # Decodificar XML: preferir base64 (preserva ISO-8859-1), fallback a string
+    import base64
+    if body.xml_sobre_b64:
+        sobre_xml_final = base64.b64decode(body.xml_sobre_b64).decode("ISO-8859-1")
+    else:
+        sobre_xml_final = body.xml_sobre or ""
+
     resultado = await sender.enviar_sobre(
-        sobre_xml=body.xml_sobre,
+        sobre_xml=sobre_xml_final,
         rut_emisor=emisor.rut,
         rut_enviador=rut_enviador,
         p12_bytes=bytes(cert.certificado_p12),
