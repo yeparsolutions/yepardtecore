@@ -145,12 +145,7 @@ class SIISender:
         env_limpio  = self.limpiar_rut(rut_enviador)
         timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
         nombre      = f"{rut_limpio}_{timestamp}.xml"
-        # El XML puede llegar como UTF-8 (desde el browser) o ISO-8859-1 (generado internamente)
-        # Intentamos ISO-8859-1 primero; si falla, convertimos UTF-8 → ISO-8859-1
-        try:
-            sobre_bytes = sobre_xml.encode("ISO-8859-1")
-        except (UnicodeEncodeError, UnicodeDecodeError):
-            sobre_bytes = sobre_xml.encode("utf-8").decode("utf-8").encode("ISO-8859-1", errors="xmlcharrefreplace")
+        sobre_bytes = sobre_xml.encode("ISO-8859-1")
 
         def split_rut(rut):
             partes = rut.replace(".", "").split("-")
@@ -178,7 +173,7 @@ class SIISender:
         logger.info(f"[SII ENVIO] url={url_envio} bytes={len(sobre_bytes)}")
 
         try:
-            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
                 response = await client.post(url_envio, headers=headers, files=files)
 
             logger.info(f"[SII RAW] HTTP={response.status_code} "
