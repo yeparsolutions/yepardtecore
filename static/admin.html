@@ -3293,7 +3293,9 @@ async function enviarDesdeHistorial(i){
       if(btn){ btn.disabled=true; btn.textContent='Enviando...'; }
       try{
         const ab = await item.blob.arrayBuffer();
-        const b64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
+        const bytes = new Uint8Array(ab);
+        let bin = ''; for(let i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
+        const b64 = btoa(bin);
         const r = await fetch(`${base()}/v1/enviar-sobre/directo`,{
           method:'POST',
           headers:{'Content-Type':'application/json'},
@@ -3317,7 +3319,9 @@ async function enviarDesdeHistorial(i){
     if(btn2){ btn2.disabled=true; btn2.textContent='Enviando...'; }
     try{
       const ab2 = await item.blob.arrayBuffer();
-      const b64 = btoa(String.fromCharCode(...new Uint8Array(ab2)));
+      const bytes2 = new Uint8Array(ab2);
+      let bin2 = ''; for(let i=0;i<bytes2.length;i++) bin2 += String.fromCharCode(bytes2[i]);
+      const b64 = btoa(bin2);
       const r = await fetch(`${base()}/v1/enviar-sobre/directo`,{
         method:'POST',
         headers:{'Content-Type':'application/json'},
