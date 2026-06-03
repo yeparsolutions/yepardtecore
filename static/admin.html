@@ -3309,19 +3309,26 @@ async function enviarDesdeHistorial(i){
       }
       return;
     }
-    // Para EnvioDTE: extraer folios y usar flujo normal
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(txt, 'text/xml');
-    const dtes = xmlDoc.querySelectorAll('Documento');
-    const folios = [];
-    dtes.forEach(d=>{
-      const tipo = parseInt(d.querySelector('TipoDTE')?.textContent||'0');
-      const folio = parseInt(d.querySelector('Folio')?.textContent||'0');
-      if(tipo && folio) folios.push({tipo, folio});
-    });
-    if(!folios.length){ log('No se encontraron folios en el XML','warn'); return; }
-    log('Enviando '+folios.length+' DTEs al SII desde historial...','info');
-    await enviarSetSII(folios);
+    // Para EnvioDTE: enviar XML directamente (más rápido, evita re-construcción del sobre)
+    log('Enviando EnvioDTE directamente al SII...','info');
+    const btn2 = document.querySelector('[onclick="enviarUltimoSet()"]');
+    if(btn2){ btn2.disabled=true; btn2.textContent='Enviando...'; }
+    try{
+      const r = await fetch(`${base()}/v1/dte/sobre/enviar-directo`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({emisor_id: S.id, xml_sobre: txt}),
+      });
+      const data = await r.json();
+      if(data.track_id){
+        log(`✓ Enviado al SII — TrackID: ${data.track_id}`,'ok');
+        log(`Estado: ${data.estado} | Docs: ${data.ok}`,'ok');
+      } else {
+        log(`Enviado sin TrackID: ${JSON.stringify(data)}`,'warn');
+      }
+    }finally{
+      if(btn2){ btn2.disabled=false; btn2.textContent='📤 Enviar al SII'; }
+    }
   }catch(e){ log('Error enviando desde historial: '+e,'err'); }
 }
 function descargarDesdeHistorial(i){
