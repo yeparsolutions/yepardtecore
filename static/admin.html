@@ -3292,10 +3292,12 @@ async function enviarDesdeHistorial(i){
       const btn = document.querySelector('[onclick="enviarUltimoSet()"]');
       if(btn){ btn.disabled=true; btn.textContent='Enviando...'; }
       try{
+        const ab = await item.blob.arrayBuffer();
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
         const r = await fetch(`${base()}/v1/enviar-sobre/directo`,{
           method:'POST',
           headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({emisor_id: S.id, xml_sobre: txt}),
+          body: JSON.stringify({emisor_id: S.id, xml_sobre_b64: b64}),
         });
         const data = await r.json();
         if(data.track_id){
@@ -3314,10 +3316,12 @@ async function enviarDesdeHistorial(i){
     const btn2 = document.querySelector('[onclick="enviarUltimoSet()"]');
     if(btn2){ btn2.disabled=true; btn2.textContent='Enviando...'; }
     try{
-      const r = await fetch(`${base()}/v1/dte/sobre/enviar-directo`,{
+      const ab2 = await item.blob.arrayBuffer();
+      const b64 = btoa(String.fromCharCode(...new Uint8Array(ab2)));
+      const r = await fetch(`${base()}/v1/enviar-sobre/directo`,{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({emisor_id: S.id, xml_sobre: txt}),
+        body: JSON.stringify({emisor_id: S.id, xml_sobre_b64: b64}),
       });
       const data = await r.json();
       if(data.track_id){
