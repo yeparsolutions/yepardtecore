@@ -23,15 +23,11 @@ from app.db.base import get_db
 from app.models.emisor  import Emisor
 from app.models.usuario import Usuario
 from app.models.dte     import DTE
-from app.models.caf     import CAF
 from app.core.security  import (
     hash_password, verify_password,
     crear_access_token, verificar_token,
 )
-from app.services.xml_builder   import XmlBuilder
-from app.services.firma_digital import FirmaDigital
-from app.services.sii_sender    import SIISender
-from app.models.certificado     import Certificado
+
 
 router = APIRouter(prefix="/api", tags=["API Pública"])
 bearer = HTTPBearer()
@@ -442,168 +438,72 @@ async def emitir_dte(
     if plan == "gratuito" and docs_usados >= docs_limit:
         raise HTTPException(402, "Límite de documentos alcanzado — actualiza tu plan")
 
-    # Mapear tipoCode a tipo DTE
+    # Mapear tipoCode → tipo_dte
     tipo_map = {"39": 39, "41": 41, "33": 33, "33x": 34, "52": 52, "56": 56, "61": 61}
     tipo_dte = tipo_map.get(datos.tipoCode)
     if not tipo_dte:
-        raise HTTPException(422, f"Tipo de documento no soportado: {datos.tipoCode}")
+        raise HTTPException(422, f"Tipo no soportado: {datos.tipoCode}")
 
-    # Obtener CAF
-    caf = (await db.execute(
-        select(CAF).where(
-            CAF.emisor_id == emisor.id,
-            CAF.tipo_dte  == tipo_dte,
-            CAF.activo    == True,
-        ).order_by(CAF.folio_desde.asc())
-    )).scalar_one_or_none()
-    if not caf:
-        raise HTTPException(400, f"No hay CAF disponible para tipo {tipo_dte}")
-    if caf.folio_actual > caf.folio_hasta:
-        raise HTTPException(400, "CAF agotado — solicita nuevos folios al SII")
-
-    folio = caf.folio_actual
-
-    # Calcular montos
-    neto    = int(datos.montoNeto   or 0)
-    exe     = int(datos.montoExento or 0)
-    iva     = int(datos.montoIva    or 0)
-    total   = int(datos.montoTotal  or neto + exe + iva)
-
-    # Construir datos DTE para xml_builder
-    from app.services.xml_builder import XmlBuilder
+    from app.services.dte_service import DTEService
     fecha_hoy = datetime.now().strftime("%Y-%m-%d")
 
     datos_dte = {
-        "tipo_dte":    tipo_dte,
-        "folio":       folio,
+        "tipo_dte":      tipo_dte,
         "fecha_emision": fecha_hoy,
-        "emisor": {
-            "rut":         emisor.rut,
-            "razon_social": emisor.razon_social,
-            "giro":        emisor.giro,
-            "direccion":   emisor.direccion,
-            "comuna":      emisor.comuna,
-            "ciudad":      emisor.ciudad,
-            "acteco":      emisor.acteco or "620100",
-        },
         "receptor": {
-            "rut":         datos.receptor.rut or "66666666-6",
+            "rut":          datos.receptor.rut or "66666666-6",
             "razon_social": datos.receptor.nombre or "Consumidor Final",
-            "giro":        datos.receptor.giro or "",
-            "direccion":   datos.receptor.direccion or "",
-            "comuna":      "",
-            "ciudad":      "",
+            "giro":         datos.receptor.giro or "",
+            "direccion":    datos.receptor.direccion or "",
+            "comuna":       "",
+            "ciudad":       "",
         },
         "items": [
             {
                 "nombre":          it.nombre,
                 "cantidad":        it.qty,
                 "precio_unitario": it.precio,
-                "monto_item":      round(it.qty * it.precio),
                 "exento":          datos.exento,
             }
             for it in datos.items
         ],
-        "monto_neto":   neto,
-        "monto_exento": exe,
-        "monto_iva":    iva,
-        "monto_total":  total,
-        "tasa_iva":     19,
-        "referencias":  [],
+        "referencias": [],
     }
 
-    # Obtener certificado y firmar
-    cert = (await db.execute(
-        select(Certificado).where(
-            Certificado.emisor_id == emisor.id,
-            Certificado.activo    == True,
-        ).limit(1)
-    )).scalar_one_or_none()
-    if not cert:
-        raise HTTPException(400, "No hay certificado digital configurado")
-
     try:
-        builder = XmlBuilder(caf_xml=caf.xml_caf)
-        xml_sin_firma = builder.construir_dte(datos_dte)
-        firma = FirmaDigital(
-            p12_bytes=bytes(cert.certificado_p12),
-            password=cert.certificado_password,
+        svc = DTEService(db=db)
+        resultado = await svc.emitir(
+            emisor_id=emisor.id,
+            datos=datos_dte,
+            auto_enviar=True,
         )
-        xml_firmado = firma.firmar_dte(xml_sin_firma)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     except Exception as e:
-        raise HTTPException(500, f"Error generando DTE: {e}")
+        raise HTTPException(500, f"Error emitiendo DTE: {e}")
 
-    # Avanzar folio en CAF
-    caf.folio_actual += 1
-
-    # Guardar DTE en BD
-    dte = DTE(
-        emisor_id=emisor.id,
-        tipo_dte=tipo_dte,
-        folio=folio,
-        folio_fmt=f"{tipo_dte}-{folio:08d}",
-        rut_receptor=datos.receptor.rut or "66666666-6",
-        nombre_receptor=datos.receptor.nombre,
-        monto_neto=neto,
-        monto_iva=iva,
-        monto_total=total,
-        tasa_iva=19,
-        estado="BORRADOR",
-        xml_firmado=xml_firmado,
-        ambiente=emisor.ambiente or "certificacion",
-    )
-    db.add(dte)
-
-    # Incrementar contador de documentos
     emisor.docs_usados = docs_usados + 1
 
-    await db.flush()
-
-    # Enviar al SII si hay certificado
-    track_id = None
-    try:
-        rut_enviador = cert.rut_firmante or firma.rut_certificado or emisor.rut
-        sender = SIISender(ambiente=emisor.ambiente or "certificacion")
-        sobre = await sender.construir_sobre(
-            dtes_xml=[xml_firmado],
-            rut_emisor=emisor.rut,
-            rut_enviador=rut_enviador,
-            firma_service=firma,
-        )
-        resultado = await sender.enviar_sobre(
-            sobre_xml=sobre,
-            rut_emisor=emisor.rut,
-            rut_enviador=rut_enviador,
-            p12_bytes=bytes(cert.certificado_p12),
-            password=cert.certificado_password,
-        )
-        track_id = resultado.get("track_id")
-        dte.track_id = track_id
-        dte.estado   = "ENVIADO" if track_id else "BORRADOR"
-    except Exception as e:
-        print(f"[WARN] Error enviando al SII: {e}")
+    doc = resultado.get("dte", {})
+    tipo_label = {39:"Boleta",41:"Boleta Exenta",33:"Factura",34:"F. Exenta",52:"Guía",56:"N. Débito",61:"N. Crédito"}
 
     return {
         "ok": True,
         "documento": {
-            "id":      dte.id,
-            "tipo":    "Boleta" if tipo_dte in (39, 41) else "Factura" if tipo_dte == 33 else str(tipo_dte),
+            "id":       doc.get("id"),
+            "tipo":     tipo_label.get(tipo_dte, str(tipo_dte)),
             "tipoCode": datos.tipoCode,
-            "numero":  dte.folio_fmt,
-            "folio":   folio,
-            "monto":   total,
-            "estado":  dte.estado,
-            "track_id": track_id,
-            "fecha":   datetime.now().isoformat(),
+            "numero":   doc.get("folio_fmt"),
+            "folio":    doc.get("folio"),
+            "monto":    doc.get("monto_total"),
+            "estado":   doc.get("estado"),
+            "track_id": doc.get("track_id"),
+            "fecha":    datetime.now().isoformat(),
             "receptor": datos.receptor.nombre,
-            "rut":     datos.receptor.rut,
+            "rut":      datos.receptor.rut,
         }
     }
 
-
-# ══════════════════════════════════════════════════════════════
-# DTE — HISTORIAL Y ESTADÍSTICAS
-# ══════════════════════════════════════════════════════════════
 
 @router.get("/dte/historial")
 async def historial(
