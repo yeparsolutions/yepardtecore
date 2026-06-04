@@ -158,20 +158,20 @@ async def validar_api_key(
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-
 def hash_password(password: str) -> str:
     """Convierte una contraseña en texto plano a hash seguro."""
-    return pwd_context.hash(password)
-
+    import bcrypt as _bcrypt
+    pw = password.encode("utf-8")[:72]
+    return _bcrypt.hashpw(pw, _bcrypt.gensalt()).decode("utf-8")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verifica que una contraseña coincide con su hash."""
+    import bcrypt as _bcrypt
     try:
         pw = plain_password.encode("utf-8")[:72]
         return _bcrypt.checkpw(pw, hashed_password.encode("utf-8"))
     except Exception:
         return False
-
 
 # ── JWT Tokens ────────────────────────────────────────────────
 # Analogía: el JWT es el carnet temporal del edificio —
