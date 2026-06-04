@@ -68,6 +68,14 @@ class Emisor(Base):
     # ── Correo de contacto ────────────────────────────────────
     correo: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
+    # ── Plan y límites (para apps cliente como YeparDTE) ─────
+    plan:             Mapped[str | None]  = mapped_column(String(20),  nullable=True, default="gratuito")
+    docs_usados:      Mapped[int | None]  = mapped_column(Integer,     nullable=True, default=0)
+    docs_limit:       Mapped[int | None]  = mapped_column(Integer,     nullable=True, default=20)
+    vendedores_limit: Mapped[int | None]  = mapped_column(Integer,     nullable=True, default=0)
+    otp_code:         Mapped[str | None]  = mapped_column(String(10),  nullable=True)
+    otp_expira:       Mapped[str | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+
     # ── Timestamps ────────────────────────────────────────────
     created_at: Mapped[str] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
