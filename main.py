@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from app.core.config import settings
 from app.api.v1.router import api_router
+from app.api.public.router import router as public_router
 from app.db.base import engine, Base
 
 @asynccontextmanager
@@ -25,8 +26,8 @@ app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     lifespan=lifespan,
-    docs_url="/api/docs",
-    redoc_url="/api/redoc"
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
 
 app.add_middleware(
@@ -38,6 +39,8 @@ app.add_middleware(
 )
 
 # ── API ───────────────────────────────────────────────────────
+app.include_router(api_router, prefix=settings.API_PREFIX)
+app.include_router(public_router)
 
 # ── Estáticos ─────────────────────────────────────────────────
 if not os.path.exists("static"):
