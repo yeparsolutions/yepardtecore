@@ -3296,6 +3296,35 @@ async function enviarDesdeHistorial(i){
     const txt = await item.blob.text();
     // Si es EnvioBOLETA, enviar XML directamente (evita re-firma con timestamp viejo)
     const esEnvioBOLETA = txt.includes('EnvioBOLETA');
+    const esLibro = txt.includes('LibroCompraVenta') || txt.includes('LibroGuia');
+    if(esLibro){
+      log('Enviando Libro directamente al SII...','info');
+      const btn2 = document.querySelector('[onclick="enviarUltimoSet()"]');
+      if(btn2){ btn2.disabled=true; btn2.textContent='Enviando...'; }
+      try{
+        const ab2 = await item.blob.arrayBuffer();
+        const bytes2 = new Uint8Array(ab2);
+        let bin2 = ''; for(let i=0;i<bytes2.length;i++) bin2 += String.fromCharCode(bytes2[i]);
+        const b64 = btoa(bin2);
+        const r = await fetch(`${base()}/v1/enviar-sobre/directo`,{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({emisor_id: S.id, xml_sobre_b64: b64}),
+        });
+        const data = await r.json();
+        if(data.track_id){
+          log(`✓ Enviado al SII — TrackID: ${data.track_id}`,'ok');
+          log(`Estado: ${data.estado}`,'ok');
+        } else {
+          log(`Enviado sin TrackID: ${JSON.stringify(data)}`,'warn');
+        }
+      }catch(e){ log('Error: '+e,'err'); }
+      finally{
+        const btn2b = document.querySelector('[onclick="enviarUltimoSet()"]');
+        if(btn2b){ btn2b.disabled=false; btn2b.textContent='📤 Enviar al SII'; }
+      }
+      return;
+    }
     if(esEnvioBOLETA){
       log('Enviando EnvioBOLETA directamente al SII...','info');
       const btn = document.querySelector('[onclick="enviarUltimoSet()"]');
