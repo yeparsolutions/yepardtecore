@@ -59,12 +59,10 @@ class LibroComprasRequest(BaseModel):
     periodo: str = "2026-05"
     fch_resol: str = "2026-04-19"
     nro_resol: str = "0"
-    tipo_libro: str = "ESPECIAL"   # "ESPECIAL" | "RECTIFICA"
-    tipo_envio: str = "TOTAL"       # "TOTAL" | "AJUSTE"
-    cod_aut_rec: str = ""          # Código requerido para RECTIFICA/AJUSTE
+    tipo_libro: str = "ESPECIAL"
+    tipo_envio: str = "TOTAL"
+    cod_aut_rec: str = ""
     documentos: List[DocumentoCompra]
-    # Opcional: ResumenPeriodo explícito (útil para AJUSTE donde el periodo
-    # refleja el estado final del libro, no la suma del segmento)
     totales_periodo: list = []
 
 
@@ -111,7 +109,7 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
             etree.SubElement(tot, f"{{{NS}}}TotDoc").text     = str(len(grp))
             etree.SubElement(tot, f"{{{NS}}}TotMntExe").text  = str(sum(d["exe"]  for d in grp))
             etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text = str(sum(d["neto"] for d in grp))
-            # Para grupos con iva_ret_total: TotMntIVA=0 (no es crédito fiscal)
+            # Para iva_ret_total: TotMntIVA=0 (no es crédito fiscal)
             tot_iva_grp = sum(d["iva"] for d in grp if d.get("tipo_especial") != "iva_ret_total")
             etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text  = str(tot_iva_grp)
             t_nr = sum(d["iva_no_rec"] for d in grp)
@@ -123,7 +121,6 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
                 etree.SubElement(inr, f"{{{NS}}}TotMntIVANoRec").text = str(t_nr)
             t_uc = sum(d["iva_uso_comun"] for d in grp)
             if t_uc:
-                # TotalesSegmento: TotOpIVAUsoComun + TotIVAUsoComun (sin FctProp ni TotCredIVAUsoComun)
                 etree.SubElement(tot, f"{{{NS}}}TotOpIVAUsoComun").text = str(sum(1 for d in grp if d["iva_uso_comun"]))
                 etree.SubElement(tot, f"{{{NS}}}TotIVAUsoComun").text   = str(t_uc)
             t_rt = sum(d["iva_ret_total"] for d in grp)
@@ -133,13 +130,8 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
             etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in grp))
 
     # ── ResumenPeriodo ────────────────────────────────────────────────────────
-    # Para AJUSTE: el ResumenPeriodo refleja el estado FINAL del libro
-    # Solo incluir tipos cuyo resultado neto es positivo (quedan en el libro)
-    # Para TOTAL: incluir todos los tipos del Detalle
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
 
-    # Para AJUSTE: ResumenPeriodo incluye TODOS los tipos del segmento
-    # con valores netos (pueden ser negativos para tipos que se eliminan)
     from collections import defaultdict
     neto_por_tipo = defaultdict(lambda: {'count':0,'neto':0,'exe':0,'iva':0,'total':0,
                                           'iva_nr':0,'iva_uc':0,'iva_ret':0})
@@ -148,7 +140,8 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
         neto_por_tipo[t]['count'] += 1
         neto_por_tipo[t]['neto']  += d["neto"]
         neto_por_tipo[t]['exe']   += d["exe"]
-        neto_por_tipo[t]['iva']   += d["iva"]
+        # Para iva_ret_total: el IVA no es crédito fiscal → TotMntIVA = 0
+        neto_por_tipo[t]['iva']   += d["iva"] if d.get("tipo_especial") != "iva_ret_total" else 0
         neto_por_tipo[t]['total'] += d["total"]
         neto_por_tipo[t]['iva_nr'] += d["iva_no_rec"]
         neto_por_tipo[t]['iva_uc'] += d["iva_uso_comun"]
@@ -180,31 +173,25 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
                 etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(tp.get("tot_doc", 1))
                 etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_rt)
             etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(tp.get("tot_total", 0))
-        # Skip automático
         tipos_periodo = []
     else:
         tipos_periodo = sorted(neto_por_tipo.keys())
 
     for tipo_doc in tipos_periodo:
-        if neto_por_tipo:
-            v = neto_por_tipo[tipo_doc]
-            tot_doc = v['count']; tot_exe = v['exe']; tot_neto = v['neto']
-            tot_iva = v['iva']; tot_total = v['total']
-            t_nr = v['iva_nr']; t_uc = v['iva_uc']; t_rt = v['iva_ret']
-            grp = [d for d in docs if d["tipo"] == tipo_doc and d["iva_no_rec"]]
-            cod_nr = grp[0]["cod_iva_no_rec"] if grp else 9
-            grp_uc = [d for d in docs if d["tipo"] == tipo_doc and d["iva_uso_comun"]]
-            fct_uc = grp_uc[0]["fct_prop"] if grp_uc else "0.60"
-        else:
-            grp = [d for d in docs if d["tipo"] == tipo_doc]
-            tot_doc = len(grp); tot_exe = sum(d["exe"] for d in grp)
-            tot_neto = sum(d["neto"] for d in grp); tot_iva = sum(d["iva"] for d in grp)
-            tot_total = sum(d["total"] for d in grp)
-            t_nr = sum(d["iva_no_rec"] for d in grp)
-            t_uc = sum(d["iva_uso_comun"] for d in grp)
-            t_rt = sum(d["iva_ret_total"] for d in grp)
-            cod_nr = next((d["cod_iva_no_rec"] for d in grp if d["iva_no_rec"]), 9)
-            fct_uc = next((d["fct_prop"] for d in grp if d["iva_uso_comun"]), "0.60")
+        v = neto_por_tipo[tipo_doc]
+        tot_doc   = v['count']
+        tot_exe   = v['exe']
+        tot_neto  = v['neto']
+        tot_iva   = v['iva']   # ya excluye iva_ret_total
+        tot_total = v['total']
+        t_nr      = v['iva_nr']
+        t_uc      = v['iva_uc']
+        t_rt      = v['iva_ret']
+
+        grp_nr = [d for d in docs if d["tipo"] == tipo_doc and d["iva_no_rec"]]
+        cod_nr = grp_nr[0]["cod_iva_no_rec"] if grp_nr else 9
+        grp_uc = [d for d in docs if d["tipo"] == tipo_doc and d["iva_uso_comun"]]
+        fct_uc = grp_uc[0]["fct_prop"] if grp_uc else "0.60"
 
         tot = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
         etree.SubElement(tot, f"{{{NS}}}TpoDoc").text     = str(tipo_doc)
@@ -216,7 +203,7 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
         if t_nr:
             inr = etree.SubElement(tot, f"{{{NS}}}TotIVANoRec")
             etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text    = str(cod_nr)
-            etree.SubElement(inr, f"{{{NS}}}TotOpIVANoRec").text  = str(sum(1 for d in docs if d["tipo"]==tipo_doc and d["iva_no_rec"]))
+            etree.SubElement(inr, f"{{{NS}}}TotOpIVANoRec").text  = str(sum(1 for d in docs if d["tipo"] == tipo_doc and d["iva_no_rec"]))
             etree.SubElement(inr, f"{{{NS}}}TotMntIVANoRec").text = str(t_nr)
 
         if t_uc:
@@ -225,7 +212,7 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
             etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(fct_uc)))
 
         if t_rt:
-            etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in docs if d["tipo"]==tipo_doc and d["iva_ret_total"]))
+            etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in docs if d["tipo"] == tipo_doc and d["iva_ret_total"]))
             etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_rt)
 
         etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(tot_total)
