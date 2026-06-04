@@ -128,27 +128,32 @@ async def registro(datos: RegistroInput, db: AsyncSession = Depends(get_db)):
     if len(datos.password) < 8:
         raise HTTPException(422, "La contraseña debe tener al menos 8 caracteres")
 
-    # Crear emisor si viene RUT
+    # Crear emisor si viene RUT — o vincular al existente
     emisor = None
     if datos.rut:
-        emisor = Emisor(
-            rut=datos.rut,
-            razon_social=datos.razon_social or datos.nombre,
-            giro=datos.giro or "",
-            direccion=datos.direccion or "",
-            comuna=datos.comuna or "",
-            ciudad=datos.ciudad or "",
-            acteco=datos.acteco or "",
-            correo=datos.email.lower(),
-            activo=True,
-            ambiente="certificacion",
-            plan="gratuito",
-            docs_usados=0,
-            docs_limit=20,
-            vendedores_limit=0,
-        )
-        db.add(emisor)
-        await db.flush()
+        rut_limpio = datos.rut.strip()
+        emisor = (await db.execute(
+            select(Emisor).where(Emisor.rut == rut_limpio)
+        )).scalar_one_or_none()
+        if not emisor:
+            emisor = Emisor(
+                rut=rut_limpio,
+                razon_social=datos.razon_social or datos.nombre,
+                giro=datos.giro or "",
+                direccion=datos.direccion or "",
+                comuna=datos.comuna or "",
+                ciudad=datos.ciudad or "",
+                acteco=datos.acteco or "",
+                correo=datos.email.lower(),
+                activo=True,
+                ambiente="certificacion",
+                plan="gratuito",
+                docs_usados=0,
+                docs_limit=20,
+                vendedores_limit=0,
+            )
+            db.add(emisor)
+            await db.flush()
 
     # Crear usuario admin
     otp = _gen_otp()
@@ -240,6 +245,27 @@ async def login_vendedor(datos: VendedorLoginInput, db: AsyncSession = Depends(g
         "token":   token,
         "usuario": _usuario_payload(vendedor, emisor),
     }
+
+
+@router.post("/auth/reenviar-codigo")
+async def reenviar_codigo(datos: dict, db: AsyncSession = Depends(get_db)):
+    email = datos.get("email", "").lower()
+    u = (await db.execute(
+        select(Usuario).where(Usuario.email == email)
+    )).scalar_one_or_none()
+    if not u or not u.emisor_id:
+        raise HTTPException(404, "Usuario no encontrado")
+    emisor = (await db.execute(
+        select(Emisor).where(Emisor.id == u.emisor_id)
+    )).scalar_one_or_none()
+    if not emisor:
+        raise HTTPException(404, "Emisor no encontrado")
+    otp = _gen_otp()
+    emisor.otp_code   = otp
+    emisor.otp_expira = datetime.now(timezone.utc) + timedelta(minutes=15)
+    print(f"[OTP REENVIO] {email}: {otp}")
+    # TODO: enviar por email real
+    return {"ok": True, "mensaje": "Código reenviado"}
 
 
 @router.post("/auth/verificar")
