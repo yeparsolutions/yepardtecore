@@ -142,7 +142,8 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
         neto_por_tipo[t]['exe']   += d["exe"]
         # Para iva_ret_total: el IVA no es crédito fiscal → TotMntIVA = 0
         neto_por_tipo[t]['iva']   += d["iva"] if d.get("tipo_especial") != "iva_ret_total" else 0
-        neto_por_tipo[t]['total'] += d["total"]
+        # Para iva_ret_total: total = neto (el IVA retenido no se paga al proveedor)
+        neto_por_tipo[t]['total'] += d["neto"] if d.get("tipo_especial") == "iva_ret_total" else d["total"]
         neto_por_tipo[t]['iva_nr'] += d["iva_no_rec"]
         neto_por_tipo[t]['iva_uc'] += d["iva_uso_comun"]
         neto_por_tipo[t]['iva_ret'] += d["iva_ret_total"]
@@ -241,8 +242,8 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
             etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc["cod_iva_no_rec"])
             etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
         elif te == "iva_ret_total":
-            # MntIVA=0: el IVA retenido no es crédito fiscal del comprador
-            etree.SubElement(det, f"{{{NS}}}MntIVA").text      = "0"
+            # MntIVA = IVA normal del doc; IVARetTotal informa la retención
+            etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
             etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
         else:
             etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
