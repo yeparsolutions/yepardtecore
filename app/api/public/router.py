@@ -144,7 +144,8 @@ async def emitir_dte(
     except Exception as e:
         raise HTTPException(500, f"Error emitiendo DTE: {e}")
 
-    doc = resultado.get("dte", {})
+    # DTEService retorna el resultado directo (sin wrapper "dte")
+    doc = resultado
     tipo_label = {
         33: "Factura Electrónica",
         34: "Factura Exenta",
