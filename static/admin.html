@@ -2402,13 +2402,20 @@ const LIBRO_COMPRAS_DOCS_DEFAULT = [
   { tipo:46, folio:9,   obs:'COMPRA CON RETENCION TOTAL DEL IVA',
     neto:10019, exe:0, iva:Math.round(10019*.19), iva_ret_total:Math.round(10019*.19),
     tipo_especial:'iva_ret_total', label:'Factura de Compra Electrónica' },
+  { tipo:60, folio:1,   obs:'LIQUIDACION-FACTURA ELECTRONICA',
+    neto:5000, exe:0, iva:Math.round(5000*.19), tipo_especial:'', label:'Liquidación-Factura' },
   { tipo:61, folio:211, obs:'NOTA DE CREDITO POR DESCUENTO FACTURA ELECTRONICA 32',
     neto:0, exe:6396, iva:0, tipo_especial:'', label:'Nota de Crédito Electrónica' },
 ];
 LIBRO_COMPRAS_DOCS_DEFAULT.forEach(d=>{
   d.rut = '76354771-K'; d.razon = 'PROVEEDOR SA';
   d.fecha = '2026-05-22';
-  d.total = d.neto + d.exe + d.iva + (d.iva_uso_comun||0) + (d.iva_no_rec||0);
+  // Para iva_ret_total: total = neto + iva_ret_total (no suma el iva normal)
+  if(d.tipo_especial === 'iva_ret_total'){
+    d.total = d.neto + (d.iva_ret_total||0);
+  } else {
+    d.total = d.neto + d.exe + d.iva + (d.iva_uso_comun||0) + (d.iva_no_rec||0);
+  }
   d.confirmado = false;
 });
 
@@ -3292,14 +3299,10 @@ async function enviarDesdeHistorial(i){
       const btn = document.querySelector('[onclick="enviarUltimoSet()"]');
       if(btn){ btn.disabled=true; btn.textContent='Enviando...'; }
       try{
-        const ab = await item.blob.arrayBuffer();
-        const bytes = new Uint8Array(ab);
-        let bin = ''; for(let i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
-        const b64 = btoa(bin);
         const r = await fetch(`${base()}/v1/enviar-sobre/directo`,{
           method:'POST',
           headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({emisor_id: S.id, xml_sobre_b64: b64}),
+          body: JSON.stringify({emisor_id: S.id, xml_sobre: txt}),
         });
         const data = await r.json();
         if(data.track_id){
@@ -3313,30 +3316,19 @@ async function enviarDesdeHistorial(i){
       }
       return;
     }
-    // Para EnvioDTE: enviar XML directamente (más rápido, evita re-construcción del sobre)
-    log('Enviando EnvioDTE directamente al SII...','info');
-    const btn2 = document.querySelector('[onclick="enviarUltimoSet()"]');
-    if(btn2){ btn2.disabled=true; btn2.textContent='Enviando...'; }
-    try{
-      const ab2 = await item.blob.arrayBuffer();
-      const bytes2 = new Uint8Array(ab2);
-      let bin2 = ''; for(let i=0;i<bytes2.length;i++) bin2 += String.fromCharCode(bytes2[i]);
-      const b64 = btoa(bin2);
-      const r = await fetch(`${base()}/v1/enviar-sobre/directo`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({emisor_id: S.id, xml_sobre_b64: b64}),
-      });
-      const data = await r.json();
-      if(data.track_id){
-        log(`✓ Enviado al SII — TrackID: ${data.track_id}`,'ok');
-        log(`Estado: ${data.estado} | Docs: ${data.ok}`,'ok');
-      } else {
-        log(`Enviado sin TrackID: ${JSON.stringify(data)}`,'warn');
-      }
-    }finally{
-      if(btn2){ btn2.disabled=false; btn2.textContent='📤 Enviar al SII'; }
-    }
+    // Para EnvioDTE: extraer folios y usar flujo normal
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(txt, 'text/xml');
+    const dtes = xmlDoc.querySelectorAll('Documento');
+    const folios = [];
+    dtes.forEach(d=>{
+      const tipo = parseInt(d.querySelector('TipoDTE')?.textContent||'0');
+      const folio = parseInt(d.querySelector('Folio')?.textContent||'0');
+      if(tipo && folio) folios.push({tipo, folio});
+    });
+    if(!folios.length){ log('No se encontraron folios en el XML','warn'); return; }
+    log('Enviando '+folios.length+' DTEs al SII desde historial...','info');
+    await enviarSetSII(folios);
   }catch(e){ log('Error enviando desde historial: '+e,'err'); }
 }
 function descargarDesdeHistorial(i){
