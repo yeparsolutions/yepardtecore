@@ -2412,9 +2412,8 @@ LIBRO_COMPRAS_DOCS_DEFAULT.forEach(d=>{
   d.fecha = '2026-05-22';
   // Para iva_ret_total: total = neto + iva_ret_total (no suma el iva normal)
   if(d.tipo_especial === 'iva_ret_total'){
-    // En retención total el comprador retiene el IVA → MntTotal = neto + iva_ret_total
-    // El SII espera total = neto + iva_ret_total para cuadrar el libro
-    d.total = d.neto + (d.iva_ret_total||0);
+    // En retención total: MntTotal = MntNeto (el IVA retenido no se paga al proveedor)
+    d.total = d.neto;
   } else {
     d.total = d.neto + d.exe + d.iva + (d.iva_uso_comun||0) + (d.iva_no_rec||0);
   }
