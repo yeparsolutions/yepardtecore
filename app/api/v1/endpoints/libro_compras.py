@@ -142,8 +142,11 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
         neto_por_tipo[t]['exe']   += d["exe"]
         # Para iva_ret_total: MntIVA se informa normalmente en el resumen
         neto_por_tipo[t]['iva']   += d["iva"]
-        # Para iva_ret_total: total = neto+iva-iva_ret (se cancela → neto)
-        neto_por_tipo[t]['total'] += d["total"]
+        # Para iva_ret_total: MntTotal = neto + iva - iva_ret (según doc SII pág 37)
+        if d.get("tipo_especial") == "iva_ret_total":
+            neto_por_tipo[t]['total'] += d["neto"] + d["iva"] - d["iva_ret_total"]
+        else:
+            neto_por_tipo[t]['total'] += d["total"]
         neto_por_tipo[t]['iva_nr'] += d["iva_no_rec"]
         neto_por_tipo[t]['iva_uc'] += d["iva_uso_comun"]
         neto_por_tipo[t]['iva_ret'] += d["iva_ret_total"]
@@ -248,7 +251,12 @@ def _xml_libro_compras(emisor_rut: str, rut_envia: str,
         else:
             etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
 
-        etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
+        # Para iva_ret_total: MntTotal = neto + iva - iva_ret (SII pág 37)
+        if doc.get("tipo_especial") == "iva_ret_total":
+            mnt_total = doc["neto"] + doc["iva"] - doc["iva_ret_total"]
+        else:
+            mnt_total = doc["total"]
+        etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(mnt_total)
 
     etree.SubElement(envio, f"{{{NS}}}TmstFirma").text = tmst
 
