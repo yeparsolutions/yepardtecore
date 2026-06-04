@@ -799,7 +799,7 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
           <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);cursor:pointer">
             <input type="checkbox" id="lw_rectifica" style="accent-color:#f59e0b"
               onchange="document.getElementById('lw_cod_aut_rec_row').style.display=this.checked?'flex':'none'">
-            Modo AJUSTE (reemplazo de libro)
+            Modo RECTIFICA (reemplazar libro ya enviado)
           </label>
           <div id="lw_cod_aut_rec_row" style="display:none;align-items:center;gap:8px;font-size:12px">
             <span style="color:var(--text3)">C&oacute;digo:</span>
@@ -2400,7 +2400,7 @@ const LIBRO_COMPRAS_DOCS_DEFAULT = [
     neto:10913, exe:0, iva:0, iva_no_rec:Math.round(10913*.19),
     tipo_especial:'iva_no_rec', label:'Factura Electrónica' },
   { tipo:46, folio:9,   obs:'COMPRA CON RETENCION TOTAL DEL IVA',
-    neto:10019, exe:0, iva:0, iva_ret_total:Math.round(10019*.19),
+    neto:10019, exe:0, iva:Math.round(10019*.19), iva_ret_total:Math.round(10019*.19),
     tipo_especial:'iva_ret_total', label:'Factura de Compra Electrónica' },
   { tipo:60, folio:1,   obs:'LIQUIDACION-FACTURA ELECTRONICA',
     neto:5000, exe:0, iva:Math.round(5000*.19), tipo_especial:'', label:'Liquidación-Factura' },
@@ -2412,8 +2412,8 @@ LIBRO_COMPRAS_DOCS_DEFAULT.forEach(d=>{
   d.fecha = '2026-05-22';
   // Para iva_ret_total: total = neto + iva_ret_total (no suma el iva normal)
   if(d.tipo_especial === 'iva_ret_total'){
-    // En retención total: MntTotal = MntNeto (el IVA retenido no se paga al proveedor)
-    d.total = d.neto;
+    // MntTotal = MntNeto + MntIVA - IVARetTotal = neto (se cancela)
+    d.total = d.neto + (d.iva||0) - (d.iva_ret_total||0);
   } else {
     d.total = d.neto + d.exe + d.iva + (d.iva_uso_comun||0) + (d.iva_no_rec||0);
   }
@@ -2785,7 +2785,7 @@ async function generarLibroManual(){
   const body={
     emisor_id:S.id,natencion:nat,periodo:periodoHoy,
     fch_resol:'2026-04-19',nro_resol:'0',
-    tipo_libro:'ESPECIAL',tipo_envio:esAjuste?'AJUSTE':'TOTAL',
+    tipo_libro:esAjuste?'RECTIFICA':'ESPECIAL',tipo_envio:'TOTAL',
     cod_aut_rec:codAutRec,documentos,
   };
   const btn=document.getElementById('btn_gen_compras_manual');
