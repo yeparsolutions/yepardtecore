@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+import bcrypt as _bcrypt
 
 from app.db.base import get_db
 from app.models.emisor import Emisor
@@ -165,7 +166,11 @@ def hash_password(password: str) -> str:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verifica que una contraseña coincide con su hash."""
-    return pwd_context.verify(plain_password[:72], hashed_password)
+    try:
+        pw = plain_password.encode("utf-8")[:72]
+        return _bcrypt.checkpw(pw, hashed_password.encode("utf-8"))
+    except Exception:
+        return False
 
 
 # ── JWT Tokens ────────────────────────────────────────────────
