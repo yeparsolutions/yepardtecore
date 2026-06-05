@@ -24,7 +24,9 @@ from app.models.emisor import Emisor
 from app.models.caf import CAF
 from app.models.dte import DTE
 from app.services.dte_service import DTEService
+import logging
 from app.services.sii_sender import SIISender
+logger = logging.getLogger("yepardtecore.api")
 from app.models.certificado import Certificado
 
 router = APIRouter(prefix="/api", tags=["API Desarrolladores"])
@@ -172,12 +174,17 @@ async def emitir_dte(
             if cert:
                 sender = SIISender(ambiente=emisor.ambiente or "certificacion")
                 rut_enviador = cert.rut_firmante or emisor.rut
+                from app.services.firma_digital import FirmaDigital
+                firma_svc = FirmaDigital(
+                    bytes(cert.certificado_p12),
+                    cert.certificado_password or "",
+                    ambiente=emisor.ambiente or "certificacion",
+                )
                 sobre_xml = await sender.construir_sobre(
                     dtes_xml    = [doc["xml_firmado"]],
                     rut_emisor  = emisor.rut,
                     rut_enviador= rut_enviador,
-                    fecha_resol = "2026-04-19",
-                    nro_resol   = "0",
+                    firma_service = firma_svc,
                 )
                 resultado_envio = await sender.enviar_sobre(
                     sobre_xml   = sobre_xml,
