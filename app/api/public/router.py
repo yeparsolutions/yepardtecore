@@ -156,17 +156,53 @@ async def emitir_dte(
         61: "Nota de Crédito",
     }
 
+    # ── Envío automático al SII ──────────────────────────────────────────────
+    track_id = None
+    estado_sii = "BORRADOR"
+    if datos.auto_enviar and doc.get("xml_firmado"):
+        try:
+            from app.models.certificado import Certificado
+            cert = (await db.execute(
+                select(Certificado).where(
+                    Certificado.emisor_id == emisor.id,
+                    Certificado.activo    == True,
+                ).limit(1)
+            )).scalar_one_or_none()
+
+            if cert:
+                sender = SIISender(ambiente=emisor.ambiente or "certificacion")
+                rut_enviador = cert.rut_firmante or emisor.rut
+                sobre_xml = await sender.construir_sobre(
+                    dtes_xml    = [doc["xml_firmado"]],
+                    rut_emisor  = emisor.rut,
+                    rut_enviador= rut_enviador,
+                    fecha_resol = "2026-04-19",
+                    nro_resol   = "0",
+                )
+                resultado_envio = await sender.enviar_sobre(
+                    sobre_xml   = sobre_xml,
+                    rut_emisor  = emisor.rut,
+                    rut_enviador= rut_enviador,
+                    p12_bytes   = bytes(cert.certificado_p12),
+                    password    = cert.certificado_password or "",
+                )
+                track_id   = resultado_envio.get("track_id")
+                estado_sii = resultado_envio.get("estado", "ENVIADO")
+        except Exception as e:
+            logger.error(f"Error enviando al SII: {e}", exc_info=True)
+            estado_sii = "ERROR_ENVIO"
+
     return {
         "ok":           True,
         "tipo":         tipo_label.get(datos.tipo, str(datos.tipo)),
         "folio":        doc.get("folio"),
         "folio_fmt":    doc.get("folio_fmt"),
         "monto_total":  doc.get("monto_total"),
-        "estado":       doc.get("estado"),
-        "track_id":     doc.get("track_id"),
+        "estado":       estado_sii,
+        "track_id":     track_id,
         "fecha":        fecha,
         "receptor":     datos.receptor.nombre,
-        "xml_firmado":  doc.get("xml_firmado"),  # opcional — para que la app lo guarde
+        "xml_firmado":  doc.get("xml_firmado"),
     }
 
 
