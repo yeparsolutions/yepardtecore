@@ -64,7 +64,9 @@ async def crear_emisor(datos: EmisorCrear, db: AsyncSession = Depends(get_db)):
         existente.comuna       = datos.comuna
         existente.ciudad       = datos.ciudad
         existente.telefono     = datos.telefono
-        existente.ambiente     = datos.ambiente
+        # El ambiente NO se sobreescribe en updates — solo se cambia
+        # explícitamente desde el panel de administración (endpoint dedicado)
+        # Esto evita que un reload/deploy resetee produccion → certificacion
         existente.acteco       = datos.acteco
         await db.flush()
         return existente
