@@ -1083,13 +1083,25 @@ async function autoCargar(){
   log('Detectando emisor en BD...','info');
   try{
     const es=await api('/v1/emisores/');
-    if(es&&es.length>0){await cargarEmisor(es[0]);log('Emisor detectado: '+es[0].razon_social,'ok');}
+    if(es&&es.length>0){
+      // Restaurar el emisor guardado en localStorage (sobrevive recargas)
+      let savedId=null;
+      try{savedId=localStorage.getItem('dtecore_emisor_id');}catch(ex){}
+      let emisorACargar=es[0];
+      if(savedId){
+        const found=es.find(e=>String(e.id)===String(savedId));
+        if(found)emisorACargar=found;
+      }
+      await cargarEmisor(emisorACargar);
+      log('Emisor cargado: '+emisorACargar.razon_social,'ok');
+    }
     else log('No hay emisores — completa el paso 1','warn');
   }catch{log('No se pudo detectar emisor','warn');}
 }
 async function cargarEmisor(e){
   S.id=e.id;
-  // Guardar datos completos del emisor en estado
+  // Persistir el emisor activo en localStorage para sobrevivir recargas
+  try{localStorage.setItem('dtecore_emisor_id',e.id);localStorage.setItem('dtecore_emisor_rut',e.rut);}catch(ex){}
   S.emisor={
     rut: e.rut||'',
     razon_social: e.razon_social||'',
