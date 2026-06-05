@@ -540,6 +540,10 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
         <div class="f"><label>Ciudad</label><input id="e_ciudad" type="text" placeholder="Santiago"></div>
         <div class="f"><label>Teléfono (opcional)</label><input id="e_tel" type="text" placeholder="+56 2 1234 5678"></div>
         <div class="f"><label>Ambiente</label><select id="e_amb"><option value="certificacion">Certificación (maullin)</option><option value="produccion">Producción (palena)</option></select></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+              <div><label style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase">N° Resolución SII</label><input type="text" id="e_nro_resol" placeholder="Ej: 99" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px"><small style="color:#94a3b8;font-size:10px">Resolución que autoriza como emisor DTE</small></div>
+              <div><label style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase">Fecha Resolución SII</label><input type="text" id="e_fch_resol" placeholder="YYYY-MM-DD" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px"><small style="color:#94a3b8;font-size:10px">Formato: 2014-10-21</small></div>
+            </div>
       </div>
       <div class="sec-lbl">Actividades Económicas (ACTECO)</div>
       <p style="font-size:12px;color:#64748b;margin-bottom:12px">Código y descripción según el SII. El primero es el principal.</p>
@@ -1108,6 +1112,8 @@ async function cargarEmisor(e){
   document.getElementById('e_ciudad').value=e.ciudad||'';
   document.getElementById('e_tel').value=e.telefono||'';
   document.getElementById('e_amb').value=e.ambiente||'certificacion';
+  document.getElementById('e_nro_resol').value=e.nro_resolucion||'';
+  document.getElementById('e_fch_resol').value=e.fch_resolucion||'';
   if(e.acteco){document.getElementById('ac_cod_0').value=e.acteco;}
   done(1,'✓ cargado');unlock(2);unlock(3);
   await cargarCert(e.id);
@@ -1186,7 +1192,7 @@ async function crearEmisor(){
   if(!vRut(rut)){res(1,false,'RUT inválido');return;}
   const actecos=getActeco();
   const acteco_principal=actecos.length>0?actecos[0].cod:null;
-  const body={rut:rutSII(rut),razon_social:document.getElementById('e_rs').value,giro:document.getElementById('e_giro').value,direccion:document.getElementById('e_dir').value,comuna:document.getElementById('e_comuna').value,ciudad:document.getElementById('e_ciudad').value,telefono:document.getElementById('e_tel').value||null,ambiente:document.getElementById('e_amb').value,acteco:acteco_principal};
+  const body={rut:rutSII(rut),razon_social:document.getElementById('e_rs').value,giro:document.getElementById('e_giro').value,direccion:document.getElementById('e_dir').value,comuna:document.getElementById('e_comuna').value,ciudad:document.getElementById('e_ciudad').value,telefono:document.getElementById('e_tel').value||null,ambiente:document.getElementById('e_amb').value,acteco:acteco_principal,nro_resolucion:document.getElementById('e_nro_resol').value||'0',fch_resolucion:document.getElementById('e_fch_resol').value||'2000-01-01'};
   for(const[k,v]of Object.entries(body)){if(!v&&k!=='telefono'&&k!=='acteco'){res(1,false,'Campo requerido: '+k);return;}}
   try{
     const d=await api('/v1/emisores/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
