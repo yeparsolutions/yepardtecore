@@ -172,7 +172,11 @@ async def emitir_dte(
             )).scalar_one_or_none()
 
             if cert:
-                sender = SIISender(ambiente=emisor.ambiente or "certificacion")
+                sender = SIISender(
+                    ambiente=emisor.ambiente or "certificacion",
+                    nro_resol=emisor.nro_resolucion or "0",
+                    fch_resol=emisor.fch_resolucion or "2000-01-01",
+                )
                 rut_enviador = cert.rut_firmante or emisor.rut
                 from app.services.firma_digital import FirmaDigital
                 firma_svc = FirmaDigital(
@@ -234,7 +238,11 @@ async def estado_envio(
     if not cert:
         raise HTTPException(400, "No hay certificado configurado")
 
-    sender = SIISender(ambiente=emisor.ambiente or "certificacion")
+    sender = SIISender(
+        ambiente=emisor.ambiente or "certificacion",
+        nro_resol=emisor.nro_resolucion or "0",
+        fch_resol=emisor.fch_resolucion or "2000-01-01",
+    )
     try:
         resultado = await sender.consultar_estado(
             track_id=track_id,
