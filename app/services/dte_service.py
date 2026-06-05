@@ -1,7 +1,8 @@
-# v3-fix-forzar-monto-cero
+# v4-fix-ambiente-produccion
 # app/services/dte_service.py.
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from datetime import date
 
 from app.models.dte    import DTE, ItemDTE as ItemDTEModel
@@ -30,10 +31,13 @@ class DTEService:
         self.caf_service = CAFService(db)
 
     async def emitir(self, emisor_id: int, datos: dict, auto_enviar: bool = True) -> dict:
-        # 1. Validar emisor
-        emisor = await self.db.get(Emisor, emisor_id)
+        # 1. Validar emisor — usar select() para evitar caché del identity map
+        result = await self.db.execute(select(Emisor).where(Emisor.id == emisor_id))
+        emisor = result.scalar_one_or_none()
         if not emisor:
             raise ValueError("Emisor no encontrado")
+
+        logger.info(f"[DTE] emisor={emisor.rut} ambiente={emisor.ambiente}")
 
         cert = emisor.certificado_activo
         if not cert or not cert.certificado_p12:
@@ -56,22 +60,19 @@ class DTEService:
 
         # 4. Firma digital — usa AppDTE para timbre + firma XMLDSig
         try:
-            # Pasar ambiente del emisor para usar la URL AppDTE correcta
             firma = FirmaDigital(
                 cert.certificado_p12,
                 cert.certificado_password or "",
                 ambiente=emisor.ambiente or "certificacion",
             )
 
-            # it1_nombre: primer item del documento (va en el TED)
             it1 = input_dte.items[0].nombre if input_dte.items else "PRODUCTO"
 
-            # await porque firmar_dte ahora llama a la API de AppDTE (async)
             xml_firmado_bytes = await firma.firmar_dte(
                 xml_bytes     = xml_sin_firma,
                 folio         = folio,
                 tipo_dte      = tipo_dte,
-                xml_caf       = caf.xml_caf,           # CAF para el timbre TED
+                xml_caf       = caf.xml_caf,
                 fecha_emision = input_dte.fecha_emision.isoformat(),
                 rut_emisor    = emisor.rut,
                 monto_total   = builder.monto_total,
@@ -120,7 +121,7 @@ class DTEService:
             "folio":       folio,
             "status":      "success",
             "xml_firmado": xml_firmado_str,
-            "monto_total": builder.monto_total,   # requerido por certificacion_facturas.py
+            "monto_total": builder.monto_total,
             "monto_neto":  builder.monto_neto,
             "monto_iva":   builder.monto_iva,
         }
@@ -128,7 +129,6 @@ class DTEService:
     def _construir_input(self, datos: dict, folio: int, emisor: Emisor) -> InputDTE:
         r_data = datos.get("receptor", {})
 
-        # Items — usar ItemDTE (nombre correcto en xml_builder)
         items_input = [
             ItemDTE(
                 nombre          = i["nombre"],
@@ -142,8 +142,6 @@ class DTEService:
             for i in datos.get("items", [])
         ]
 
-        # Referencias — convertir dicts a ReferenciaDTE
-        # tipo_doc_ref puede ser int (33, 61...) o string ("SET")
         refs_data = datos.get("referencias", [])
         referencias = [
             ReferenciaDTE(
@@ -156,11 +154,6 @@ class DTEService:
             for r in refs_data
         ]
 
-        # forzar_monto_cero cuando:
-        # 1. El caller lo pide explícitamente, O
-        # 2. NC/ND sin ítems (sin_items), O
-        # 3. NC/ND con CodRef=2 en alguna referencia (corrige giro/razón social)
-        #    → en este caso el XML NO debe llevar <Detalle> (Fix 2 xml_builder)
         es_nota = datos["tipo_dte"] in (56, 61)
         sin_items = len(datos.get("items", [])) == 0
         tiene_codref2 = es_nota and any(
@@ -205,11 +198,6 @@ class DTEService:
         )
 
     def _construir_input_boleta(self, datos: dict, folio: int, emisor: Emisor) -> InputBoleta:
-        """
-        Construye el InputBoleta para XMLBuilderBoleta (tipos 39 y 41).
-        Los precios en datos["items"] ya deben venir en NETO (sin IVA).
-        La conversión precio_con_iva → neto se hace en certificacion_boletas.py.
-        """
         r_data = datos.get("receptor", {})
 
         items_input = [
