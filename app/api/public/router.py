@@ -210,6 +210,7 @@ async def emitir_dte(
         "fecha":        fecha,
         "receptor":     datos.receptor.nombre,
         "xml_firmado":  doc.get("xml_firmado"),
+        "ambiente":     emisor.ambiente or "certificacion",
     }
 
 
