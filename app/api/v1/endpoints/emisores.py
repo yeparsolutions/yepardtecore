@@ -54,17 +54,22 @@ async def crear_emisor(datos: EmisorCrear, db: AsyncSession = Depends(get_db)):
     Genera automáticamente una API key única para que el emisor
     pueda autenticarse al llamar a la API.
     """
-    # Verificar que el RUT no esté ya registrado
+    # Si ya existe el emisor, actualizar sus datos
     resultado = await db.execute(select(Emisor).where(Emisor.rut == datos.rut))
     existente = resultado.scalar_one_or_none()
     if existente:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Ya existe un emisor con RUT {datos.rut}"
-        )
+        existente.razon_social = datos.razon_social
+        existente.giro         = datos.giro
+        existente.direccion    = datos.direccion
+        existente.comuna       = datos.comuna
+        existente.ciudad       = datos.ciudad
+        existente.telefono     = datos.telefono
+        existente.ambiente     = datos.ambiente
+        existente.acteco       = datos.acteco
+        await db.flush()
+        return existente
 
     # Generar API key única (64 caracteres hex)
-    # Analogia: es la llave de la caja fuerte — única, secreta, intransferible
     api_key = "yek_" + secrets.token_hex(30)  # yek = Yepar Key
 
     # Crear el emisor
@@ -82,7 +87,7 @@ async def crear_emisor(datos: EmisorCrear, db: AsyncSession = Depends(get_db)):
     )
 
     db.add(emisor)
-    await db.flush()  # Obtiene el ID sin hacer commit todavía
+    await db.flush()
 
     return emisor
 
