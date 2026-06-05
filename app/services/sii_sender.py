@@ -32,9 +32,13 @@ TIPOS_BOLETA = {39, 41}
 
 class SIISender:
 
-    def __init__(self, ambiente: str = "certificacion"):
+    def __init__(self, ambiente: str = "certificacion",
+                 nro_resol: str = "99",
+                 fch_resol: str = "2014-10-21"):
         self.ambiente   = ambiente
         self.url_upload = SII_UPLOAD_CERT if ambiente == "certificacion" else SII_UPLOAD_PROD
+        self.nro_resol  = nro_resol
+        self.fch_resol  = fch_resol
 
     @staticmethod
     def limpiar_rut(rut: str) -> str:
