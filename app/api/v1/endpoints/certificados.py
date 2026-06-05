@@ -60,6 +60,9 @@ async def subir_certificado(
     # 5. Mapeo de columnas según tu base de datos Postgres
     cert_db.certificado_p12 = p12_bytes
     cert_db.certificado_password = password
+    # Usar el mismo certificado para autenticación al SII
+    cert_db.certificado_auth_p12 = p12_bytes
+    cert_db.certificado_auth_password = password
     cert_db.rut_firmante = rut_cert
     cert_db.nombre_firmante = nombre_cert
     cert_db.fecha_emision = certificate.not_valid_before_utc
