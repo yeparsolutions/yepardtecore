@@ -311,7 +311,12 @@ async def generar_cof(
 
     # 5. Enviar al SII si se solicita
     if body.enviar_sii:
-        sender  = SIISender(ambiente=emisor.ambiente or 'certificacion')
+        nro_resol, fch_resol = emisor.get_resolucion(emisor.ambiente or 'certificacion')
+    sender = SIISender(
+        ambiente  = emisor.ambiente or 'certificacion',
+        fch_resol = fch_resol,
+        nro_resol = nro_resol,
+    )
         token_p12 = bytes(cert.certificado_auth_p12 or cert.certificado_p12)
         token_pwd = cert.certificado_auth_password or cert.certificado_password
 
