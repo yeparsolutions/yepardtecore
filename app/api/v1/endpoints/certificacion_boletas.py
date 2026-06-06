@@ -253,7 +253,14 @@ async def generar_xml_boletas(
     # construir_sobre llama a firma_service.firmar_sobre que:
     #   - Firma cada DTE in-tree con Python
     #   - Firma el SetDTE con Java
-    sender       = SIISender()
+    # Resolución dinámica — leída desde el emisor según su ambiente
+    # Analogía: cada local usa su propio número de patente, no uno genérico
+    nro_resol, fch_resol = emisor.get_resolucion(emisor.ambiente or 'certificacion')
+    sender = SIISender(
+        ambiente  = emisor.ambiente or 'certificacion',
+        fch_resol = fch_resol,
+        nro_resol = nro_resol,
+    )
     rut_enviador = cert.rut_firmante or firma.rut_certificado or emisor.rut
 
     sobre_firmado = await sender.construir_sobre(
