@@ -402,7 +402,12 @@ async def enviar_xml_directo(
         password=cert.certificado_password,
     )
     rut_enviador = cert.rut_firmante or firma.rut_certificado or emisor.rut
-    sender = SIISender(ambiente=emisor.ambiente or "certificacion")
+    nro_resol, fch_resol = emisor.get_resolucion(emisor.ambiente or "certificacion")
+    sender = SIISender(
+        ambiente  = emisor.ambiente or "certificacion",
+        fch_resol = fch_resol,
+        nro_resol = nro_resol,
+    )
 
     resultado = await sender.enviar_sobre(
         sobre_xml=body.xml_sobre,
@@ -490,7 +495,12 @@ async def enviar_set_al_sii(
         password=cert.certificado_password,
     )
     rut_enviador = cert.rut_firmante or firma.rut_certificado or emisor.rut
-    sender = SIISender(ambiente=emisor.ambiente or "certificacion")
+    nro_resol, fch_resol = emisor.get_resolucion(emisor.ambiente or "certificacion")
+    sender = SIISender(
+        ambiente  = emisor.ambiente or "certificacion",
+        fch_resol = fch_resol,
+        nro_resol = nro_resol,
+    )
 
     try:
         sobre_xml = await sender.construir_sobre(
