@@ -639,22 +639,119 @@ html.prod body::before{background-image:linear-gradient(rgba(16,185,129,.03) 1px
 
       <!-- Info del emisor cargado -->
       <div id="emisor_loaded_info" style="display:none;margin-top:16px;
-        background:var(--bg2);border:1px solid var(--border2);border-radius:10px;padding:14px 16px">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+        background:var(--bg2);border:1px solid var(--border2);border-radius:10px;overflow:hidden">
+
+        <!-- Header emisor -->
+        <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)">
           <div style="font-size:22px">🏢</div>
           <div style="flex:1">
             <div style="font-weight:600;font-size:15px" id="eli_nombre"></div>
             <div style="font-family:'JetBrains Mono',monospace;font-size:12px;
               color:var(--amb-accent);margin-top:2px" id="eli_rut"></div>
           </div>
+          <button class="btn bg" onclick="toggleEditarEmisor()"
+            id="btn_editar_emisor"
+            style="font-size:12px;padding:6px 14px">
+            ✏️ Editar datos
+          </button>
           <button class="eb-btn" onclick="cambiarEmisor()">Cambiar emisor</button>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+
+        <!-- Info resumida -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;padding:12px 16px">
           <div style="color:var(--text3)">Giro: <span style="color:var(--text)" id="eli_giro"></span></div>
           <div style="color:var(--text3)">Dirección: <span style="color:var(--text)" id="eli_dir"></span></div>
           <div style="color:var(--text3)">Ambiente activo: <span id="eli_amb"
             style="font-weight:600;color:var(--amb-accent)"></span></div>
           <div style="color:var(--text3)">Resolución: <span style="color:var(--text)" id="eli_resol"></span></div>
+        </div>
+
+        <!-- Panel de edición colapsable -->
+        <div id="panel_editar_emisor" style="display:none;padding:14px 16px;
+          border-top:1px solid var(--border);background:var(--bg3)">
+
+          <div style="font-size:11px;font-weight:600;color:var(--amb-accent);
+            text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px">
+            ✏️ Editar datos del emisor
+          </div>
+
+          <div class="fg" style="margin-bottom:14px">
+            <div class="f">
+              <label>Razón Social</label>
+              <input id="edit_rs" type="text">
+            </div>
+            <div class="f">
+              <label>Giro Comercial</label>
+              <input id="edit_giro" type="text">
+            </div>
+            <div class="f" style="grid-column:1/-1">
+              <label>Dirección</label>
+              <input id="edit_dir" type="text">
+            </div>
+            <div class="f">
+              <label>Comuna</label>
+              <input id="edit_comuna" type="text">
+            </div>
+            <div class="f">
+              <label>Ciudad</label>
+              <input id="edit_ciudad" type="text">
+            </div>
+            <div class="f">
+              <label>Teléfono</label>
+              <input id="edit_tel" type="text">
+            </div>
+            <div class="f">
+              <label>Acteco</label>
+              <input id="edit_acteco" type="text" class="mono">
+            </div>
+          </div>
+
+          <!-- Resoluciones por ambiente -->
+          <div style="font-size:11px;font-weight:600;color:var(--text3);
+            text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">
+            Resoluciones SII
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+            <div style="background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.2);
+              border-radius:8px;padding:10px 12px">
+              <div style="font-size:11px;color:#60a5fa;font-weight:600;margin-bottom:8px">
+                🧪 Certificación
+              </div>
+              <div class="f" style="margin-bottom:8px">
+                <label>N° Resolución</label>
+                <input id="edit_nro_cert" type="text" class="mono" placeholder="0">
+              </div>
+              <div class="f">
+                <label>Fecha Resolución</label>
+                <input id="edit_fch_cert" type="text" class="mono" placeholder="YYYY-MM-DD">
+              </div>
+            </div>
+            <div style="background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.2);
+              border-radius:8px;padding:10px 12px">
+              <div style="font-size:11px;color:#34d399;font-weight:600;margin-bottom:8px">
+                🚀 Producción
+              </div>
+              <div class="f" style="margin-bottom:8px">
+                <label>N° Resolución</label>
+                <input id="edit_nro_prod" type="text" class="mono" placeholder="99">
+              </div>
+              <div class="f">
+                <label>Fecha Resolución</label>
+                <input id="edit_fch_prod" type="text" class="mono" placeholder="YYYY-MM-DD">
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:10px">
+            <button class="btn bp" onclick="guardarCambiosEmisor()" style="padding:10px 24px">
+              💾 Guardar cambios
+            </button>
+            <button class="btn bg" onclick="toggleEditarEmisor()" style="padding:10px 18px">
+              Cancelar
+            </button>
+          </div>
+          <div id="edit_emisor_result" style="display:none;margin-top:10px;font-size:12px;
+            padding:8px 12px;border-radius:8px"></div>
         </div>
       </div>
 
@@ -1119,6 +1216,14 @@ function setAmbiente(amb){
   // Persistir
   try{ localStorage.setItem('dtecore_ambiente', amb); }catch{}
 
+  // Mostrar/ocultar pasos según ambiente
+  // Certificación: pasos 3 (set SII) y 5 (generar XML) visibles
+  // Producción: esos pasos no aplican — cada emisor usa su propio flujo
+  const c3 = document.getElementById('c3');
+  const c5 = document.getElementById('c5');
+  if(c3) c3.style.display = esCert ? '' : 'none';
+  if(c5) c5.style.display = esCert ? '' : 'none';
+
   // Si hay emisor cargado: recargar CAFs del nuevo ambiente
   if(S.id){
     cargarCAFs(S.id, amb);
@@ -1131,6 +1236,96 @@ function setAmbiente(amb){
 
 function getAmbiente(){
   return document.getElementById('e_amb')?.value || 'certificacion';
+}
+
+function toggleEditarEmisor(){
+  const panel = document.getElementById('panel_editar_emisor');
+  const btn   = document.getElementById('btn_editar_emisor');
+  if(!panel) return;
+  const abierto = panel.style.display !== 'none';
+  panel.style.display = abierto ? 'none' : 'block';
+  btn.textContent = abierto ? '✏️ Editar datos' : '✖ Cerrar edición';
+  if(!abierto && S._emisorFull){
+    // Pre-llenar campos con datos actuales
+    const e = S._emisorFull;
+    const _v = (id, val) => { const el=document.getElementById(id); if(el) el.value=val||''; };
+    _v('edit_rs',       e.razon_social);
+    _v('edit_giro',     e.giro);
+    _v('edit_dir',      e.direccion);
+    _v('edit_comuna',   e.comuna);
+    _v('edit_ciudad',   e.ciudad);
+    _v('edit_tel',      e.telefono);
+    _v('edit_acteco',   e.acteco);
+    _v('edit_nro_cert', e.nro_resol_cert||e.nro_resolucion||'0');
+    _v('edit_fch_cert', e.fch_resol_cert||e.fch_resolucion||'');
+    _v('edit_nro_prod', e.nro_resol_prod||'');
+    _v('edit_fch_prod', e.fch_resol_prod||'');
+    // Ocultar result anterior
+    const res = document.getElementById('edit_emisor_result');
+    if(res) res.style.display='none';
+  }
+}
+
+async function guardarCambiosEmisor(){
+  if(!S.id){ log('Carga el emisor primero','warn'); return; }
+  const _g = id => (document.getElementById(id)?.value||'').trim();
+  const body = {
+    razon_social: _g('edit_rs'),
+    giro:         _g('edit_giro'),
+    direccion:    _g('edit_dir'),
+    comuna:       _g('edit_comuna'),
+    ciudad:       _g('edit_ciudad'),
+    telefono:     _g('edit_tel') || null,
+    acteco:       _g('edit_acteco') || null,
+  };
+  const resBox = document.getElementById('edit_emisor_result');
+  const btn = document.querySelector('[onclick="guardarCambiosEmisor()"]');
+  if(btn){ btn.textContent='⏳ Guardando...'; btn.disabled=true; }
+  try{
+    // Actualizar datos generales del emisor
+    const d = await api('/v1/emisores/'+S.id, {
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    // Actualizar resoluciones por ambiente
+    const resol = {
+      nro_resol_cert: _g('edit_nro_cert'),
+      fch_resol_cert: _g('edit_fch_cert'),
+      nro_resol_prod: _g('edit_nro_prod'),
+      fch_resol_prod: _g('edit_fch_prod'),
+    };
+    await api('/v1/emisores/'+S.id+'/resolucion', {
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(resol),
+    });
+    // Actualizar estado local
+    Object.assign(S._emisorFull, body, resol);
+    Object.assign(S.emisor, body);
+    // Refrescar info visible
+    const eli_giro = document.getElementById('eli_giro');
+    const eli_dir  = document.getElementById('eli_dir');
+    const eli_nombre = document.getElementById('eli_nombre');
+    if(eli_giro) eli_giro.textContent = (body.giro||'').slice(0,40);
+    if(eli_dir)  eli_dir.textContent  = body.direccion||'';
+    if(eli_nombre) eli_nombre.textContent = body.razon_social||'';
+    actualizarInfoEmisor();
+    if(resBox){
+      resBox.style.cssText='display:block;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.25);color:#10b981;padding:8px 12px;border-radius:8px;font-size:12px;margin-top:10px';
+      resBox.textContent='✓ Datos actualizados correctamente';
+    }
+    log('Emisor actualizado','ok');
+  }catch(err){
+    const msg = err?.data?.detail || String(err);
+    if(resBox){
+      resBox.style.cssText='display:block;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);color:#ef4444;padding:8px 12px;border-radius:8px;font-size:12px;margin-top:10px';
+      resBox.textContent='❌ '+msg;
+    }
+    log('Error actualizando emisor: '+msg,'err');
+  }finally{
+    if(btn){ btn.textContent='💾 Guardar cambios'; btn.disabled=false; }
+  }
 }
 
 function actualizarInfoEmisor(){
