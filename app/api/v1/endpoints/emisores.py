@@ -54,24 +54,17 @@ async def crear_emisor(datos: EmisorCrear, db: AsyncSession = Depends(get_db)):
     Genera automáticamente una API key única para que el emisor
     pueda autenticarse al llamar a la API.
     """
-    # Si ya existe el emisor, actualizar sus datos
+    # Verificar que el RUT no esté ya registrado
     resultado = await db.execute(select(Emisor).where(Emisor.rut == datos.rut))
     existente = resultado.scalar_one_or_none()
     if existente:
-        existente.razon_social = datos.razon_social
-        existente.giro         = datos.giro
-        existente.direccion    = datos.direccion
-        existente.comuna       = datos.comuna
-        existente.ciudad       = datos.ciudad
-        existente.telefono     = datos.telefono
-        # El ambiente NO se sobreescribe en updates — solo se cambia
-        # explícitamente desde el panel de administración (endpoint dedicado)
-        # Esto evita que un reload/deploy resetee produccion → certificacion
-        existente.acteco       = datos.acteco
-        await db.flush()
-        return existente
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Ya existe un emisor con RUT {datos.rut}"
+        )
 
     # Generar API key única (64 caracteres hex)
+    # Analogia: es la llave de la caja fuerte — única, secreta, intransferible
     api_key = "yek_" + secrets.token_hex(30)  # yek = Yepar Key
 
     # Crear el emisor
@@ -89,7 +82,7 @@ async def crear_emisor(datos: EmisorCrear, db: AsyncSession = Depends(get_db)):
     )
 
     db.add(emisor)
-    await db.flush()
+    await db.flush()  # Obtiene el ID sin hacer commit todavía
 
     return emisor
 
@@ -144,4 +137,51 @@ async def folios_disponibles(emisor_id: int, db: AsyncSession = Depends(get_db))
             }
             for c in cafs
         ]
+    }
+
+
+# ── Actualizar resoluciones SII ───────────────────────────────────────────────
+class ResolucionUpdate(BaseModel):
+    nro_resol_cert: str | None = None  # Número resolución certificación (ej: "0")
+    fch_resol_cert: str | None = None  # Fecha resolución certificación (ej: "2026-04-19")
+    nro_resol_prod: str | None = None  # Número resolución producción (ej: "99")
+    fch_resol_prod: str | None = None  # Fecha resolución producción (ej: "2014-10-21")
+
+
+@router.put("/{emisor_id}/resolucion")
+async def actualizar_resolucion(
+    emisor_id: int,
+    datos: ResolucionUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Actualiza los datos de resolución SII del emisor para cada ambiente.
+    Estos datos van en la carátula del EnvioDTE — son distintos por ambiente.
+    Analogía: cada local (prueba/real) tiene su propio número de patente.
+    """
+    emisor = await db.get(Emisor, emisor_id)
+    if not emisor:
+        raise HTTPException(404, "Emisor no encontrado")
+
+    if datos.nro_resol_cert is not None:
+        emisor.nro_resol_cert = datos.nro_resol_cert
+    if datos.fch_resol_cert is not None:
+        emisor.fch_resol_cert = datos.fch_resol_cert
+    if datos.nro_resol_prod is not None:
+        emisor.nro_resol_prod = datos.nro_resol_prod
+    if datos.fch_resol_prod is not None:
+        emisor.fch_resol_prod = datos.fch_resol_prod
+
+    await db.commit()
+    return {
+        "ok": True,
+        "emisor_id": emisor_id,
+        "certificacion": {
+            "nro_resol": emisor.nro_resol_cert,
+            "fch_resol": emisor.fch_resol_cert,
+        },
+        "produccion": {
+            "nro_resol": emisor.nro_resol_prod,
+            "fch_resol": emisor.fch_resol_prod,
+        },
     }
