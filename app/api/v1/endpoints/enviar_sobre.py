@@ -47,7 +47,12 @@ async def enviar_sobre_directo(
         password=cert.certificado_password,
     )
     rut_enviador = cert.rut_firmante or firma.rut_certificado or emisor.rut
-    sender = SIISender(ambiente=emisor.ambiente or "certificacion")
+    nro_resol, fch_resol = emisor.get_resolucion(emisor.ambiente or "certificacion")
+    sender = SIISender(
+        ambiente  = emisor.ambiente or "certificacion",
+        fch_resol = fch_resol,
+        nro_resol = nro_resol,
+    )
 
     # Decodificar XML: preferir base64 (preserva ISO-8859-1), fallback a string
     import base64
