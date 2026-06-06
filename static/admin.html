@@ -1302,14 +1302,14 @@ async function cargarEmisor(e){
   document.getElementById('eb_amb').textContent='Ambiente: '+e.ambiente+(e.activo?' · Activo':' · Inactivo');
   document.getElementById('ebanner').classList.add('show');
   document.getElementById('e_rut').value=e.rut;
-  document.getElementById('e_rs').value=e.razon_social;
-  document.getElementById('e_giro').value=e.giro||'';
-  document.getElementById('e_dir').value=e.direccion||'';
-  document.getElementById('e_comuna').value=e.comuna||'';
-  document.getElementById('e_ciudad').value=e.ciudad||'';
-  document.getElementById('e_tel').value=e.telefono||'';
+  const _ers=document.getElementById('e_rs');if(_ers)_ers.value=e.razon_social;
+  const _egiro=document.getElementById('e_giro');if(_egiro)_egiro.value=e.giro||'';
+  const _edir=document.getElementById('e_dir');if(_edir)_edir.value=e.direccion||'';
+  const _ecomuna=document.getElementById('e_comuna');if(_ecomuna)_ecomuna.value=e.comuna||'';
+  const _eciudad=document.getElementById('e_ciudad');if(_eciudad)_eciudad.value=e.ciudad||'';
+  const _etel=document.getElementById('e_tel');if(_etel)_etel.value=e.telefono||'';
   document.getElementById('e_amb').value=e.ambiente||'certificacion';
-  if(e.acteco){document.getElementById('ac_cod_0').value=e.acteco;}
+  const _ac0=document.getElementById('ac_cod_0');if(_ac0&&e.acteco)_ac0.value=e.acteco;
   done(1,'✓ cargado');unlock(2);unlock(3);
   await cargarCert(e.id);
   await cargarCAFs(e.id,e.ambiente);
