@@ -626,7 +626,7 @@ html.prod body::before{background-image:linear-gradient(rgba(16,185,129,.03) 1px
       <div style="display:flex;gap:10px;align-items:flex-end">
         <div class="f" style="flex:1">
           <label>RUT Empresa</label>
-          <input id="buscar_rut" class="mono" type="text" placeholder="78377021-0"
+          <input id="buscar_rut" class="mono" type="text" placeholder="Ej: 12345678-9"
             oninput="onRut(this,'hr_b')"
             onkeydown="if(event.key==='Enter')buscarEmisor()">
           <div class="hint" id="hr_b">RUT sin puntos con guión</div>
@@ -671,7 +671,8 @@ html.prod body::before{background-image:linear-gradient(rgba(16,185,129,.03) 1px
         <option value="produccion">produccion</option>
       </select>
 
-      <div class="result" id="r1"><div class="rlbl" id="r1l"></div><div class="rbody" id="r1c"></div></div>
+      <div id="emisor_error_box" style="display:none;color:#ef4444;font-size:13px;margin-top:10px;padding:8px 12px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:8px"></div>
+      <div id="r1" style="display:none"></div>
     </div>
   </div>
 
@@ -1138,8 +1139,8 @@ function actualizarInfoEmisor(){
   const e   = S._emisorFull;
   const amb = getAmbiente();
   const esCert = amb === 'certificacion';
-  const nro = esCert ? (e.nro_resol_cert||e.nro_resolucion||'0') : (e.nro_resol_prod||e.nro_resolucion||'?');
-  const fch = esCert ? (e.fch_resol_cert||e.fch_resolucion||'—') : (e.fch_resol_prod||e.fch_resolucion||'—');
+  const nro = esCert ? (e.nro_resol_cert||'0') : (e.nro_resol_prod||'?');
+  const fch = esCert ? (e.fch_resol_cert||'—') : (e.fch_resol_prod||'—');
   const el  = document.getElementById('eli_resol');
   if(el) el.textContent = 'N°' + nro + ' / ' + fch;
   const elAmb = document.getElementById('eli_amb');
@@ -1337,18 +1338,34 @@ async function cargarCAFs(eid,amb){
 async function buscarEmisor(){
   const rut=rutSII(document.getElementById('buscar_rut').value);
   if(!rut){log('Ingresa un RUT','warn');return;}
+  const btn = document.querySelector('#c1 .btn.bp');
+  if(btn){ btn.textContent='⏳ Cargando...'; btn.disabled=true; }
   try{
     const es=await api('/v1/emisores/');
     const found=es.find(e=>e.rut===rut||e.rut.replace(/\./g,'')===rut);
     if(found){
-      // Sincronizar ambiente del emisor con el toggle activo
+      // Usar el ambiente del toggle, no el guardado en BD
       const ambActual = getAmbiente();
-      found.ambiente = ambActual; // usar el ambiente del toggle, no el de la BD
+      found.ambiente = ambActual;
       await cargarEmisor(found);
-      res(1,true,'Emisor cargado\nID: '+found.id+'\n'+found.razon_social+'\nAmbiente: '+ambActual.toUpperCase());
+      // Avanzar pasos automáticamente
+      done(1,'✓ cargado');
+      unlock(2);
+      unlock(3);
+      log('Emisor: '+found.razon_social+' · Ambiente: '+ambActual.toUpperCase(),'ok');
+    } else {
+      log('Emisor no encontrado: '+rut,'warn');
+      // Mostrar error inline sin usar res()
+      const errBox = document.getElementById('emisor_error_box');
+      if(errBox){ errBox.textContent='❌ No encontrado: '+rut; errBox.style.display='block'; }
     }
-    else{res(1,false,'No encontrado: '+rut);log('Emisor no encontrado','warn');}
-  }catch(e){res(1,false,e.data?.detail||JSON.stringify(e.data));}
+  }catch(e){
+    log('Error buscando emisor: '+(e.data?.detail||JSON.stringify(e.data)),'err');
+    const errBox = document.getElementById('emisor_error_box');
+    if(errBox){ errBox.textContent='❌ Error: '+(e.data?.detail||'Sin conexión'); errBox.style.display='block'; }
+  }finally{
+    if(btn){ btn.textContent='🔍 Cargar emisor'; btn.disabled=false; }
+  }
 }
 function cambiarEmisor(){
   S.id=null;S.cert=false;S.cafs=[];S.xmlBlob=null;S.setData=null;S.casoData=[];S.casoValidado=[];S.setsDetectados=[];S.setActivo=0;S.cafsDisponibles={};S.emisor={rut:'',razon_social:'',giro:'',telefono:'',acteco:'',direccion:'',comuna:'',ciudad:''};S.receptores={};
