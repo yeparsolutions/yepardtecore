@@ -450,6 +450,81 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
 ::-webkit-scrollbar-thumb{background:var(--scrollbar);border-radius:2px}
 
 @media(max-width:768px){.main{grid-template-columns:1fr}.conpanel{position:static}.fg{grid-template-columns:1fr}.totales-row{grid-template-columns:1fr 1fr}}
+
+/* ══ TOGGLE AMBIENTE ═══════════════════════════════════════════ */
+:root{
+  --amb-accent:   #3b82f6;
+  --amb-accent2:  #2563eb;
+  --amb-glow:     rgba(59,130,246,.18);
+  --amb-badge-bg: rgba(59,130,246,.15);
+  --amb-badge-cl: #60a5fa;
+  --amb-grid:     rgba(59,130,246,.025);
+}
+html.prod{
+  --amb-accent:   #10b981;
+  --amb-accent2:  #0ea572;
+  --amb-glow:     rgba(16,185,129,.18);
+  --amb-badge-bg: rgba(16,185,129,.15);
+  --amb-badge-cl: #34d399;
+  --amb-grid:     rgba(16,185,129,.025);
+  --accent:       #10b981;
+  --accent2:      #0ea572;
+}
+html.cert{ --accent:#3b82f6; --accent2:#2563eb; }
+
+/* Banner de ambiente — siempre visible bajo la nav */
+.amb-banner{
+  position:sticky;top:58px;z-index:90;
+  display:flex;align-items:center;gap:14px;
+  padding:8px 24px;border-bottom:1px solid var(--border);
+  background:var(--nav-bg);backdrop-filter:blur(12px);
+  transition:background .3s;
+}
+.amb-indicator{
+  display:flex;align-items:center;gap:8px;
+  font-family:'JetBrains Mono',monospace;font-size:12px;
+  font-weight:600;color:var(--amb-accent);
+}
+.amb-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--amb-accent);
+  box-shadow:0 0 8px var(--amb-accent);
+  animation:ambPulse 2s infinite;
+}
+@keyframes ambPulse{0%,100%{opacity:1}50%{opacity:.5}}
+.amb-badge{
+  font-size:11px;padding:2px 10px;border-radius:20px;font-weight:700;letter-spacing:.5px;
+  background:var(--amb-badge-bg);color:var(--amb-badge-cl);
+  border:1px solid var(--amb-accent);
+}
+.amb-url{
+  font-family:'JetBrains Mono',monospace;font-size:11px;
+  color:var(--text3);opacity:.8;
+}
+.amb-toggle{
+  display:flex;align-items:center;gap:0;
+  background:var(--bg2);border:1px solid var(--border2);
+  border-radius:10px;overflow:hidden;margin-left:auto;flex-shrink:0;
+}
+.amb-btn{
+  display:flex;align-items:center;gap:7px;
+  padding:8px 18px;font-size:13px;font-weight:600;
+  cursor:pointer;background:transparent;border:none;
+  color:var(--text3);transition:all .2s;white-space:nowrap;
+  font-family:'Outfit',sans-serif;
+}
+.amb-btn:hover{color:var(--text)}
+.amb-btn.cert-btn.active{
+  background:linear-gradient(135deg,#1e3a5f,#1e40af);
+  color:#93c5fd;border-radius:8px;
+}
+.amb-btn.prod-btn.active{
+  background:linear-gradient(135deg,#064e3b,#065f46);
+  color:#6ee7b7;border-radius:8px;
+}
+/* Grid del body cambia color según ambiente */
+html.cert body::before{background-image:linear-gradient(rgba(59,130,246,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(59,130,246,.03) 1px,transparent 1px);background-size:40px 40px}
+html.prod body::before{background-image:linear-gradient(rgba(16,185,129,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(16,185,129,.03) 1px,transparent 1px);background-size:40px 40px}
 </style>
 </head>
 <body>
@@ -479,6 +554,25 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
   </div>
   <button class="btn bg" onclick="testConn()" style="white-space:nowrap;padding:7px 14px;font-size:13px">Probar conexión</button>
 </nav>
+
+<!-- BANNER AMBIENTE — sticky bajo la nav -->
+<div class="amb-banner" id="ambBanner">
+  <div class="amb-indicator">
+    <div class="amb-dot" id="ambDot"></div>
+    <span id="ambLabel">CERTIFICACIÓN</span>
+  </div>
+  <span class="amb-badge" id="ambBadge">TEST</span>
+  <span class="amb-url" id="ambUrl">maullin.sii.cl</span>
+  <div style="flex:1"></div>
+  <div class="amb-toggle">
+    <button class="amb-btn cert-btn active" id="btnCert" onclick="setAmbiente('certificacion')">
+      🧪 Certificación
+    </button>
+    <button class="amb-btn prod-btn" id="btnProd" onclick="setAmbiente('produccion')">
+      🚀 Producción
+    </button>
+  </div>
+</div>
 
 <!-- MODAL WIZARD -->
 <div class="modal-overlay" id="modalOverlay" onclick="handleOverlayClick(event)">
@@ -516,51 +610,67 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
     <button class="eb-btn" onclick="cambiarEmisor()">Cambiar emisor</button>
   </div>
 
-  <!-- PASO 1: EMISOR -->
+  <!-- PASO 1: EMISOR (solo búsqueda — ambiente controlado por toggle) -->
   <div class="card active" id="c1">
     <div class="ch" onclick="tgl(1)">
-      <div class="sn">1</div><div class="ct">Empresa Emisora</div>
+      <div class="sn">1</div>
+      <div class="ct">Empresa Emisora</div>
       <span class="badge p" id="b1">pendiente</span>
     </div>
     <div class="cb">
-      <div style="margin-bottom:20px;padding-bottom:18px;border-bottom:1px solid rgba(255,255,255,.07)">
-        <p style="font-size:13px;color:#64748b;margin-bottom:12px">¿Ya tienes un emisor registrado? Ingresa su RUT para cargarlo.</p>
-        <div style="display:flex;gap:10px">
-          <div class="f" style="flex:1"><input id="buscar_rut" class="mono" type="text" placeholder="78377021-0" oninput="onRut(this,'hr_b')" onkeydown="if(event.key==='Enter')buscarEmisor()"><div class="hint" id="hr_b">RUT sin puntos con guion</div></div>
-          <button class="btn bg" onclick="buscarEmisor()" style="align-self:flex-start;white-space:nowrap">Cargar desde BD</button>
+      <!-- Buscador por RUT -->
+      <p style="font-size:13px;color:var(--text3);margin-bottom:14px">
+        Busca el emisor por RUT. Los datos se cargarán desde la BD
+        en el ambiente <strong id="amb_hint_label" style="color:var(--amb-accent)">certificación</strong>.
+      </p>
+      <div style="display:flex;gap:10px;align-items:flex-end">
+        <div class="f" style="flex:1">
+          <label>RUT Empresa</label>
+          <input id="buscar_rut" class="mono" type="text" placeholder="78377021-0"
+            oninput="onRut(this,'hr_b')"
+            onkeydown="if(event.key==='Enter')buscarEmisor()">
+          <div class="hint" id="hr_b">RUT sin puntos con guión</div>
+        </div>
+        <button class="btn bp" onclick="buscarEmisor()"
+          style="align-self:flex-start;white-space:nowrap;padding:10px 22px">
+          🔍 Cargar emisor
+        </button>
+      </div>
+
+      <!-- Info del emisor cargado -->
+      <div id="emisor_loaded_info" style="display:none;margin-top:16px;
+        background:var(--bg2);border:1px solid var(--border2);border-radius:10px;padding:14px 16px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+          <div style="font-size:22px">🏢</div>
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:15px" id="eli_nombre"></div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;
+              color:var(--amb-accent);margin-top:2px" id="eli_rut"></div>
+          </div>
+          <button class="eb-btn" onclick="cambiarEmisor()">Cambiar emisor</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+          <div style="color:var(--text3)">Giro: <span style="color:var(--text)" id="eli_giro"></span></div>
+          <div style="color:var(--text3)">Dirección: <span style="color:var(--text)" id="eli_dir"></span></div>
+          <div style="color:var(--text3)">Ambiente activo: <span id="eli_amb"
+            style="font-weight:600;color:var(--amb-accent)"></span></div>
+          <div style="color:var(--text3)">Resolución: <span style="color:var(--text)" id="eli_resol"></span></div>
         </div>
       </div>
-      <p class="sec-lbl" style="margin-top:0">O crear nuevo emisor</p>
-      <div class="fg">
-        <div class="f"><label>RUT Empresa</label><input id="e_rut" class="mono" type="text" placeholder="78.377.021-0" oninput="onRut(this,'hr')"><div class="hint" id="hr">Con o sin puntos</div></div>
-        <div class="f"><label>Razón Social</label><input id="e_rs" type="text" placeholder="Yepar Solutions SpA"></div>
-        <div class="f" style="grid-column:1/-1"><label>Giro Comercial</label><input id="e_giro" type="text" placeholder="Actividades de consultoría de informática"></div>
-        <div class="f" style="grid-column:1/-1"><label>Dirección</label><input id="e_dir" type="text" placeholder="Apoquindo 6410 Of. 1004"></div>
-        <div class="f"><label>Comuna</label><input id="e_comuna" type="text" placeholder="Las Condes"></div>
-        <div class="f"><label>Ciudad</label><input id="e_ciudad" type="text" placeholder="Santiago"></div>
-        <div class="f"><label>Teléfono (opcional)</label><input id="e_tel" type="text" placeholder="+56 2 1234 5678"></div>
-        <div class="f"><label>Ambiente</label><select id="e_amb"><option value="certificacion">Certificación (maullin)</option><option value="produccion">Producción (palena)</option></select></div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
-              <div><label style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase">N° Resolución SII</label><input type="text" id="e_nro_resol" placeholder="Ej: 99" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px"><small style="color:#94a3b8;font-size:10px">Resolución que autoriza como emisor DTE</small></div>
-              <div><label style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase">Fecha Resolución SII</label><input type="text" id="e_fch_resol" placeholder="YYYY-MM-DD" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px"><small style="color:#94a3b8;font-size:10px">Formato: 2014-10-21</small></div>
-            </div>
-      </div>
-      <div class="sec-lbl">Actividades Económicas (ACTECO)</div>
-      <p style="font-size:12px;color:#64748b;margin-bottom:12px">Código y descripción según el SII. El primero es el principal.</p>
-      <div style="display:grid;grid-template-columns:130px 1fr 32px;gap:8px;margin-bottom:6px;">
-        <span style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Código</span>
-        <span style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Descripción</span>
-        <span></span>
-      </div>
-      <div id="actecos">
-        <div class="acteco-row" id="acteco-0">
-          <input type="text" class="mono" placeholder="620200" maxlength="10" id="ac_cod_0" style="border:1px solid rgba(16,185,129,.4)">
-          <input type="text" placeholder="Consultoría de informática..." id="ac_desc_0">
-          <button class="acteco-del" onclick="delActeco(0)" style="opacity:.3;cursor:default">-</button>
-        </div>
-      </div>
-      <button class="btn bg" onclick="addActeco()" style="font-size:12px;padding:6px 14px;margin-top:6px">+ Agregar actividad económica</button>
-      <div class="brow"><button class="btn bp" onclick="crearEmisor()">Crear / Actualizar emisor</button></div>
+
+      <!-- Campos ocultos que usa el resto del código -->
+      <input type="hidden" id="e_rut">
+      <input type="hidden" id="e_rs">
+      <input type="hidden" id="e_giro">
+      <input type="hidden" id="e_dir">
+      <input type="hidden" id="e_comuna">
+      <input type="hidden" id="e_ciudad">
+      <input type="hidden" id="e_tel">
+      <select id="e_amb" style="display:none">
+        <option value="certificacion">certificacion</option>
+        <option value="produccion">produccion</option>
+      </select>
+
       <div class="result" id="r1"><div class="rlbl" id="r1l"></div><div class="rbody" id="r1c"></div></div>
     </div>
   </div>
@@ -803,7 +913,7 @@ td:nth-child(6) .item-input{font-size:14px;font-weight:700;background:var(--bg);
           <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);cursor:pointer">
             <input type="checkbox" id="lw_rectifica" style="accent-color:#f59e0b"
               onchange="document.getElementById('lw_cod_aut_rec_row').style.display=this.checked?'flex':'none'">
-            Modo RECTIFICA (reemplazar libro ya enviado)
+            Modo AJUSTE (reemplazo de libro)
           </label>
           <div id="lw_cod_aut_rec_row" style="display:none;align-items:center;gap:8px;font-size:12px">
             <span style="color:var(--text3)">C&oacute;digo:</span>
@@ -968,6 +1078,73 @@ function setTheme(t){
   document.getElementById('btnLight').classList.toggle('active',t==='light');
   try{localStorage.setItem('ydt_theme',t);}catch{}
 }
+
+/* ══ TOGGLE AMBIENTE ════════════════════════════════════════════
+   Analogía: es como cambiar de sucursal —
+   certificación es el local de ensayo (azul/frío),
+   producción es el local real (verde/cálido).
+   Al cambiar, TODO el sistema se adapta: CAFs, resolución, URL SII.
+════════════════════════════════════════════════════════════════ */
+function setAmbiente(amb){
+  const html = document.documentElement;
+  const esCert = amb === 'certificacion';
+
+  // Clases visuales en <html>
+  html.classList.toggle('cert', esCert);
+  html.classList.toggle('prod', !esCert);
+
+  // Banner
+  document.getElementById('ambLabel').textContent  = esCert ? 'CERTIFICACIÓN' : 'PRODUCCIÓN';
+  document.getElementById('ambBadge').textContent  = esCert ? 'TEST' : 'LIVE';
+  document.getElementById('ambBadge').style.background = esCert
+    ? 'rgba(59,130,246,.15)' : 'rgba(16,185,129,.15)';
+  document.getElementById('ambBadge').style.color  = esCert ? '#60a5fa' : '#34d399';
+  document.getElementById('ambBadge').style.borderColor = esCert ? '#3b82f6' : '#10b981';
+  document.getElementById('ambUrl').textContent    = esCert
+    ? 'maullin.sii.cl' : 'palena.sii.cl';
+
+  // Botones toggle
+  document.getElementById('btnCert').classList.toggle('active', esCert);
+  document.getElementById('btnProd').classList.toggle('active', !esCert);
+
+  // Hint en paso 1
+  const hint = document.getElementById('amb_hint_label');
+  if(hint) hint.textContent = esCert ? 'certificación' : 'producción';
+
+  // Sincronizar el select hidden (lo usa el resto del código)
+  const sel = document.getElementById('e_amb');
+  if(sel) sel.value = amb;
+
+  // Persistir
+  try{ localStorage.setItem('dtecore_ambiente', amb); }catch{}
+
+  // Si hay emisor cargado: recargar CAFs del nuevo ambiente
+  if(S.id){
+    cargarCAFs(S.id, amb);
+    actualizarInfoEmisor();
+    log('Ambiente cambiado a ' + amb.toUpperCase() + ' — CAFs recargados', 'info');
+  } else {
+    log('Ambiente: ' + amb.toUpperCase(), 'info');
+  }
+}
+
+function getAmbiente(){
+  return document.getElementById('e_amb')?.value || 'certificacion';
+}
+
+function actualizarInfoEmisor(){
+  // Actualiza el panel de info del emisor según el ambiente activo
+  if(!S.id || !S._emisorFull) return;
+  const e   = S._emisorFull;
+  const amb = getAmbiente();
+  const esCert = amb === 'certificacion';
+  const nro = esCert ? (e.nro_resol_cert||e.nro_resolucion||'0') : (e.nro_resol_prod||e.nro_resolucion||'?');
+  const fch = esCert ? (e.fch_resol_cert||e.fch_resolucion||'—') : (e.fch_resol_prod||e.fch_resolucion||'—');
+  const el  = document.getElementById('eli_resol');
+  if(el) el.textContent = 'N°' + nro + ' / ' + fch;
+  const elAmb = document.getElementById('eli_amb');
+  if(elAmb) elAmb.textContent = esCert ? '🧪 Certificación' : '🚀 Producción';
+}
 // La inicialización del tema se hace en window.onload para que los botones existan
 
 /* ══════════════════════════════════════════════════════
@@ -1083,25 +1260,13 @@ async function autoCargar(){
   log('Detectando emisor en BD...','info');
   try{
     const es=await api('/v1/emisores/');
-    if(es&&es.length>0){
-      // Restaurar el emisor guardado en localStorage (sobrevive recargas)
-      let savedId=null;
-      try{savedId=localStorage.getItem('dtecore_emisor_id');}catch(ex){}
-      let emisorACargar=es[0];
-      if(savedId){
-        const found=es.find(e=>String(e.id)===String(savedId));
-        if(found)emisorACargar=found;
-      }
-      await cargarEmisor(emisorACargar);
-      log('Emisor cargado: '+emisorACargar.razon_social,'ok');
-    }
+    if(es&&es.length>0){await cargarEmisor(es[0]);log('Emisor detectado: '+es[0].razon_social,'ok');}
     else log('No hay emisores — completa el paso 1','warn');
   }catch{log('No se pudo detectar emisor','warn');}
 }
 async function cargarEmisor(e){
   S.id=e.id;
-  // Persistir el emisor activo en localStorage para sobrevivir recargas
-  try{localStorage.setItem('dtecore_emisor_id',e.id);localStorage.setItem('dtecore_emisor_rut',e.rut);}catch(ex){}
+  // Guardar datos completos del emisor en estado
   S.emisor={
     rut: e.rut||'',
     razon_social: e.razon_social||'',
@@ -1112,6 +1277,20 @@ async function cargarEmisor(e){
     comuna: e.comuna||'',
     ciudad: e.ciudad||'',
   };
+  // Guardar datos completos del emisor para uso dinámico por ambiente
+  S._emisorFull = e;
+
+  // Panel de info del emisor (nuevo diseño)
+  const infoPanel = document.getElementById('emisor_loaded_info');
+  if(infoPanel){
+    infoPanel.style.display = 'block';
+    document.getElementById('eli_nombre').textContent = e.razon_social;
+    document.getElementById('eli_rut').textContent    = e.rut;
+    document.getElementById('eli_giro').textContent   = (e.giro||'').slice(0,40);
+    document.getElementById('eli_dir').textContent    = e.direccion||'';
+  }
+  actualizarInfoEmisor();
+
   document.getElementById('eb_name').textContent=e.razon_social;
   document.getElementById('eb_rut').textContent=e.rut;
   document.getElementById('eb_amb').textContent='Ambiente: '+e.ambiente+(e.activo?' · Activo':' · Inactivo');
@@ -1124,8 +1303,6 @@ async function cargarEmisor(e){
   document.getElementById('e_ciudad').value=e.ciudad||'';
   document.getElementById('e_tel').value=e.telefono||'';
   document.getElementById('e_amb').value=e.ambiente||'certificacion';
-  document.getElementById('e_nro_resol').value=e.nro_resolucion||'';
-  document.getElementById('e_fch_resol').value=e.fch_resolucion||'';
   if(e.acteco){document.getElementById('ac_cod_0').value=e.acteco;}
   done(1,'✓ cargado');unlock(2);unlock(3);
   await cargarCert(e.id);
@@ -1163,7 +1340,13 @@ async function buscarEmisor(){
   try{
     const es=await api('/v1/emisores/');
     const found=es.find(e=>e.rut===rut||e.rut.replace(/\./g,'')===rut);
-    if(found){await cargarEmisor(found);res(1,true,'Emisor cargado\nID: '+found.id+'\n'+found.razon_social);}
+    if(found){
+      // Sincronizar ambiente del emisor con el toggle activo
+      const ambActual = getAmbiente();
+      found.ambiente = ambActual; // usar el ambiente del toggle, no el de la BD
+      await cargarEmisor(found);
+      res(1,true,'Emisor cargado\nID: '+found.id+'\n'+found.razon_social+'\nAmbiente: '+ambActual.toUpperCase());
+    }
     else{res(1,false,'No encontrado: '+rut);log('Emisor no encontrado','warn');}
   }catch(e){res(1,false,e.data?.detail||JSON.stringify(e.data));}
 }
@@ -1204,7 +1387,7 @@ async function crearEmisor(){
   if(!vRut(rut)){res(1,false,'RUT inválido');return;}
   const actecos=getActeco();
   const acteco_principal=actecos.length>0?actecos[0].cod:null;
-  const body={rut:rutSII(rut),razon_social:document.getElementById('e_rs').value,giro:document.getElementById('e_giro').value,direccion:document.getElementById('e_dir').value,comuna:document.getElementById('e_comuna').value,ciudad:document.getElementById('e_ciudad').value,telefono:document.getElementById('e_tel').value||null,ambiente:document.getElementById('e_amb').value,acteco:acteco_principal,nro_resolucion:document.getElementById('e_nro_resol').value||'0',fch_resolucion:document.getElementById('e_fch_resol').value||'2000-01-01'};
+  const body={rut:rutSII(rut),razon_social:document.getElementById('e_rs').value,giro:document.getElementById('e_giro').value,direccion:document.getElementById('e_dir').value,comuna:document.getElementById('e_comuna').value,ciudad:document.getElementById('e_ciudad').value,telefono:document.getElementById('e_tel').value||null,ambiente:document.getElementById('e_amb').value,acteco:acteco_principal};
   for(const[k,v]of Object.entries(body)){if(!v&&k!=='telefono'&&k!=='acteco'){res(1,false,'Campo requerido: '+k);return;}}
   try{
     const d=await api('/v1/emisores/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -1253,7 +1436,7 @@ function delC(i){S.cafs.splice(i,1);rndrCAFs();document.getElementById('bcafs').
 function clrCAFs(){S.cafs=[];rndrCAFs();document.getElementById('bcafs').disabled=true;}
 async function subirCAFs(){
   if(!S.id){res(3,false,'Primero carga el emisor');return;}
-  const amb=document.getElementById('e_amb').value;
+  const amb=getAmbiente();
   let ok=0,fail=0,msgs=[];
   for(const c of S.cafs){
     const fd=new FormData();fd.append('emisor_id',S.id);fd.append('ambiente',amb);fd.append('archivo',c.file);
@@ -2420,21 +2603,13 @@ const LIBRO_COMPRAS_DOCS_DEFAULT = [
   { tipo:46, folio:9,   obs:'COMPRA CON RETENCION TOTAL DEL IVA',
     neto:10019, exe:0, iva:Math.round(10019*.19), iva_ret_total:Math.round(10019*.19),
     tipo_especial:'iva_ret_total', label:'Factura de Compra Electrónica' },
-  { tipo:60, folio:1,   obs:'LIQUIDACION-FACTURA ELECTRONICA',
-    neto:5000, exe:0, iva:Math.round(5000*.19), tipo_especial:'', label:'Liquidación-Factura' },
   { tipo:61, folio:211, obs:'NOTA DE CREDITO POR DESCUENTO FACTURA ELECTRONICA 32',
     neto:0, exe:6396, iva:0, tipo_especial:'', label:'Nota de Crédito Electrónica' },
 ];
 LIBRO_COMPRAS_DOCS_DEFAULT.forEach(d=>{
   d.rut = '76354771-K'; d.razon = 'PROVEEDOR SA';
   d.fecha = '2026-05-22';
-  // Para iva_ret_total: total = neto + iva_ret_total (no suma el iva normal)
-  if(d.tipo_especial === 'iva_ret_total'){
-    // MntTotal = MntNeto + MntIVA - IVARetTotal = neto (se cancela)
-    d.total = d.neto + (d.iva||0) - (d.iva_ret_total||0);
-  } else {
-    d.total = d.neto + d.exe + d.iva + (d.iva_uso_comun||0) + (d.iva_no_rec||0);
-  }
+  d.total = d.neto + d.exe + d.iva + (d.iva_uso_comun||0) + (d.iva_no_rec||0);
   d.confirmado = false;
 });
 
@@ -2803,7 +2978,7 @@ async function generarLibroManual(){
   const body={
     emisor_id:S.id,natencion:nat,periodo:periodoHoy,
     fch_resol:'2026-04-19',nro_resol:'0',
-    tipo_libro:esAjuste?'RECTIFICA':'ESPECIAL',tipo_envio:'TOTAL',
+    tipo_libro:'ESPECIAL',tipo_envio:esAjuste?'AJUSTE':'TOTAL',
     cod_aut_rec:codAutRec,documentos,
   };
   const btn=document.getElementById('btn_gen_compras_manual');
@@ -3005,7 +3180,7 @@ async function generarXML(setKey, natencion){
   // Refrescar CAFs y reasignar folios ANTES de generar
   // Esto evita el error REF-3-750 causado por FolioRef desactualizados
   // cuando se generan múltiples intentos (el folio_actual del CAF avanza con cada intento)
-  const amb = document.getElementById('e_amb')?.value || 'certificacion';
+  const amb = getAmbiente();
   await cargarCAFs(S.id, amb);
   asignarFolios();
   log('Folios reasignados desde CAF actual antes de generar','info');
@@ -3313,44 +3488,19 @@ async function enviarDesdeHistorial(i){
     const txt = await item.blob.text();
     // Si es EnvioBOLETA, enviar XML directamente (evita re-firma con timestamp viejo)
     const esEnvioBOLETA = txt.includes('EnvioBOLETA');
-    const esLibro = txt.includes('LibroCompraVenta') || txt.includes('LibroGuia');
-    if(esLibro){
-      log('Enviando Libro directamente al SII...','info');
-      const btn2 = document.querySelector('[onclick="enviarUltimoSet()"]');
-      if(btn2){ btn2.disabled=true; btn2.textContent='Enviando...'; }
-      try{
-        const ab2 = await item.blob.arrayBuffer();
-        const bytes2 = new Uint8Array(ab2);
-        let bin2 = ''; for(let i=0;i<bytes2.length;i++) bin2 += String.fromCharCode(bytes2[i]);
-        const b64 = btoa(bin2);
-        const r = await fetch(`${base()}/v1/enviar-sobre/directo`,{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({emisor_id: S.id, xml_sobre_b64: b64}),
-        });
-        const data = await r.json();
-        if(data.track_id){
-          log(`✓ Enviado al SII — TrackID: ${data.track_id}`,'ok');
-          log(`Estado: ${data.estado}`,'ok');
-        } else {
-          log(`Enviado sin TrackID: ${JSON.stringify(data)}`,'warn');
-        }
-      }catch(e){ log('Error: '+e,'err'); }
-      finally{
-        const btn2b = document.querySelector('[onclick="enviarUltimoSet()"]');
-        if(btn2b){ btn2b.disabled=false; btn2b.textContent='📤 Enviar al SII'; }
-      }
-      return;
-    }
     if(esEnvioBOLETA){
       log('Enviando EnvioBOLETA directamente al SII...','info');
       const btn = document.querySelector('[onclick="enviarUltimoSet()"]');
       if(btn){ btn.disabled=true; btn.textContent='Enviando...'; }
       try{
+        const ab = await item.blob.arrayBuffer();
+        const bytes = new Uint8Array(ab);
+        let bin = ''; for(let i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
+        const b64 = btoa(bin);
         const r = await fetch(`${base()}/v1/enviar-sobre/directo`,{
           method:'POST',
           headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({emisor_id: S.id, xml_sobre: txt}),
+          body: JSON.stringify({emisor_id: S.id, xml_sobre_b64: b64}),
         });
         const data = await r.json();
         if(data.track_id){
@@ -3364,19 +3514,30 @@ async function enviarDesdeHistorial(i){
       }
       return;
     }
-    // Para EnvioDTE: extraer folios y usar flujo normal
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(txt, 'text/xml');
-    const dtes = xmlDoc.querySelectorAll('Documento');
-    const folios = [];
-    dtes.forEach(d=>{
-      const tipo = parseInt(d.querySelector('TipoDTE')?.textContent||'0');
-      const folio = parseInt(d.querySelector('Folio')?.textContent||'0');
-      if(tipo && folio) folios.push({tipo, folio});
-    });
-    if(!folios.length){ log('No se encontraron folios en el XML','warn'); return; }
-    log('Enviando '+folios.length+' DTEs al SII desde historial...','info');
-    await enviarSetSII(folios);
+    // Para EnvioDTE: enviar XML directamente (más rápido, evita re-construcción del sobre)
+    log('Enviando EnvioDTE directamente al SII...','info');
+    const btn2 = document.querySelector('[onclick="enviarUltimoSet()"]');
+    if(btn2){ btn2.disabled=true; btn2.textContent='Enviando...'; }
+    try{
+      const ab2 = await item.blob.arrayBuffer();
+      const bytes2 = new Uint8Array(ab2);
+      let bin2 = ''; for(let i=0;i<bytes2.length;i++) bin2 += String.fromCharCode(bytes2[i]);
+      const b64 = btoa(bin2);
+      const r = await fetch(`${base()}/v1/enviar-sobre/directo`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({emisor_id: S.id, xml_sobre_b64: b64}),
+      });
+      const data = await r.json();
+      if(data.track_id){
+        log(`✓ Enviado al SII — TrackID: ${data.track_id}`,'ok');
+        log(`Estado: ${data.estado} | Docs: ${data.ok}`,'ok');
+      } else {
+        log(`Enviado sin TrackID: ${JSON.stringify(data)}`,'warn');
+      }
+    }finally{
+      if(btn2){ btn2.disabled=false; btn2.textContent='📤 Enviar al SII'; }
+    }
   }catch(e){ log('Error enviando desde historial: '+e,'err'); }
 }
 function descargarDesdeHistorial(i){
@@ -4231,8 +4392,13 @@ async function enviarCOF(){
 window.onload=function(){
   // Restaurar tema guardado
   try{const saved=localStorage.getItem('ydt_theme');if(saved==='light')setTheme('light');}catch{}
+  // Restaurar ambiente guardado
+  try{
+    const savedAmb=localStorage.getItem('dtecore_ambiente')||'certificacion';
+    setAmbiente(savedAmb);
+  }catch{ setAmbiente('certificacion'); }
   document.getElementById('apiUrl').value=window.location.origin;
-  log('Panel YeparDTEcore listo','info');
+  log('Panel YeparDTEcore listo — ambiente: '+getAmbiente().toUpperCase(),'info');
   setTimeout(autoCargar,400);
 };
 </script>
