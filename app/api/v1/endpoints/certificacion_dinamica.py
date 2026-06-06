@@ -287,7 +287,13 @@ async def generar_xml_dinamico(
             f"No se generó ningún documento. Errores: {'; '.join(errores)}")
 
     firma  = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
-    sender = SIISender(ambiente=emisor.ambiente)
+    # Obtener resolución del emisor según su ambiente — dinámico por cliente
+    nro_resol, fch_resol = emisor.get_resolucion(emisor.ambiente)
+    sender = SIISender(
+        ambiente  = emisor.ambiente,
+        fch_resol = fch_resol,
+        nro_resol = nro_resol,
+    )
 
     try:
         sobre_xml = await sender.construir_sobre(
@@ -352,7 +358,13 @@ async def enviar_dinamico(
         raise HTTPException(500, f"No se generó ningún documento. Errores: {'; '.join(errores)}")
 
     firma  = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
-    sender = SIISender(ambiente=emisor.ambiente)
+    # Obtener resolución del emisor según su ambiente — dinámico por cliente
+    nro_resol, fch_resol = emisor.get_resolucion(emisor.ambiente)
+    sender = SIISender(
+        ambiente  = emisor.ambiente,
+        fch_resol = fch_resol,
+        nro_resol = nro_resol,
+    )
 
     try:
         sobre_xml = await sender.construir_sobre(
