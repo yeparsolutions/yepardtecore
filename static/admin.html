@@ -1139,8 +1139,13 @@ function actualizarInfoEmisor(){
   const e   = S._emisorFull;
   const amb = getAmbiente();
   const esCert = amb === 'certificacion';
-  const nro = esCert ? (e.nro_resol_cert||'0') : (e.nro_resol_prod||'?');
-  const fch = esCert ? (e.fch_resol_cert||'—') : (e.fch_resol_prod||'—');
+  // Buscar resolución: primero campos nuevos, fallback a campos legacy
+  const nro = esCert
+    ? (e.nro_resol_cert || e.nro_resolucion || '0')
+    : (e.nro_resol_prod || e.nro_resolucion || '?');
+  const fch = esCert
+    ? (e.fch_resol_cert || e.fch_resolucion || '—')
+    : (e.fch_resol_prod || e.fch_resolucion || '—');
   const el  = document.getElementById('eli_resol');
   if(el) el.textContent = 'N°' + nro + ' / ' + fch;
   const elAmb = document.getElementById('eli_amb');
@@ -1336,33 +1341,45 @@ async function cargarCAFs(eid,amb){
   }catch{log('No se pudieron cargar CAFs','warn');}
 }
 async function buscarEmisor(){
-  const rut=rutSII(document.getElementById('buscar_rut').value);
-  if(!rut){log('Ingresa un RUT','warn');return;}
+  // Ocultar error previo
+  const errBox = document.getElementById('emisor_error_box');
+  if(errBox) errBox.style.display='none';
+
+  const rawRut = (document.getElementById('buscar_rut').value||'').trim();
+  if(!rawRut){ log('Ingresa un RUT','warn'); return; }
+  const rut = rutSII(rawRut);
+
   const btn = document.querySelector('#c1 .btn.bp');
-  if(btn){ btn.textContent='⏳ Cargando...'; btn.disabled=true; }
+  if(btn){ btn.textContent='⏳ Buscando...'; btn.disabled=true; }
+
   try{
-    const es=await api('/v1/emisores/');
-    const found=es.find(e=>e.rut===rut||e.rut.replace(/\./g,'')===rut);
+    // Buscar directamente por RUT (más eficiente que traer todos)
+    const es = await api('/v1/emisores/');
+    const found = es.find(e=>{
+      const r1 = (e.rut||'').replace(/\./g,'').toUpperCase();
+      const r2 = rut.toUpperCase();
+      return r1===r2;
+    });
+
     if(found){
-      // Usar el ambiente del toggle, no el guardado en BD
-      const ambActual = getAmbiente();
-      found.ambiente = ambActual;
+      // Forzar ambiente del toggle en el objeto emisor
+      found.ambiente = getAmbiente();
+      // cargarEmisor ya llama done(1), unlock(2), unlock(3) internamente
       await cargarEmisor(found);
-      // Avanzar pasos automáticamente
-      done(1,'✓ cargado');
-      unlock(2);
-      unlock(3);
-      log('Emisor: '+found.razon_social+' · Ambiente: '+ambActual.toUpperCase(),'ok');
     } else {
       log('Emisor no encontrado: '+rut,'warn');
-      // Mostrar error inline sin usar res()
-      const errBox = document.getElementById('emisor_error_box');
-      if(errBox){ errBox.textContent='❌ No encontrado: '+rut; errBox.style.display='block'; }
+      if(errBox){
+        errBox.textContent='❌ No se encontró emisor con RUT '+rut;
+        errBox.style.display='block';
+      }
     }
-  }catch(e){
-    log('Error buscando emisor: '+(e.data?.detail||JSON.stringify(e.data)),'err');
-    const errBox = document.getElementById('emisor_error_box');
-    if(errBox){ errBox.textContent='❌ Error: '+(e.data?.detail||'Sin conexión'); errBox.style.display='block'; }
+  }catch(err){
+    const msg = err?.data?.detail || err?.message || String(err);
+    log('Error buscando emisor: '+msg,'err');
+    if(errBox){
+      errBox.textContent='❌ '+msg;
+      errBox.style.display='block';
+    }
   }finally{
     if(btn){ btn.textContent='🔍 Cargar emisor'; btn.disabled=false; }
   }
