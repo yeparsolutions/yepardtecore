@@ -140,12 +140,56 @@ async def folios_disponibles(emisor_id: int, db: AsyncSession = Depends(get_db))
     }
 
 
+# ── Actualizar datos generales del emisor ────────────────────────────────────
+class EmisorUpdate(BaseModel):
+    # Analogía: actualizar el expediente de un cliente en la notaría
+    razon_social: str | None = None
+    giro:         str | None = None
+    direccion:    str | None = None
+    comuna:       str | None = None
+    ciudad:       str | None = None
+    telefono:     str | None = None
+    acteco:       str | None = None
+    ambiente:     str | None = None  # "certificacion" | "produccion"
+
+
+@router.put("/{emisor_id}")
+async def actualizar_emisor(
+    emisor_id: int,
+    datos: EmisorUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Actualiza los datos generales del emisor.
+    Solo actualiza los campos que vienen en el body (PATCH semántico).
+    """
+    emisor = await db.get(Emisor, emisor_id)
+    if not emisor:
+        raise HTTPException(404, "Emisor no encontrado")
+
+    # Solo actualizar campos que vienen explícitamente en el body
+    if datos.razon_social is not None: emisor.razon_social = datos.razon_social
+    if datos.giro         is not None: emisor.giro         = datos.giro
+    if datos.direccion    is not None: emisor.direccion    = datos.direccion
+    if datos.comuna       is not None: emisor.comuna       = datos.comuna
+    if datos.ciudad       is not None: emisor.ciudad       = datos.ciudad
+    if datos.telefono     is not None: emisor.telefono     = datos.telefono
+    if datos.acteco       is not None: emisor.acteco       = datos.acteco
+    if datos.ambiente     is not None: emisor.ambiente     = datos.ambiente
+
+    await db.commit()
+    await db.refresh(emisor)
+    return {"ok": True, "emisor_id": emisor.id, "razon_social": emisor.razon_social}
+
+
 # ── Actualizar resoluciones SII ───────────────────────────────────────────────
 class ResolucionUpdate(BaseModel):
-    nro_resol_cert: str | None = None  # Número resolución certificación (ej: "0")
-    fch_resol_cert: str | None = None  # Fecha resolución certificación (ej: "2026-04-19")
-    nro_resol_prod: str | None = None  # Número resolución producción (ej: "99")
-    fch_resol_prod: str | None = None  # Fecha resolución producción (ej: "2014-10-21")
+    # Cada ambiente tiene su propio número y fecha de resolución
+    # Analogía: cada local (prueba/real) tiene su propio número de patente
+    nro_resol_cert: str | None = None  # Certificación: "0"
+    fch_resol_cert: str | None = None  # Certificación: "2026-04-19"
+    nro_resol_prod: str | None = None  # Producción:    "99"
+    fch_resol_prod: str | None = None  # Producción:    "2014-10-21"
 
 
 @router.put("/{emisor_id}/resolucion")
@@ -156,32 +200,20 @@ async def actualizar_resolucion(
 ):
     """
     Actualiza los datos de resolución SII del emisor para cada ambiente.
-    Estos datos van en la carátula del EnvioDTE — son distintos por ambiente.
-    Analogía: cada local (prueba/real) tiene su propio número de patente.
     """
     emisor = await db.get(Emisor, emisor_id)
     if not emisor:
         raise HTTPException(404, "Emisor no encontrado")
 
-    if datos.nro_resol_cert is not None:
-        emisor.nro_resol_cert = datos.nro_resol_cert
-    if datos.fch_resol_cert is not None:
-        emisor.fch_resol_cert = datos.fch_resol_cert
-    if datos.nro_resol_prod is not None:
-        emisor.nro_resol_prod = datos.nro_resol_prod
-    if datos.fch_resol_prod is not None:
-        emisor.fch_resol_prod = datos.fch_resol_prod
+    if datos.nro_resol_cert is not None: emisor.nro_resol_cert = datos.nro_resol_cert
+    if datos.fch_resol_cert is not None: emisor.fch_resol_cert = datos.fch_resol_cert
+    if datos.nro_resol_prod is not None: emisor.nro_resol_prod = datos.nro_resol_prod
+    if datos.fch_resol_prod is not None: emisor.fch_resol_prod = datos.fch_resol_prod
 
     await db.commit()
     return {
         "ok": True,
         "emisor_id": emisor_id,
-        "certificacion": {
-            "nro_resol": emisor.nro_resol_cert,
-            "fch_resol": emisor.fch_resol_cert,
-        },
-        "produccion": {
-            "nro_resol": emisor.nro_resol_prod,
-            "fch_resol": emisor.fch_resol_prod,
-        },
+        "certificacion": {"nro": emisor.nro_resol_cert, "fch": emisor.fch_resol_cert},
+        "produccion":    {"nro": emisor.nro_resol_prod, "fch": emisor.fch_resol_prod},
     }
