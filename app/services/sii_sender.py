@@ -32,13 +32,18 @@ TIPOS_BOLETA = {39, 41}
 
 class SIISender:
 
-    def __init__(self, ambiente: str = "certificacion",
-                 nro_resol: str = "99",
-                 fch_resol: str = "2014-10-21"):
+    def __init__(
+        self,
+        ambiente:  str = "certificacion",
+        fch_resol: str | None = None,
+        nro_resol: str | None = None,
+    ):
         self.ambiente   = ambiente
         self.url_upload = SII_UPLOAD_CERT if ambiente == "certificacion" else SII_UPLOAD_PROD
-        self.nro_resol  = nro_resol
-        self.fch_resol  = fch_resol
+        # Resolución dinámica — viene del emisor según su ambiente
+        # Analogía: cada empresa tiene su propio sello notarial registrado
+        self.fch_resol  = fch_resol or "2000-01-01"
+        self.nro_resol  = nro_resol or "0"
 
     @staticmethod
     def limpiar_rut(rut: str) -> str:
@@ -76,8 +81,8 @@ class SIISender:
         es_boleta = bool(tipos_en_sobre) and all(t in TIPOS_BOLETA for t in tipos_en_sobre)
         tag = "EnvioBOLETA" if es_boleta else "EnvioDTE"
 
-        fch_resol = getattr(self, 'fch_resol', '2026-04-19')
-        nro_resol = getattr(self, 'nro_resol', '0')
+        fch_resol = self.fch_resol
+        nro_resol = self.nro_resol
         tmst      = (ahora + timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%S")
 
         subtot = "".join(
@@ -115,24 +120,17 @@ class SIISender:
         # el schema a usar. Sin él responde SCH-00001: Invalid Schema Name.
         # El nombre correcto es EnvioBOLETA_v11.xsd para boletas
         # y EnvioDTE_v10.xsd para facturas/guías.
-        # EnvioBOLETA NO lleva xsi:schemaLocation — el SII (produccion y cert)
-        # rechaza con LPX-00202 cuando no puede resolver el archivo xsd externo.
-        # EnvioDTE tampoco lo requiere — omitir en ambos casos.
         if es_boleta:
-            sobre_sin_firmas = (
-                f'<?xml version="1.0" encoding="ISO-8859-1"?>\n'
-                f'<{tag} xmlns="{NS}" xmlns:xsi="{XSI_NS}" version="1.0">'
-                f'{set_str}'
-                f'</{tag}>'
-            )
+            schema_loc = f'xsi:schemaLocation="{NS} EnvioBOLETA_v11.xsd"'
         else:
             schema_loc = f'xsi:schemaLocation="{NS} EnvioDTE_v10.xsd"'
-            sobre_sin_firmas = (
-                f'<?xml version="1.0" encoding="ISO-8859-1"?>\n'
-                f'<{tag} xmlns="{NS}" xmlns:xsi="{XSI_NS}" version="1.0" {schema_loc}>'
-                f'{set_str}'
-                f'</{tag}>'
-            )
+
+        sobre_sin_firmas = (
+            f'<?xml version="1.0" encoding="ISO-8859-1"?>\n'
+            f'<{tag} xmlns="{NS}" xmlns:xsi="{XSI_NS}" version="1.0" {schema_loc}>'
+            f'{set_str}'
+            f'</{tag}>'
+        )
 
         return await firma_service.firmar_sobre(sobre_sin_firmas)
 
@@ -184,7 +182,7 @@ class SIISender:
         logger.info(f"[SII ENVIO] url={url_envio} bytes={len(sobre_bytes)}")
 
         try:
-            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
                 response = await client.post(url_envio, headers=headers, files=files)
 
             logger.info(f"[SII RAW] HTTP={response.status_code} "
