@@ -402,7 +402,7 @@ class ItemStateless(BaseModel):
     codigo:    Optional[str] = ""
 
 class ReferenciaStateless(BaseModel):
-    tipo_doc_ref: str = "SET"
+    tipo_doc_ref: object = "SET"   # puede ser "SET" o int (33, 61, etc)
     folio_ref:    str = ""
     fecha_ref:    str = ""
     razon:        Optional[str] = None
@@ -473,7 +473,16 @@ async def firmar_y_enviar(datos: FirmarYEnviarInput):
         except ValueError:
             fecha_ref_dt = _date.today()
         razon = ref.razon or ref.razon_ref or ""
-        return folio_ref_int, fecha_ref_dt, razon
+        # tipo_doc_ref puede ser "SET" o int
+        tipo = ref.tipo_doc_ref
+        if str(tipo).upper() == "SET":
+            tipo = "SET"
+        else:
+            try:
+                tipo = int(tipo)
+            except (ValueError, TypeError):
+                tipo = "SET"
+        return folio_ref_int, fecha_ref_dt, razon, tipo
 
     try:
         if datos.tipo in TIPOS_BOLETA:
@@ -491,9 +500,9 @@ async def firmar_y_enviar(datos: FirmarYEnviarInput):
             ]
             refs_input = []
             for ref in datos.referencias:
-                folio_r, fecha_r, razon_r = parse_ref(ref)
+                folio_r, fecha_r, razon_r, tipo_r = parse_ref(ref)
                 refs_input.append(ReferenciaBoleta(
-                    tipo_doc_ref = ref.tipo_doc_ref,
+                    tipo_doc_ref = tipo_r,
                     folio_ref    = folio_r,
                     fecha_ref    = fecha_r,
                     razon_ref    = razon_r,
@@ -529,9 +538,9 @@ async def firmar_y_enviar(datos: FirmarYEnviarInput):
             ]
             refs_input = []
             for ref in datos.referencias:
-                folio_r, fecha_r, razon_r = parse_ref(ref)
+                folio_r, fecha_r, razon_r, tipo_r = parse_ref(ref)
                 refs_input.append(ReferenciaDTE(
-                    tipo_doc_ref = ref.tipo_doc_ref if str(ref.tipo_doc_ref).upper() == "SET" else int(ref.tipo_doc_ref),
+                    tipo_doc_ref = tipo_r,
                     folio_ref    = folio_r,
                     fecha_ref    = fecha_r,
                     razon_ref    = razon_r,
