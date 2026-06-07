@@ -359,3 +359,292 @@ async def firmar_y_enviar(datos: FirmarYEnviarInput):
         "ambiente":    datos.ambiente,
         "fecha":       fecha,
     }
+
+
+# ══════════════════════════════════════════════════════════════
+# STATELESS — FIRMAR Y ENVIAR
+# El cliente trae su propio certificado (.p12) y CAF (XML).
+# YeparDTEcore firma y envía al SII sin guardar nada en BD.
+# ══════════════════════════════════════════════════════════════
+
+import base64 as _b64
+from datetime import date as _date
+
+class EmisorStateless(BaseModel):
+    rut:            str
+    razon_social:   str
+    giro:           str
+    direccion:      str = ""
+    comuna:         str = ""
+    ciudad:         str = ""
+    acteco:         str = ""
+    telefono:       str = ""
+    correo:         str = ""
+    nro_resolucion: str = "0"
+    fch_resolucion: str = "2000-01-01"
+
+class ReceptorStateless(BaseModel):
+    rut:       str = "66666666-6"
+    nombre:    str = "Consumidor Final"
+    giro:      Optional[str] = ""
+    direccion: Optional[str] = ""
+    comuna:    Optional[str] = ""
+    ciudad:    Optional[str] = ""
+    email:     Optional[str] = None
+
+class ItemStateless(BaseModel):
+    nombre:    str
+    cantidad:  float = 1
+    precio:    float
+    exento:    bool = False
+    descuento: float = 0
+    unidad:    Optional[str] = None
+    codigo:    Optional[str] = ""
+
+class ReferenciaStateless(BaseModel):
+    tipo_doc_ref: str = "SET"
+    folio_ref:    str = ""
+    fecha_ref:    str = ""
+    razon:        Optional[str] = None
+    razon_ref:    Optional[str] = None
+    cod_ref:      Optional[int] = None
+
+class FirmarYEnviarInput(BaseModel):
+    emisor:       EmisorStateless
+    pfx_base64:   str
+    pfx_password: str
+    caf_base64:   str
+    tipo:         int
+    receptor:     ReceptorStateless
+    items:        list[ItemStateless]
+    exento:       bool = False
+    fecha:        Optional[str] = None
+    referencias:  list[ReferenciaStateless] = []
+    ambiente:     str = "certificacion"
+    auto_enviar:  bool = True
+
+
+@router.post("/firmar-y-enviar")
+async def firmar_y_enviar(datos: FirmarYEnviarInput):
+    """
+    Endpoint stateless — firma y envía un DTE al SII.
+    El cliente provee su certificado (.p12) y CAF (XML) en base64.
+    YeparDTEcore NO guarda nada en BD.
+    """
+    from app.services.xml_builder import (
+        XMLBuilder, InputDTE, EmisorDTE, ReceptorDTE, ItemDTE, ReferenciaDTE
+    )
+    from app.services.xml_builder_boleta import (
+        XMLBuilderBoleta, InputBoleta, EmisorBoleta, ReceptorBoleta,
+        ItemBoleta, ReferenciaBoleta
+    )
+    from app.services.firma_digital import FirmaDigital
+
+    TIPOS_BOLETA = {39, 41}
+    tipos_validos = {33, 34, 39, 41, 52, 56, 61}
+
+    if datos.tipo not in tipos_validos:
+        raise HTTPException(422, f"Tipo DTE no válido: {datos.tipo}")
+
+    try:
+        pfx_bytes = _b64.b64decode(datos.pfx_base64)
+    except Exception:
+        raise HTTPException(400, "pfx_base64 inválido")
+    try:
+        caf_xml_bytes = _b64.b64decode(datos.caf_base64)
+    except Exception:
+        raise HTTPException(400, "caf_base64 inválido")
+
+    fecha_str = datos.fecha or datetime.now().strftime("%Y-%m-%d")
+    fecha_dt  = _date.fromisoformat(fecha_str)
+
+    # ── Construir dataclasses de emisor/receptor/items ────────────────────────
+    e = datos.emisor
+    r = datos.receptor
+    fecha_hoy = _date.today().isoformat()
+
+    def parse_ref(ref):
+        try:
+            folio_ref_int = int(ref.folio_ref) if ref.folio_ref else 0
+        except (ValueError, TypeError):
+            folio_ref_int = 0
+        try:
+            fecha_ref_dt = _date.fromisoformat(ref.fecha_ref) if ref.fecha_ref else _date.today()
+        except ValueError:
+            fecha_ref_dt = _date.today()
+        razon = ref.razon or ref.razon_ref or ""
+        return folio_ref_int, fecha_ref_dt, razon
+
+    try:
+        if datos.tipo in TIPOS_BOLETA:
+            items_input = [
+                ItemBoleta(
+                    nombre          = it.nombre,
+                    cantidad        = it.cantidad,
+                    precio_unitario = it.precio,
+                    descuento_pct   = it.descuento,
+                    codigo          = it.codigo or "",
+                    unidad          = it.unidad or "",
+                    exento          = it.exento or datos.exento,
+                )
+                for it in datos.items
+            ]
+            refs_input = []
+            for ref in datos.referencias:
+                folio_r, fecha_r, razon_r = parse_ref(ref)
+                refs_input.append(ReferenciaBoleta(
+                    tipo_doc_ref = ref.tipo_doc_ref,
+                    folio_ref    = folio_r,
+                    fecha_ref    = fecha_r,
+                    razon_ref    = razon_r,
+                ))
+            input_dte = InputBoleta(
+                tipo_dte      = datos.tipo,
+                folio         = 0,  # se asigna al parsear el CAF
+                fecha_emision = fecha_dt,
+                emisor        = EmisorBoleta(
+                    rut=e.rut, razon_social=e.razon_social, giro=e.giro,
+                    direccion=e.direccion, comuna=e.comuna, ciudad=e.ciudad,
+                    acteco=e.acteco, telefono=e.telefono, correo=e.correo,
+                ),
+                receptor      = ReceptorBoleta(
+                    rut=r.rut, razon_social=r.nombre, correo=r.email or "",
+                ),
+                items         = items_input,
+                referencias   = refs_input,
+            )
+            builder = XMLBuilderBoleta(input_dte)
+        else:
+            items_input = [
+                ItemDTE(
+                    nombre          = it.nombre,
+                    cantidad        = it.cantidad,
+                    precio_unitario = it.precio,
+                    descuento_pct   = it.descuento,
+                    codigo          = it.codigo or "",
+                    unidad          = it.unidad or "",
+                    exento          = it.exento or datos.exento,
+                )
+                for it in datos.items
+            ]
+            refs_input = []
+            for ref in datos.referencias:
+                folio_r, fecha_r, razon_r = parse_ref(ref)
+                refs_input.append(ReferenciaDTE(
+                    tipo_doc_ref = ref.tipo_doc_ref if str(ref.tipo_doc_ref).upper() == "SET" else int(ref.tipo_doc_ref),
+                    folio_ref    = folio_r,
+                    fecha_ref    = fecha_r,
+                    razon_ref    = razon_r,
+                    cod_ref      = ref.cod_ref or 0,
+                ))
+            input_dte = InputDTE(
+                tipo_dte      = datos.tipo,
+                folio         = 0,
+                fecha_emision = fecha_dt,
+                emisor        = EmisorDTE(
+                    rut=e.rut, razon_social=e.razon_social, giro=e.giro,
+                    direccion=e.direccion, comuna=e.comuna, ciudad=e.ciudad,
+                    acteco=e.acteco, telefono=e.telefono, correo=e.correo,
+                ),
+                receptor      = ReceptorDTE(
+                    rut=r.rut, razon_social=r.nombre, giro=r.giro or "",
+                    direccion=r.direccion or "", comuna=r.comuna or "",
+                    ciudad=r.ciudad or "", correo=r.email or "",
+                ),
+                items         = items_input,
+                referencias   = refs_input,
+                ambiente      = datos.ambiente,
+            )
+            builder = XMLBuilder(input_dte)
+
+    except Exception as ex:
+        logger.error(f"[STATELESS] Error construyendo input: {ex}", exc_info=True)
+        raise HTTPException(500, f"Error construyendo DTE: {ex}")
+
+    # ── Extraer folio del CAF ─────────────────────────────────────────────────
+    try:
+        from lxml import etree as _etree
+        caf_el    = _etree.fromstring(caf_xml_bytes)
+        folio     = int(caf_el.findtext(".//D") or caf_el.findtext(".//DESDE") or 1)
+        # Actualizar folio en input_dte
+        input_dte.folio = folio
+        if datos.tipo in TIPOS_BOLETA:
+            builder = XMLBuilderBoleta(input_dte)
+        else:
+            builder = XMLBuilder(input_dte)
+    except Exception as ex:
+        raise HTTPException(400, f"Error parseando CAF: {ex}")
+
+    # ── Construir y firmar XML ────────────────────────────────────────────────
+    try:
+        xml_sin_firma = builder.construir()
+        monto_total   = builder.monto_total
+
+        it1 = input_dte.items[0].nombre if input_dte.items else "PRODUCTO"
+
+        firma = FirmaDigital(pfx_bytes, datos.pfx_password, ambiente=datos.ambiente)
+        xml_firmado_bytes = await firma.firmar_dte(
+            xml_bytes     = xml_sin_firma,
+            folio         = folio,
+            tipo_dte      = datos.tipo,
+            xml_caf       = caf_xml_bytes,
+            fecha_emision = fecha_str,
+            rut_emisor    = e.rut,
+            monto_total   = monto_total,
+            it1_nombre    = it1,
+        )
+        xml_firmado = xml_firmado_bytes.decode("ISO-8859-1")
+
+    except Exception as ex:
+        logger.error(f"[STATELESS] Error firmando: {ex}", exc_info=True)
+        raise HTTPException(500, f"Error firmando DTE: {ex}")
+
+    # ── Enviar al SII ─────────────────────────────────────────────────────────
+    track_id   = None
+    estado_sii = "FIRMADO"
+
+    if datos.auto_enviar:
+        try:
+            sender = SIISender(
+                ambiente  = datos.ambiente,
+                nro_resol = e.nro_resolucion,
+                fch_resol = e.fch_resolucion,
+            )
+            rut_firmante = getattr(firma, "rut_certificado", None) or e.rut
+            sobre_xml = await sender.construir_sobre(
+                dtes_xml     = [xml_firmado],
+                rut_emisor   = e.rut,
+                rut_enviador = rut_firmante,
+                firma_service= firma,
+            )
+            resultado = await sender.enviar_sobre(
+                sobre_xml      = sobre_xml,
+                rut_emisor     = e.rut,
+                rut_enviador   = rut_firmante,
+                p12_bytes      = pfx_bytes,
+                password       = datos.pfx_password,
+                auth_p12_bytes = pfx_bytes,
+                auth_password  = datos.pfx_password,
+            )
+            track_id   = resultado.get("track_id")
+            estado_sii = resultado.get("estado", "ENVIADO")
+            logger.info(f"[STATELESS] track_id={track_id} estado={estado_sii}")
+        except Exception as ex:
+            logger.error(f"[STATELESS] Error enviando: {ex}", exc_info=True)
+            estado_sii = "ERROR_ENVIO"
+
+    tipo_label = {
+        33:"Factura Electrónica", 34:"Factura Exenta",
+        39:"Boleta Electrónica",  41:"Boleta Exenta",
+        52:"Guía de Despacho",    56:"Nota de Débito", 61:"Nota de Crédito",
+    }
+    return {
+        "ok":          True,
+        "tipo":        tipo_label.get(datos.tipo, str(datos.tipo)),
+        "folio":       folio,
+        "xml_firmado": xml_firmado,
+        "track_id":    track_id,
+        "estado":      estado_sii,
+        "ambiente":    datos.ambiente,
+        "fecha":       fecha_str,
+    }
