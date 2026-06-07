@@ -401,11 +401,14 @@ async def firmar_y_enviar(datos: FirmarYEnviarInput):
         it1 = input_dte.items[0].nombre if input_dte.items else "PRODUCTO"
 
         firma = FirmaDigital(pfx_bytes, datos.pfx_password, ambiente=datos.ambiente)
+        # firmar_dte espera xml_caf como str, no bytes
+        caf_xml_str = caf_xml_bytes.decode("utf-8") if isinstance(caf_xml_bytes, bytes) else caf_xml_bytes
+
         xml_firmado_bytes = await firma.firmar_dte(
             xml_bytes     = xml_sin_firma,
             folio         = folio,
             tipo_dte      = datos.tipo,
-            xml_caf       = caf_xml_bytes,
+            xml_caf       = caf_xml_str,
             fecha_emision = fecha_str,
             rut_emisor    = e.rut,
             monto_total   = monto_total,
