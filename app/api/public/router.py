@@ -471,89 +471,220 @@ async def firmar_y_enviar(datos: FirmarYEnviarInput):
     }
 
 
+
 # ══════════════════════════════════════════════════════════════
-# ARMAR SOBRE — junta DTEs firmados en EnvioBOLETA/EnvioDTE
+# GENERAR SET COMPLETO — stateless
+# Recibe todos los casos, pfx y CAF del cliente.
+# Genera cada DTE timbrado y devuelve el EnvioBOLETA/EnvioDTE
+# firmado listo para subir al SII.
 # ══════════════════════════════════════════════════════════════
 
-class ArmarSobreInput(BaseModel):
-    xmls:           list[str]
-    rut_emisor:     str
-    nro_resolucion: str = "0"
-    fch_resolucion: str = "2026-04-19"
+class ItemSetInput(BaseModel):
+    nombre:         str
+    cantidad:       float = 1.0
+    precio_con_iva: float = 0.0
+    precio_neto:    float = 0.0   # si viene de factura, ya viene neto
+    exento:         bool  = False
+    unidad:         str   = ""
+    codigo:         str   = ""
+    descuento:      float = 0.0
+
+class CasoSetInput(BaseModel):
+    numero_caso:     int
+    tipo_dte:        int = 39
+    items:           list[ItemSetInput]
+    rut_receptor:    str = "66666666-6"
+    nombre_receptor: str = "Consumidor Final"
+    observacion:     str = ""
+
+class GenerarSetInput(BaseModel):
+    emisor:         EmisorStateless
+    pfx_base64:     str
+    pfx_password:   str
+    caf_base64:     str            # CAF del tipo principal del set
+    casos:          list[CasoSetInput]
+    natencion:      str = "SET"
+    fecha:          Optional[str] = None
     ambiente:       str = "certificacion"
-    pfx_base64:     Optional[str] = None
-    pfx_password:   str = ""
-    solo_generar:   bool = True
+    auto_enviar:    bool = False   # True = enviar al SII, False = solo descargar
 
 
-@router.post("/armar-sobre")
-async def armar_sobre(datos: ArmarSobreInput):
+@router.post("/generar-set")
+async def generar_set(datos: GenerarSetInput):
+    """
+    Stateless: genera el EnvioBOLETA/EnvioDTE completo con todos los casos.
+    El cliente provee su pfx y CAF. YeparDTEcore firma y arma el sobre.
+    """
+    from app.services.xml_builder_boleta import (
+        XMLBuilderBoleta, InputBoleta, EmisorBoleta,
+        ReceptorBoleta, ItemBoleta, ReferenciaBoleta,
+    )
+    from app.services.xml_builder import (
+        XMLBuilder, InputDTE, EmisorDTE, ReceptorDTE, ItemDTE, ReferenciaDTE,
+    )
+    from app.services.firma_digital import FirmaDigital
     from lxml import etree as _etree
+    from datetime import date as _date
     import re as _re
 
-    if not datos.xmls:
-        raise HTTPException(400, "No hay XMLs")
+    TIPOS_BOLETA = {39, 41}
 
-    try:
-        primer_root = _etree.fromstring(datos.xmls[0].encode("ISO-8859-1"))
-        tipo_dte = int(primer_root.findtext(".//{http://www.sii.cl/SiiDte}TipoDTE") or 0)
-    except Exception as e:
-        raise HTTPException(400, f"Error parseando XML: {e}")
-
-    es_boleta = tipo_dte in (39, 41)
-    tag_sobre  = "EnvioBOLETA" if es_boleta else "EnvioDTE"
-    ns_sobre   = "http://www.sii.cl/SiiDte"
-    fecha_hoy  = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-
-    lineas = [
-        '<?xml version="1.0" encoding="ISO-8859-1"?>',
-        '<' + tag_sobre + ' xmlns="' + ns_sobre + '" version="1.0">',
-        '<SetDTE ID="SetDoc">',
-        '<Caratula version="1.0">',
-        '<RutEmisor>' + datos.rut_emisor + '</RutEmisor>',
-        '<RutEnvia>' + datos.rut_emisor + '</RutEnvia>',
-        '<RutReceptor>60803000-K</RutReceptor>',
-        '<FchResol>' + datos.fch_resolucion + '</FchResol>',
-        '<NroResol>' + datos.nro_resolucion + '</NroResol>',
-        '<TmstFirmaEnv>' + fecha_hoy + '</TmstFirmaEnv>',
-        '<SubTotDTE>',
-        '<TpoDTE>' + str(tipo_dte) + '</TpoDTE>',
-        '<NroDTE>' + str(len(datos.xmls)) + '</NroDTE>',
-        '</SubTotDTE>',
-        '</Caratula>',
-    ]
-
-    for xml_str in datos.xmls:
-        xml_clean = _re.sub(r"<\?xml[^>]+\?>", "", xml_str).strip()
-        lineas.append(xml_clean)
-
-    lineas.append("</SetDTE>")
-    lineas.append("</" + tag_sobre + ">")
-    sobre_xml = "\n".join(lineas)
-
-    if datos.solo_generar:
-        return {"sobre_xml": sobre_xml, "tipo": tag_sobre, "n_dtes": len(datos.xmls)}
-
-    if not datos.pfx_base64:
-        raise HTTPException(400, "pfx_base64 requerido para enviar")
+    if not datos.casos:
+        raise HTTPException(400, "No hay casos para generar")
 
     try:
         pfx_bytes = _b64.b64decode(datos.pfx_base64)
     except Exception:
         raise HTTPException(400, "pfx_base64 inválido")
+    try:
+        caf_xml_bytes = _b64.b64decode(datos.caf_base64)
+        caf_xml_str   = caf_xml_bytes.decode("utf-8")
+    except Exception:
+        raise HTTPException(400, "caf_base64 inválido")
+
+    # Extraer folio inicial del CAF
+    try:
+        caf_el      = _etree.fromstring(caf_xml_bytes)
+        folio_desde = int(caf_el.findtext(".//D") or caf_el.findtext(".//DESDE") or 1)
+        folio_hasta = int(caf_el.findtext(".//H") or caf_el.findtext(".//HASTA") or folio_desde)
+    except Exception as e:
+        raise HTTPException(400, f"Error parseando CAF: {e}")
+
+    if len(datos.casos) > (folio_hasta - folio_desde + 1):
+        raise HTTPException(400, f"CAF insuficiente: tiene {folio_hasta - folio_desde + 1} folios pero hay {len(datos.casos)} casos")
+
+    fecha_str = datos.fecha or datetime.now().strftime("%Y-%m-%d")
+    fecha_dt  = _date.fromisoformat(fecha_str)
+    e         = datos.emisor
+
+    firma = FirmaDigital(pfx_bytes, datos.pfx_password, ambiente=datos.ambiente)
+
+    emisor_b = EmisorBoleta(
+        rut=e.rut, razon_social=e.razon_social, giro=e.giro,
+        direccion=e.direccion, comuna=e.comuna, ciudad=e.ciudad,
+        acteco=getattr(e, "acteco", "") or "",
+        telefono=getattr(e, "telefono", "") or "",
+        correo=getattr(e, "correo", "") or "",
+    )
+
+    xmls_timbrados = []
+
+    for i, caso in enumerate(datos.casos):
+        folio = folio_desde + i
+
+        tipo_dte = caso.tipo_dte
+        es_boleta = tipo_dte in TIPOS_BOLETA
+
+        rut_recep = caso.rut_receptor or "66666666-6"
+        nom_recep = caso.nombre_receptor or "Consumidor Final"
+
+        if es_boleta:
+            items_b = []
+            for it in caso.items:
+                # Para boletas el precio viene CON IVA, convertir a neto
+                precio_neto = it.precio_neto if it.precio_neto else round(it.precio_con_iva / 1.19)
+                items_b.append(ItemBoleta(
+                    nombre=it.nombre, cantidad=it.cantidad,
+                    precio_unitario=precio_neto,
+                    exento=it.exento, unidad=it.unidad, codigo=it.codigo,
+                    descuento_pct=it.descuento,
+                ))
+            refs = [ReferenciaBoleta(
+                tipo_doc_ref="SET", folio_ref=folio,
+                fecha_ref=fecha_dt, razon_ref=f"CASO-{caso.numero_caso}",
+            )]
+            input_obj = InputBoleta(
+                tipo_dte=tipo_dte, folio=folio, fecha_emision=fecha_dt,
+                emisor=emisor_b,
+                receptor=ReceptorBoleta(rut=rut_recep, razon_social=nom_recep),
+                items=items_b, referencias=refs,
+                observacion=caso.observacion,
+            )
+            xml_bytes = XMLBuilderBoleta(input_obj).construir()
+        else:
+            emisor_dte = EmisorDTE(
+                rut=e.rut, razon_social=e.razon_social, giro=e.giro,
+                direccion=e.direccion, comuna=e.comuna, ciudad=e.ciudad,
+                acteco=getattr(e, "acteco", "") or "",
+                telefono=getattr(e, "telefono", "") or "",
+                correo=getattr(e, "correo", "") or "",
+            )
+            items_d = []
+            for it in caso.items:
+                items_d.append(ItemDTE(
+                    nombre=it.nombre, cantidad=it.cantidad,
+                    precio_unitario=it.precio_neto or round(it.precio_con_iva / 1.19),
+                    exento=it.exento, unidad=it.unidad, codigo=it.codigo,
+                    descuento_pct=it.descuento,
+                ))
+            refs = [ReferenciaDTE(
+                tipo_doc_ref="SET", folio_ref=folio,
+                fecha_ref=fecha_dt, razon_ref=f"CASO-{caso.numero_caso}",
+                cod_ref=0,
+            )]
+            input_obj = InputDTE(
+                tipo_dte=tipo_dte, folio=folio, fecha_emision=fecha_dt,
+                emisor=emisor_dte,
+                receptor=ReceptorDTE(
+                    rut=rut_recep, razon_social=nom_recep,
+                    giro="", direccion="", comuna="", ciudad="", correo="",
+                ),
+                items=items_d, referencias=refs, ambiente=datos.ambiente,
+            )
+            xml_bytes = XMLBuilder(input_obj).construir()
+
+        # Extraer monto total del XML generado
+        xml_str = xml_bytes.decode("ISO-8859-1")
+        m = _re.search(r"<MntTotal>(\d+)</MntTotal>", xml_str)
+        monto_total = int(m.group(1)) if m else 0
+        it1 = caso.items[0].nombre if caso.items else "PRODUCTO"
+
+        try:
+            xml_timbrado_bytes = await firma.firmar_dte(
+                xml_bytes=xml_bytes, folio=folio, tipo_dte=tipo_dte,
+                xml_caf=caf_xml_str, fecha_emision=fecha_str,
+                rut_emisor=e.rut, monto_total=monto_total, it1_nombre=it1,
+            )
+        except Exception as ex:
+            logger.error(f"[SET] Error timbrando caso {caso.numero_caso} folio {folio}: {ex}", exc_info=True)
+            raise HTTPException(500, f"Error timbrando caso {caso.numero_caso}: {ex}")
+
+        xmls_timbrados.append(xml_timbrado_bytes.decode("ISO-8859-1"))
+        logger.info(f"[SET] Caso {caso.numero_caso} folio {folio} timbrado OK")
+
+    # Armar EnvioBOLETA/EnvioDTE con construir_sobre
+    sender       = SIISender(
+        ambiente  = datos.ambiente,
+        nro_resol = e.nro_resolucion,
+        fch_resol = e.fch_resolucion,
+    )
+    rut_firmante = getattr(firma, "rut_certificado", None) or e.rut
 
     try:
-        from app.services.firma_digital import FirmaDigital
-        firma = FirmaDigital(pfx_bytes, datos.pfx_password, ambiente=datos.ambiente)
-        sender = SIISender(
-            ambiente  = datos.ambiente,
-            nro_resol = datos.nro_resolucion,
-            fch_resol = datos.fch_resolucion,
+        sobre_firmado = await sender.construir_sobre(
+            dtes_xml     = xmls_timbrados,
+            rut_emisor   = e.rut,
+            rut_enviador = rut_firmante,
+            firma_service= firma,
         )
-        rut_firmante = getattr(firma, "rut_certificado", None) or datos.rut_emisor
+    except Exception as ex:
+        logger.error(f"[SET] Error construyendo sobre: {ex}", exc_info=True)
+        raise HTTPException(500, f"Error armando sobre: {ex}")
+
+    if not datos.auto_enviar:
+        return {
+            "ok":          True,
+            "sobre_xml":   sobre_firmado,
+            "n_casos":     len(datos.casos),
+            "folio_desde": folio_desde,
+            "folio_hasta": folio_desde + len(datos.casos) - 1,
+        }
+
+    # Enviar al SII
+    try:
         resultado = await sender.enviar_sobre(
-            sobre_xml      = sobre_xml,
-            rut_emisor     = datos.rut_emisor,
+            sobre_xml      = sobre_firmado,
+            rut_emisor     = e.rut,
             rut_enviador   = rut_firmante,
             p12_bytes      = pfx_bytes,
             password       = datos.pfx_password,
@@ -561,12 +692,14 @@ async def armar_sobre(datos: ArmarSobreInput):
             auth_password  = datos.pfx_password,
         )
         return {
-            "ok":       True,
-            "track_id": resultado.get("track_id"),
-            "estado":   resultado.get("estado", "ENVIADO"),
-            "sobre_xml": sobre_xml,
-            "n_dtes":   len(datos.xmls),
+            "ok":          True,
+            "track_id":    resultado.get("track_id"),
+            "estado":      resultado.get("estado", "ENVIADO"),
+            "sobre_xml":   sobre_firmado,
+            "n_casos":     len(datos.casos),
+            "folio_desde": folio_desde,
+            "folio_hasta": folio_desde + len(datos.casos) - 1,
         }
-    except Exception as e:
-        logger.error(f"[ARMAR-SOBRE] Error: {e}", exc_info=True)
-        raise HTTPException(500, f"Error enviando sobre: {e}")
+    except Exception as ex:
+        logger.error(f"[SET] Error enviando: {ex}", exc_info=True)
+        raise HTTPException(500, f"Error enviando al SII: {ex}")
