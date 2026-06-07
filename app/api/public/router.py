@@ -469,3 +469,104 @@ async def firmar_y_enviar(datos: FirmarYEnviarInput):
         "ambiente":    datos.ambiente,
         "fecha":       fecha_str,
     }
+
+
+# ══════════════════════════════════════════════════════════════
+# ARMAR SOBRE — junta DTEs firmados en EnvioBOLETA/EnvioDTE
+# ══════════════════════════════════════════════════════════════
+
+class ArmarSobreInput(BaseModel):
+    xmls:           list[str]
+    rut_emisor:     str
+    nro_resolucion: str = "0"
+    fch_resolucion: str = "2026-04-19"
+    ambiente:       str = "certificacion"
+    pfx_base64:     Optional[str] = None
+    pfx_password:   str = ""
+    solo_generar:   bool = True
+
+
+@router.post("/armar-sobre")
+async def armar_sobre(datos: ArmarSobreInput):
+    from lxml import etree as _etree
+    import re as _re
+
+    if not datos.xmls:
+        raise HTTPException(400, "No hay XMLs")
+
+    try:
+        primer_root = _etree.fromstring(datos.xmls[0].encode("ISO-8859-1"))
+        tipo_dte = int(primer_root.findtext(".//{http://www.sii.cl/SiiDte}TipoDTE") or 0)
+    except Exception as e:
+        raise HTTPException(400, f"Error parseando XML: {e}")
+
+    es_boleta = tipo_dte in (39, 41)
+    tag_sobre  = "EnvioBOLETA" if es_boleta else "EnvioDTE"
+    ns_sobre   = "http://www.sii.cl/SiiDte"
+    fecha_hoy  = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+    lineas = [
+        '<?xml version="1.0" encoding="ISO-8859-1"?>',
+        '<' + tag_sobre + ' xmlns="' + ns_sobre + '" version="1.0">',
+        '<SetDTE ID="SetDoc">',
+        '<Caratula version="1.0">',
+        '<RutEmisor>' + datos.rut_emisor + '</RutEmisor>',
+        '<RutEnvia>' + datos.rut_emisor + '</RutEnvia>',
+        '<RutReceptor>60803000-K</RutReceptor>',
+        '<FchResol>' + datos.fch_resolucion + '</FchResol>',
+        '<NroResol>' + datos.nro_resolucion + '</NroResol>',
+        '<TmstFirmaEnv>' + fecha_hoy + '</TmstFirmaEnv>',
+        '<SubTotDTE>',
+        '<TpoDTE>' + str(tipo_dte) + '</TpoDTE>',
+        '<NroDTE>' + str(len(datos.xmls)) + '</NroDTE>',
+        '</SubTotDTE>',
+        '</Caratula>',
+    ]
+
+    for xml_str in datos.xmls:
+        xml_clean = _re.sub(r"<\?xml[^>]+\?>", "", xml_str).strip()
+        lineas.append(xml_clean)
+
+    lineas.append("</SetDTE>")
+    lineas.append("</" + tag_sobre + ">")
+    sobre_xml = "\n".join(lineas)
+
+    if datos.solo_generar:
+        return {"sobre_xml": sobre_xml, "tipo": tag_sobre, "n_dtes": len(datos.xmls)}
+
+    if not datos.pfx_base64:
+        raise HTTPException(400, "pfx_base64 requerido para enviar")
+
+    try:
+        pfx_bytes = _b64.b64decode(datos.pfx_base64)
+    except Exception:
+        raise HTTPException(400, "pfx_base64 inválido")
+
+    try:
+        from app.services.firma_digital import FirmaDigital
+        firma = FirmaDigital(pfx_bytes, datos.pfx_password, ambiente=datos.ambiente)
+        sender = SIISender(
+            ambiente  = datos.ambiente,
+            nro_resol = datos.nro_resolucion,
+            fch_resol = datos.fch_resolucion,
+        )
+        rut_firmante = getattr(firma, "rut_certificado", None) or datos.rut_emisor
+        resultado = await sender.enviar_sobre(
+            sobre_xml      = sobre_xml,
+            rut_emisor     = datos.rut_emisor,
+            rut_enviador   = rut_firmante,
+            p12_bytes      = pfx_bytes,
+            password       = datos.pfx_password,
+            auth_p12_bytes = pfx_bytes,
+            auth_password  = datos.pfx_password,
+        )
+        return {
+            "ok":       True,
+            "track_id": resultado.get("track_id"),
+            "estado":   resultado.get("estado", "ENVIADO"),
+            "sobre_xml": sobre_xml,
+            "n_dtes":   len(datos.xmls),
+        }
+    except Exception as e:
+        logger.error(f"[ARMAR-SOBRE] Error: {e}", exc_info=True)
+        raise HTTPException(500, f"Error enviando sobre: {e}")
