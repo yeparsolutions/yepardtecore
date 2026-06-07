@@ -582,10 +582,12 @@ async def generar_set(datos: GenerarSetInput):
             items_b = []
             for it in caso.items:
                 # Para boletas el precio viene CON IVA, convertir a neto
-                precio_neto = it.precio_neto if it.precio_neto else round(it.precio_con_iva / 1.19)
+                # XMLBuilderBoleta espera precio_unitario = precio CON IVA (bruto)
+                # El builder internamente divide por 1.19 para obtener MntNeto
+                precio_bruto = it.precio_con_iva if it.precio_con_iva else round((it.precio_neto or 0) * 1.19)
                 items_b.append(ItemBoleta(
                     nombre=it.nombre, cantidad=it.cantidad,
-                    precio_unitario=precio_neto,
+                    precio_unitario=precio_bruto,
                     exento=it.exento, unidad=it.unidad, codigo=it.codigo,
                     descuento_pct=it.descuento,
                 ))
