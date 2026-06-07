@@ -1,4 +1,3 @@
-
 # app/api/public/router.py
 # ══════════════════════════════════════════════════════════════
 # API Pública para Desarrolladores — Opción A
