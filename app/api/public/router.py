@@ -705,3 +705,67 @@ async def generar_set(datos: GenerarSetInput):
     except Exception as ex:
         logger.error(f"[SET] Error enviando: {ex}", exc_info=True)
         raise HTTPException(500, f"Error enviando al SII: {ex}")
+
+
+# ══════════════════════════════════════════════════════════════
+# ENVIAR SOBRE — recibe XML ya generado y lo envía al SII
+# El cliente generó el sobre previamente con /generar-set.
+# Este endpoint solo autentica con el certificado del cliente
+# y envía — no genera ni consume CAFs.
+# ══════════════════════════════════════════════════════════════
+
+class EnviarSobreInput(BaseModel):
+    xml_sobre_b64: str      # EnvioBOLETA o EnvioDTE en base64
+    rut_emisor:   str
+    pfx_base64:   str
+    pfx_password: str
+    ambiente:     str = "certificacion"
+
+
+@router.post("/enviar-sobre")
+async def enviar_sobre_directo(datos: EnviarSobreInput):
+    """
+    Recibe un sobre XML ya firmado y lo envía al SII.
+    No genera ni consume CAFs — solo autentica y envía.
+    Detecta automáticamente si es boleta (usa token maullin2)
+    o DTE (usa token maullin).
+    """
+    from app.services.firma_digital import FirmaDigital
+
+    try:
+        pfx_bytes  = _b64.b64decode(datos.pfx_base64)
+        sobre_xml  = _b64.b64decode(datos.xml_sobre_b64).decode("ISO-8859-1")
+    except Exception as ex:
+        raise HTTPException(400, f"Error decodificando datos: {ex}")
+
+    # Extraer rut del firmante desde el certificado
+    try:
+        firma        = FirmaDigital(pfx_bytes, datos.pfx_password, ambiente=datos.ambiente)
+        rut_firmante = getattr(firma, "rut_certificado", None) or datos.rut_emisor
+    except Exception as ex:
+        raise HTTPException(400, f"Error leyendo certificado: {ex}")
+
+    sender = SIISender(ambiente=datos.ambiente)
+
+    try:
+        resultado = await sender.enviar_sobre(
+            sobre_xml      = sobre_xml,
+            rut_emisor     = datos.rut_emisor,
+            rut_enviador   = rut_firmante,
+            p12_bytes      = pfx_bytes,
+            password       = datos.pfx_password,
+            auth_p12_bytes = pfx_bytes,
+            auth_password  = datos.pfx_password,
+        )
+    except Exception as ex:
+        logger.error(f"[ENVIAR-SOBRE] Error: {ex}", exc_info=True)
+        raise HTTPException(500, f"Error enviando al SII: {ex}")
+
+    logger.info(f"[ENVIAR-SOBRE] track_id={resultado.get('track_id')} estado={resultado.get('estado')}")
+
+    return {
+        "ok":       resultado.get("track_id") is not None,
+        "track_id": resultado.get("track_id"),
+        "estado":   resultado.get("estado", "ENVIADO"),
+        "mensaje":  resultado.get("mensaje", ""),
+    }
