@@ -402,7 +402,7 @@ class ItemStateless(BaseModel):
     codigo:    Optional[str] = ""
 
 class ReferenciaStateless(BaseModel):
-    tipo_doc_ref: object = "SET"   # puede ser "SET" o int (33, 61, etc)
+    tipo_doc_ref: int = 801   # 801=SET, 33=Factura, 61=NC, etc
     folio_ref:    str = ""
     fecha_ref:    str = ""
     razon:        Optional[str] = None
@@ -473,16 +473,14 @@ async def firmar_y_enviar(datos: FirmarYEnviarInput):
         except ValueError:
             fecha_ref_dt = _date.today()
         razon = ref.razon or ref.razon_ref or ""
-        # tipo_doc_ref puede ser "SET" o int
-        tipo = ref.tipo_doc_ref
-        if str(tipo).upper() == "SET":
-            tipo = "SET"
-        else:
-            try:
-                tipo = int(tipo)
-            except (ValueError, TypeError):
-                tipo = "SET"
-        return folio_ref_int, fecha_ref_dt, razon, tipo
+        # tipo_doc_ref es siempre int (801=SET)
+        try:
+            tipo = int(ref.tipo_doc_ref)
+        except (ValueError, TypeError):
+            tipo = 801
+        # Para XMLBuilder: 801 → "SET", resto → int
+        tipo_builder = "SET" if tipo == 801 else tipo
+        return folio_ref_int, fecha_ref_dt, razon, tipo_builder
 
     try:
         if datos.tipo in TIPOS_BOLETA:
