@@ -136,16 +136,11 @@ class SIISender:
         token_p12 = auth_p12_bytes or p12_bytes
         token_pwd = auth_password or password
 
-        # ── Detectar si es boleta para usar el token correcto ─────────────────
+        # Token DTE estándar para todos los tipos — maullin/palena
+        # maullin2/rahue no es accesible desde servidores fuera de Chile
+        # El endpoint de upload acepta el mismo token para DTE y boletas
         es_boleta = "EnvioBOLETA" in sobre_xml[:500]
-
-        if es_boleta:
-            # Boletas: token desde maullin2 (cert) o rahue (prod)
-            logger.info(f"[SII AUTH] EnvioBOLETA detectado — usando token boleta ({self.ambiente})")
-            token = await self._obtener_token_boleta(token_p12, token_pwd)
-        else:
-            # Facturas, guías, notas: token DTE estándar
-            token = await self._obtener_token(token_p12, token_pwd)
+        token = await self._obtener_token(token_p12, token_pwd)
 
         url_envio   = self.url_upload
         rut_limpio  = self.limpiar_rut(rut_emisor)
