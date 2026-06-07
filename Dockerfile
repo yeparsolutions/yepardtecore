@@ -12,12 +12,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     default-jdk-headless \
     && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
-ARG BUST=10
-RUN echo "bust=$BUST" && \
-    pip install --no-cache-dir --upgrade pip && \
+RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir --no-binary lxml,xmlsec lxml==4.9.4 xmlsec==1.3.17 && \
     pip install --no-cache-dir -r requirements.txt
 COPY . .
+# Cache bust DESPUÉS del COPY para forzar rebuild del código fuente
+ARG BUST=1
+RUN echo "bust=$BUST"
 RUN javac FirmaDTE.java
 EXPOSE 8000
 CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
