@@ -116,12 +116,32 @@ class SIIAuth:
             raise Exception(f"SII no respondió al pedir semilla: HTTP {response.status_code}")
 
         try:
-            # La respuesta SOAP contiene el XML de la semilla escapado dentro
-            root        = etree.fromstring(response.content)
-            seed_return = root.findtext(".//{http://DefaultNamespace}getSeedReturn")
+            # Loggear respuesta para diagnóstico
+            import logging as _log
+            _logger2 = _log.getLogger("yepardtecore.sii_auth")
+            _logger2.info(f"[SII SEMILLA] Respuesta raw: {response.text[:500]}")
+
+            root = etree.fromstring(response.content)
+
+            # Buscar getSeedReturn con distintos namespaces posibles
+            # El SII a veces cambia el namespace entre ambientes
+            seed_return = (
+                root.findtext(".//{http://DefaultNamespace}getSeedReturn")
+                or root.findtext(".//getSeedReturn")
+                or root.findtext(".//{urn:DefaultNamespace}getSeedReturn")
+            )
 
             if not seed_return:
-                raise Exception(f"Respuesta inválida del SII: {response.text[:200]}")
+                # Buscar cualquier elemento que contenga semilla
+                for el in root.iter():
+                    if 'seed' in el.tag.lower() or 'semilla' in el.tag.lower():
+                        if el.text and el.text.strip():
+                            seed_return = el.text.strip()
+                            _logger2.info(f"[SII SEMILLA] getSeedReturn encontrado en tag: {el.tag}")
+                            break
+
+            if not seed_return:
+                raise Exception(f"Respuesta inválida del SII: {response.text[:500]}")
 
             # El contenido es XML escapado — parsearlo de nuevo
             inner   = etree.fromstring(seed_return.encode("utf-8"))
@@ -252,7 +272,7 @@ class SIIAuth:
             '</soapenv:Envelope>'
         )
 
-        async with get_sii_client(timeout=60.0) as client:
+        async with get_sii_client(timeout=15.0) as client:
             response = await client.post(
                 self.url_token,
                 content=soap_body.encode("utf-8"),
@@ -321,27 +341,9 @@ async def obtener_token_cached(p12_bytes: bytes, password: str,
     import logging as _logging
     _logger = _logging.getLogger("yepardtecore.dte")
     _logger.info(f"[SII AUTH] Usando {'auth_p12 (E-Sign)' if auth_p12_bytes else 'p12 (firma)'} para token")
-    # Reintentar hasta 2 veces si hay timeout — el SII maullin a veces demora
-    # Analogía: si el timbre no responde al primer toque, intentar de nuevo
-    import httpx as _httpx
-    ultimo_error = None
-    for intento in range(2):
-        try:
-            auth  = SIIAuth(token_p12, token_pwd, ambiente)
-            token = await auth.obtener_token()
-            _logger.info(f"[SII AUTH] Token obtenido en intento {intento+1}: {token[:10]}...")
-            ultimo_error = None
-            break
-        except (_httpx.ReadTimeout, _httpx.ConnectTimeout, _httpx.TimeoutException) as e:
-            ultimo_error = e
-            _logger.warning(f"[SII AUTH] Timeout intento {intento+1}/2: {e}")
-            if intento < 1:
-                import asyncio
-                await asyncio.sleep(3)  # Esperar 3s antes de reintentar
-    if ultimo_error:
-        raise RuntimeError(
-            f"SII no respondió después de 2 intentos (timeout). "            f"Intenta nuevamente en unos segundos. Error: {ultimo_error}"
-        )
+    auth  = SIIAuth(token_p12, token_pwd, ambiente)
+    token = await auth.obtener_token()
+    _logger.info(f"[SII AUTH] Token obtenido: {token[:10]}...")
 
     _token_cache[cache_key] = {
         "token":  token,
