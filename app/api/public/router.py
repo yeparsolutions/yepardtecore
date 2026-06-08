@@ -674,16 +674,12 @@ async def generar_set(datos: GenerarSetInput):
         raise HTTPException(500, f"Error armando sobre: {ex}")
 
     if not datos.auto_enviar:
-        import base64 as _b64e
-        # Devolver en base64 para evitar corrupción de encoding al pasar por JSON/JS
-        sobre_b64 = _b64e.b64encode(sobre_firmado.encode('ISO-8859-1')).decode('ascii')
         return {
-            "ok":           True,
-            "sobre_xml":    sobre_firmado,   # compatibilidad hacia atrás
-            "sobre_xml_b64": sobre_b64,      # preferir este — encoding garantizado
-            "n_casos":      len(datos.casos),
-            "folio_desde":  folio_desde,
-            "folio_hasta":  folio_desde + len(datos.casos) - 1,
+            "ok":          True,
+            "sobre_xml":   sobre_firmado,
+            "n_casos":     len(datos.casos),
+            "folio_desde": folio_desde,
+            "folio_hasta": folio_desde + len(datos.casos) - 1,
         }
 
     # Enviar al SII
@@ -727,27 +723,56 @@ class EnviarSobreInput(BaseModel):
 
 
 @router.post("/enviar-sobre")
-async def enviar_sobre_directo(datos: EnviarSobreInput):
+async def enviar_sobre_directo(
+    datos: EnviarSobreInput,
+    db: AsyncSession = Depends(get_db),
+):
     """
     Recibe un sobre XML ya firmado y lo envía al SII.
-    No genera ni consume CAFs — solo autentica y envía.
-    Detecta automáticamente si es boleta (usa token maullin2)
-    o DTE (usa token maullin).
+    Para boletas: usa el certificado de autenticación registrado en YeparDTEcore BD
+    (el mismo que usa el admin — certificado e-Sign de Yepar Solutions).
+    Para DTEs: usa el pfx del cliente directamente.
     """
     from app.services.firma_digital import FirmaDigital
 
     try:
-        pfx_bytes  = _b64.b64decode(datos.pfx_base64)
-        sobre_xml  = _b64.b64decode(datos.xml_sobre_b64).decode("ISO-8859-1")
+        pfx_bytes = _b64.b64decode(datos.pfx_base64)
+        sobre_xml = _b64.b64decode(datos.xml_sobre_b64).decode("ISO-8859-1")
     except Exception as ex:
         raise HTTPException(400, f"Error decodificando datos: {ex}")
 
-    # Extraer rut del firmante desde el certificado
     try:
         firma        = FirmaDigital(pfx_bytes, datos.pfx_password, ambiente=datos.ambiente)
         rut_firmante = getattr(firma, "rut_certificado", None) or datos.rut_emisor
     except Exception as ex:
         raise HTTPException(400, f"Error leyendo certificado: {ex}")
+
+    es_boleta = "EnvioBOLETA" in sobre_xml[:500]
+
+    # Para boletas: usar certificado auth de YeparDTEcore BD (registrado en maullin2)
+    # Para DTEs: usar el pfx del cliente
+    # Analogía: para entrar al edificio de boletas necesitas la tarjeta del dueño,
+    # no la del visitante — el SII verifica quién está autorizado en maullin2
+    auth_p12 = pfx_bytes
+    auth_pwd = datos.pfx_password
+
+    if es_boleta:
+        cert_auth = (await db.execute(
+            select(Certificado)
+            .join(Emisor, Certificado.emisor_id == Emisor.id)
+            .where(
+                Certificado.activo == True,
+                Certificado.certificado_auth_p12 != None,
+            )
+            .limit(1)
+        )).scalar_one_or_none()
+
+        if cert_auth and cert_auth.certificado_auth_p12:
+            auth_p12 = bytes(cert_auth.certificado_auth_p12)
+            auth_pwd = cert_auth.certificado_auth_password or datos.pfx_password
+            logger.info(f"[ENVIAR-SOBRE] Boleta — usando auth_p12 de BD: {cert_auth.rut_firmante}")
+        else:
+            logger.warning("[ENVIAR-SOBRE] Boleta sin auth_p12 en BD — usando pfx del cliente")
 
     sender = SIISender(ambiente=datos.ambiente)
 
@@ -758,8 +783,8 @@ async def enviar_sobre_directo(datos: EnviarSobreInput):
             rut_enviador   = rut_firmante,
             p12_bytes      = pfx_bytes,
             password       = datos.pfx_password,
-            auth_p12_bytes = pfx_bytes,
-            auth_password  = datos.pfx_password,
+            auth_p12_bytes = auth_p12,
+            auth_password  = auth_pwd,
         )
     except Exception as ex:
         logger.error(f"[ENVIAR-SOBRE] Error: {ex}", exc_info=True)
