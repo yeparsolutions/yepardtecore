@@ -378,30 +378,78 @@ async def obtener_token_boleta_cached(
     p12_bytes: bytes,
     password: str,
     ambiente: str = "certificacion",
+    db=None,           # AsyncSession opcional — si viene, persiste en BD
+    emisor_id: int = None,
 ) -> str:
     """
-    Token para boletas electrónicas con cache en memoria.
-    Usa SIIAuthBoleta que apunta a los endpoints maullin2/rahue.
+    Token para boletas electrónicas con caché en memoria Y en BD.
+
+    Analogía: es como una credencial de visitante — se obtiene en la entrada
+    (maullin2, solo accesible desde Chile), pero una vez obtenida se guarda
+    para que los procesos internos (Railway) puedan usarla sin volver a la entrada.
     """
     cache_key = f"boleta_{ambiente}_{hash(p12_bytes)}"
     ahora     = datetime.now(timezone.utc)
 
+    import logging as _logging
+    _logger = _logging.getLogger("yepardtecore.sii_auth")
+
+    # 1. Revisar caché en memoria primero (más rápido)
     if cache_key in _token_cache_boleta:
         cached = _token_cache_boleta[cache_key]
         if (cached["expira"] - ahora).total_seconds() > 60:
             return cached["token"]
 
-    import logging as _logging
-    _logger = _logging.getLogger("yepardtecore.dte")
-    _logger.info(f"[SII AUTH BOLETA] Obteniendo token para boletas ({ambiente})")
+    # 2. Revisar token persistido en BD si viene db
+    if db is not None and emisor_id is not None:
+        from sqlalchemy import select as _sel
+        from app.models.certificado import Certificado
+        try:
+            cert = (await db.execute(
+                _sel(Certificado).where(
+                    Certificado.emisor_id == emisor_id,
+                    Certificado.activo == True,
+                ).limit(1)
+            )).scalar_one_or_none()
 
+            if cert and cert.token_boleta and cert.token_boleta_expira:
+                from datetime import datetime as _dt
+                expira = _dt.fromisoformat(cert.token_boleta_expira).replace(tzinfo=timezone.utc)
+                if (expira - ahora).total_seconds() > 60:
+                    _logger.info(f"[SII AUTH BOLETA] Token desde BD — expira en {int((expira-ahora).total_seconds()//60)} min")
+                    # Repoblar caché en memoria
+                    _token_cache_boleta[cache_key] = {"token": cert.token_boleta, "expira": expira}
+                    return cert.token_boleta
+        except Exception as ex:
+            _logger.warning(f"[SII AUTH BOLETA] No se pudo leer token desde BD: {ex}")
+
+    # 3. Obtener token fresco desde maullin2 (requiere acceso a red chilena)
+    _logger.info(f"[SII AUTH BOLETA] Obteniendo token fresco desde maullin2 ({ambiente})")
     auth  = SIIAuthBoleta(p12_bytes, password, ambiente)
     token = await auth.obtener_token()
+    expira_nueva = ahora + timedelta(minutes=55)
     _logger.info(f"[SII AUTH BOLETA] Token obtenido: {token[:10]}...")
 
-    _token_cache_boleta[cache_key] = {
-        "token":  token,
-        "expira": ahora + timedelta(minutes=55),
-    }
+    # Guardar en caché en memoria
+    _token_cache_boleta[cache_key] = {"token": token, "expira": expira_nueva}
+
+    # Persistir en BD si viene db
+    if db is not None and emisor_id is not None:
+        from sqlalchemy import select as _sel
+        from app.models.certificado import Certificado
+        try:
+            cert = (await db.execute(
+                _sel(Certificado).where(
+                    Certificado.emisor_id == emisor_id,
+                    Certificado.activo == True,
+                ).limit(1)
+            )).scalar_one_or_none()
+            if cert:
+                cert.token_boleta        = token
+                cert.token_boleta_expira = expira_nueva.isoformat()
+                await db.commit()
+                _logger.info(f"[SII AUTH BOLETA] Token persistido en BD")
+        except Exception as ex:
+            _logger.warning(f"[SII AUTH BOLETA] No se pudo persistir token: {ex}")
 
     return token
