@@ -723,95 +723,51 @@ class EnviarSobreInput(BaseModel):
 
 
 @router.post("/enviar-sobre")
-async def enviar_sobre_directo(
-    datos: EnviarSobreInput,
-    db: AsyncSession = Depends(get_db),
-):
+async def enviar_sobre_directo(datos: EnviarSobreInput):
     """
     Recibe un sobre XML ya firmado y lo envía al SII.
-    Para boletas: usa el certificado de autenticación registrado en YeparDTEcore BD
-    (el mismo que usa el admin — certificado e-Sign de Yepar Solutions).
-    Para DTEs: usa el pfx del cliente directamente.
+    No genera ni consume CAFs — solo autentica y envía.
+    Detecta automáticamente si es boleta (usa token maullin2)
+    o DTE (usa token maullin).
     """
     from app.services.firma_digital import FirmaDigital
 
     try:
-        pfx_bytes = _b64.b64decode(datos.pfx_base64)
-        sobre_xml = _b64.b64decode(datos.xml_sobre_b64).decode("ISO-8859-1")
+        pfx_bytes  = _b64.b64decode(datos.pfx_base64)
+        sobre_xml  = _b64.b64decode(datos.xml_sobre_b64).decode("ISO-8859-1")
     except Exception as ex:
         raise HTTPException(400, f"Error decodificando datos: {ex}")
 
+    # Extraer rut del firmante desde el certificado
     try:
         firma        = FirmaDigital(pfx_bytes, datos.pfx_password, ambiente=datos.ambiente)
         rut_firmante = getattr(firma, "rut_certificado", None) or datos.rut_emisor
     except Exception as ex:
         raise HTTPException(400, f"Error leyendo certificado: {ex}")
 
-    es_boleta = "EnvioBOLETA" in sobre_xml[:500]
-
-    # Para boletas: usar certificado auth de YeparDTEcore BD (registrado en maullin2)
-    # Para DTEs: usar el pfx del cliente
-    # Analogía: para entrar al edificio de boletas necesitas la tarjeta del dueño,
-    # no la del visitante — el SII verifica quién está autorizado en maullin2
-    auth_p12 = pfx_bytes
-    auth_pwd = datos.pfx_password
-
     sender = SIISender(ambiente=datos.ambiente)
 
-    if es_boleta:
-        # Para boletas: leer token persistido en BD (obtenido desde red chilena)
-        # El admin obtiene el token y lo persiste — el stateless lo reutiliza
-        from app.services.sii_auth import _token_cache_boleta
-        from datetime import datetime as _dt
+    # Para boletas: usar el certificado_auth_p12 de la BD (registrado en SII)
+    # El pfx del cliente no está autorizado para obtener token de boletas
+    # Analogía: para entrar al edificio necesitas la tarjeta del administrador,
+    # no la del visitante — aunque el visitante firme los documentos adentro
+    auth_p12 = pfx_bytes     # default: pfx del cliente (para DTEs normales)
+    auth_pwd = datos.pfx_password
 
+    es_boleta = "EnvioBOLETA" in sobre_xml[:500]
+    if es_boleta:
         cert_auth = (await db.execute(
-            select(Certificado)
-            .where(
+            select(Certificado).where(
                 Certificado.activo == True,
                 Certificado.certificado_auth_p12 != None,
-            )
-            .limit(1)
+            ).limit(1)
         )).scalar_one_or_none()
-
-        token_bd = None
-        if cert_auth and cert_auth.token_boleta and cert_auth.token_boleta_expira:
-            ahora = datetime.now()
-            expira = _dt.fromisoformat(cert_auth.token_boleta_expira)
-            if (expira - ahora).total_seconds() > 60:
-                token_bd = cert_auth.token_boleta
-                logger.info(f"[ENVIAR-SOBRE] Boleta — token desde BD, expira en {int((expira-ahora).total_seconds()//60)} min")
-
-        if not token_bd:
-            # Token expirado o no existe — intentar obtener con auth_p12 de BD
-            if cert_auth and cert_auth.certificado_auth_p12:
-                auth_p12 = bytes(cert_auth.certificado_auth_p12)
-                auth_pwd = cert_auth.certificado_auth_password or datos.pfx_password
-                from app.services.sii_auth import obtener_token_boleta_cached
-                try:
-                    token_bd = await obtener_token_boleta_cached(
-                        auth_p12, auth_pwd, datos.ambiente,
-                        db=db, emisor_id=cert_auth.emisor_id
-                    )
-                    logger.info(f"[ENVIAR-SOBRE] Boleta — token obtenido fresco")
-                except Exception as ex:
-                    logger.error(f"[ENVIAR-SOBRE] No se pudo obtener token boleta: {ex}")
-                    raise HTTPException(503,
-                        "No hay token de boleta disponible. "                        "Genera una boleta desde el admin para refrescar el token.")
-            else:
-                raise HTTPException(503,
-                    "No hay certificado de autenticación configurado para boletas.")
-
-        # Inyectar token directamente en el caché de sii_sender
-        from app.services.sii_auth import _token_cache_boleta
-        from datetime import timezone as _tz, timedelta as _td
-        cache_key = f"boleta_{datos.ambiente}_{hash(bytes(cert_auth.certificado_auth_p12))}"
-        _token_cache_boleta[cache_key] = {
-            "token":  token_bd,
-            "expira": datetime.now(_tz.utc) + _td(minutes=50),
-        }
-        # Usar auth_p12 de BD para que el hash del caché coincida
-        auth_p12 = bytes(cert_auth.certificado_auth_p12)
-        auth_pwd = cert_auth.certificado_auth_password or datos.pfx_password
+        if cert_auth and cert_auth.certificado_auth_p12:
+            auth_p12 = bytes(cert_auth.certificado_auth_p12)
+            auth_pwd = cert_auth.certificado_auth_password or datos.pfx_password
+            logger.info(f"[ENVIAR-SOBRE] Boleta — auth con certificado BD: {cert_auth.rut_firmante}")
+        else:
+            raise HTTPException(503, "No hay certificado de autenticación configurado para boletas.")
 
     try:
         resultado = await sender.enviar_sobre(
