@@ -233,6 +233,7 @@ class FirmarYEnviarInput(BaseModel):
     referencias:  list[ReferenciaStateless] = []
     ambiente:     str = "certificacion"
     auto_enviar:  bool = True
+    folio_actual: int | None = None   # folio a usar — si None usa folio_desde del CAF
 
 
 @router.post("/firmar-y-enviar")
@@ -382,8 +383,16 @@ async def firmar_y_enviar(datos: FirmarYEnviarInput):
     # ── Extraer folio del CAF ─────────────────────────────────────────────────
     try:
         from lxml import etree as _etree
-        caf_el    = _etree.fromstring(caf_xml_bytes)
-        folio     = int(caf_el.findtext(".//D") or caf_el.findtext(".//DESDE") or 1)
+        caf_el      = _etree.fromstring(caf_xml_bytes)
+        folio_desde = int(caf_el.findtext(".//D") or caf_el.findtext(".//DESDE") or 1)
+        folio_hasta = int(caf_el.findtext(".//H") or caf_el.findtext(".//HASTA") or folio_desde)
+        # Usar folio_actual si viene en el request, si no usar folio_desde del CAF
+        folio = datos.folio_actual if datos.folio_actual else folio_desde
+        if folio > folio_hasta:
+            raise HTTPException(
+                400,
+                f"Folio {folio} supera el rango del CAF ({folio_desde}-{folio_hasta}). "                f"Solicita un nuevo CAF al SII."
+            )
         # Actualizar folio en input_dte
         input_dte.folio = folio
         if datos.tipo in TIPOS_BOLETA:
