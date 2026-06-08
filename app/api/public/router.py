@@ -233,7 +233,6 @@ class FirmarYEnviarInput(BaseModel):
     referencias:  list[ReferenciaStateless] = []
     ambiente:     str = "certificacion"
     auto_enviar:  bool = True
-    folio_actual: int | None = None   # folio a usar — si None usa folio_desde del CAF
 
 
 @router.post("/firmar-y-enviar")
@@ -383,16 +382,8 @@ async def firmar_y_enviar(datos: FirmarYEnviarInput):
     # ── Extraer folio del CAF ─────────────────────────────────────────────────
     try:
         from lxml import etree as _etree
-        caf_el      = _etree.fromstring(caf_xml_bytes)
-        folio_desde = int(caf_el.findtext(".//D") or caf_el.findtext(".//DESDE") or 1)
-        folio_hasta = int(caf_el.findtext(".//H") or caf_el.findtext(".//HASTA") or folio_desde)
-        # Usar folio_actual si viene en el request, si no usar folio_desde del CAF
-        folio = datos.folio_actual if datos.folio_actual else folio_desde
-        if folio > folio_hasta:
-            raise HTTPException(
-                400,
-                f"Folio {folio} supera el rango del CAF ({folio_desde}-{folio_hasta}). "                f"Solicita un nuevo CAF al SII."
-            )
+        caf_el    = _etree.fromstring(caf_xml_bytes)
+        folio     = int(caf_el.findtext(".//D") or caf_el.findtext(".//DESDE") or 1)
         # Actualizar folio en input_dte
         input_dte.folio = folio
         if datos.tipo in TIPOS_BOLETA:
@@ -683,12 +674,16 @@ async def generar_set(datos: GenerarSetInput):
         raise HTTPException(500, f"Error armando sobre: {ex}")
 
     if not datos.auto_enviar:
+        import base64 as _b64e
+        # Devolver en base64 para evitar corrupción de encoding al pasar por JSON/JS
+        sobre_b64 = _b64e.b64encode(sobre_firmado.encode('ISO-8859-1')).decode('ascii')
         return {
-            "ok":          True,
-            "sobre_xml":   sobre_firmado,
-            "n_casos":     len(datos.casos),
-            "folio_desde": folio_desde,
-            "folio_hasta": folio_desde + len(datos.casos) - 1,
+            "ok":           True,
+            "sobre_xml":    sobre_firmado,   # compatibilidad hacia atrás
+            "sobre_xml_b64": sobre_b64,      # preferir este — encoding garantizado
+            "n_casos":      len(datos.casos),
+            "folio_desde":  folio_desde,
+            "folio_hasta":  folio_desde + len(datos.casos) - 1,
         }
 
     # Enviar al SII
