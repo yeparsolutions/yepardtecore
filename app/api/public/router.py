@@ -756,10 +756,16 @@ async def enviar_sobre_directo(
     auth_p12 = pfx_bytes
     auth_pwd = datos.pfx_password
 
+    sender = SIISender(ambiente=datos.ambiente)
+
     if es_boleta:
+        # Para boletas: leer token persistido en BD (obtenido desde red chilena)
+        # El admin obtiene el token y lo persiste — el stateless lo reutiliza
+        from app.services.sii_auth import _token_cache_boleta
+        from datetime import datetime as _dt
+
         cert_auth = (await db.execute(
             select(Certificado)
-            .join(Emisor, Certificado.emisor_id == Emisor.id)
             .where(
                 Certificado.activo == True,
                 Certificado.certificado_auth_p12 != None,
@@ -767,14 +773,45 @@ async def enviar_sobre_directo(
             .limit(1)
         )).scalar_one_or_none()
 
-        if cert_auth and cert_auth.certificado_auth_p12:
-            auth_p12 = bytes(cert_auth.certificado_auth_p12)
-            auth_pwd = cert_auth.certificado_auth_password or datos.pfx_password
-            logger.info(f"[ENVIAR-SOBRE] Boleta — usando auth_p12 de BD: {cert_auth.rut_firmante}")
-        else:
-            logger.warning("[ENVIAR-SOBRE] Boleta sin auth_p12 en BD — usando pfx del cliente")
+        token_bd = None
+        if cert_auth and cert_auth.token_boleta and cert_auth.token_boleta_expira:
+            ahora = datetime.now()
+            expira = _dt.fromisoformat(cert_auth.token_boleta_expira)
+            if (expira - ahora).total_seconds() > 60:
+                token_bd = cert_auth.token_boleta
+                logger.info(f"[ENVIAR-SOBRE] Boleta — token desde BD, expira en {int((expira-ahora).total_seconds()//60)} min")
 
-    sender = SIISender(ambiente=datos.ambiente)
+        if not token_bd:
+            # Token expirado o no existe — intentar obtener con auth_p12 de BD
+            if cert_auth and cert_auth.certificado_auth_p12:
+                auth_p12 = bytes(cert_auth.certificado_auth_p12)
+                auth_pwd = cert_auth.certificado_auth_password or datos.pfx_password
+                from app.services.sii_auth import obtener_token_boleta_cached
+                try:
+                    token_bd = await obtener_token_boleta_cached(
+                        auth_p12, auth_pwd, datos.ambiente,
+                        db=db, emisor_id=cert_auth.emisor_id
+                    )
+                    logger.info(f"[ENVIAR-SOBRE] Boleta — token obtenido fresco")
+                except Exception as ex:
+                    logger.error(f"[ENVIAR-SOBRE] No se pudo obtener token boleta: {ex}")
+                    raise HTTPException(503,
+                        "No hay token de boleta disponible. "                        "Genera una boleta desde el admin para refrescar el token.")
+            else:
+                raise HTTPException(503,
+                    "No hay certificado de autenticación configurado para boletas.")
+
+        # Inyectar token directamente en el caché de sii_sender
+        from app.services.sii_auth import _token_cache_boleta
+        from datetime import timezone as _tz, timedelta as _td
+        cache_key = f"boleta_{datos.ambiente}_{hash(bytes(cert_auth.certificado_auth_p12))}"
+        _token_cache_boleta[cache_key] = {
+            "token":  token_bd,
+            "expira": datetime.now(_tz.utc) + _td(minutes=50),
+        }
+        # Usar auth_p12 de BD para que el hash del caché coincida
+        auth_p12 = bytes(cert_auth.certificado_auth_p12)
+        auth_pwd = cert_auth.certificado_auth_password or datos.pfx_password
 
     try:
         resultado = await sender.enviar_sobre(
