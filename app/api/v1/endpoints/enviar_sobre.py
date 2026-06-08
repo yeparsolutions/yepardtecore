@@ -87,6 +87,31 @@ async def enviar_sobre_directo(
             "ambiente": emisor.ambiente or "certificacion",
         }
 
+    # Si es boleta y el envío fue exitoso, persistir el token en BD
+    # para que el endpoint stateless pueda reutilizarlo (maullin2 no es
+    # accesible desde servidores fuera de Chile como Railway US West)
+    es_boleta = "EnvioBOLETA" in sobre_xml_final[:500]
+    if es_boleta and auth_p12:
+        try:
+            from app.services.sii_auth import _token_cache_boleta
+            ambiente_actual = emisor.ambiente or "certificacion"
+            cache_key = f"boleta_{ambiente_actual}_{hash(auth_p12)}"
+            cached = _token_cache_boleta.get(cache_key)
+            if cached:
+                from datetime import timezone
+                cert.token_boleta        = cached["token"]
+                cert.token_boleta_expira = cached["expira"].isoformat()
+                await db.commit()
+                import logging
+                logging.getLogger("yepardtecore.enviar_sobre").info(
+                    f"[ENVIAR-SOBRE] Token boleta persistido en BD — expira: {cert.token_boleta_expira}"
+                )
+        except Exception as ex:
+            import logging
+            logging.getLogger("yepardtecore.enviar_sobre").warning(
+                f"[ENVIAR-SOBRE] No se pudo persistir token boleta: {ex}"
+            )
+
     return {
         "ok":       resultado.get("track_id") is not None or resultado.get("estado") == "RECIBIDO",
         "track_id": resultado.get("track_id"),
