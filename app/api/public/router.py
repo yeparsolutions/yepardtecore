@@ -723,7 +723,10 @@ class EnviarSobreInput(BaseModel):
 
 
 @router.post("/enviar-sobre")
-async def enviar_sobre_directo(datos: EnviarSobreInput):
+async def enviar_sobre_directo(
+    datos: EnviarSobreInput,
+    db: AsyncSession = Depends(get_db),
+):
     """
     Recibe un sobre XML ya firmado y lo envía al SII.
     No genera ni consume CAFs — solo autentica y envía.
@@ -747,28 +750,6 @@ async def enviar_sobre_directo(datos: EnviarSobreInput):
 
     sender = SIISender(ambiente=datos.ambiente)
 
-    # Para boletas: usar el certificado_auth_p12 de la BD (registrado en SII)
-    # El pfx del cliente no está autorizado para obtener token de boletas
-    # Analogía: para entrar al edificio necesitas la tarjeta del administrador,
-    # no la del visitante — aunque el visitante firme los documentos adentro
-    auth_p12 = pfx_bytes     # default: pfx del cliente (para DTEs normales)
-    auth_pwd = datos.pfx_password
-
-    es_boleta = "EnvioBOLETA" in sobre_xml[:500]
-    if es_boleta:
-        cert_auth = (await db.execute(
-            select(Certificado).where(
-                Certificado.activo == True,
-                Certificado.certificado_auth_p12 != None,
-            ).limit(1)
-        )).scalar_one_or_none()
-        if cert_auth and cert_auth.certificado_auth_p12:
-            auth_p12 = bytes(cert_auth.certificado_auth_p12)
-            auth_pwd = cert_auth.certificado_auth_password or datos.pfx_password
-            logger.info(f"[ENVIAR-SOBRE] Boleta — auth con certificado BD: {cert_auth.rut_firmante}")
-        else:
-            raise HTTPException(503, "No hay certificado de autenticación configurado para boletas.")
-
     try:
         resultado = await sender.enviar_sobre(
             sobre_xml      = sobre_xml,
@@ -776,8 +757,8 @@ async def enviar_sobre_directo(datos: EnviarSobreInput):
             rut_enviador   = rut_firmante,
             p12_bytes      = pfx_bytes,
             password       = datos.pfx_password,
-            auth_p12_bytes = auth_p12,
-            auth_password  = auth_pwd,
+            auth_p12_bytes = pfx_bytes,
+            auth_password  = datos.pfx_password,
         )
     except Exception as ex:
         logger.error(f"[ENVIAR-SOBRE] Error: {ex}", exc_info=True)
