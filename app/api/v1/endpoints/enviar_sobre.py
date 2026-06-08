@@ -62,12 +62,19 @@ async def enviar_sobre_directo(
         sobre_xml_final = body.xml_sobre or ""
 
     try:
+        # Usar certificado de autenticación (auth_p12) si existe,
+        # sino usar el certificado de firma — el SII necesita auth para el token
+        auth_p12 = bytes(cert.certificado_auth_p12) if cert.certificado_auth_p12 else None
+        auth_pwd = cert.certificado_auth_password if cert.certificado_auth_p12 else None
+
         resultado = await sender.enviar_sobre(
-            sobre_xml=sobre_xml_final,
-            rut_emisor=emisor.rut,
-            rut_enviador=rut_enviador,
-            p12_bytes=bytes(cert.certificado_p12),
-            password=cert.certificado_password,
+            sobre_xml      = sobre_xml_final,
+            rut_emisor     = emisor.rut,
+            rut_enviador   = rut_enviador,
+            p12_bytes      = bytes(cert.certificado_p12),
+            password       = cert.certificado_password,
+            auth_p12_bytes = auth_p12,
+            auth_password  = auth_pwd,
         )
     except Exception as e:
         import traceback
