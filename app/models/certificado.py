@@ -61,6 +61,11 @@ class Certificado(Base):
     # Solo un certificado activo por emisor a la vez
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # Token SII de boletas — persistido en BD para sobrevivir reinicios
+    # y para usarlo desde endpoints stateless que no pueden llamar a maullin2
+    token_boleta:        Mapped[str | None]  = mapped_column(String(200), nullable=True)
+    token_boleta_expira: Mapped[str | None]  = mapped_column(String(30),  nullable=True)
+
     # ── Timestamps ────────────────────────────────────────────
     created_at: Mapped[str] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
