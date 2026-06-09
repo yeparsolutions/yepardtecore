@@ -674,12 +674,16 @@ async def generar_set(datos: GenerarSetInput):
         raise HTTPException(500, f"Error armando sobre: {ex}")
 
     if not datos.auto_enviar:
+        import base64 as _b64e
+        # Devolver también en base64 para preservar encoding ISO-8859-1
+        sobre_b64 = _b64e.b64encode(sobre_firmado.encode('ISO-8859-1')).decode('ascii')
         return {
-            "ok":          True,
-            "sobre_xml":   sobre_firmado,
-            "n_casos":     len(datos.casos),
-            "folio_desde": folio_desde,
-            "folio_hasta": folio_desde + len(datos.casos) - 1,
+            "ok":           True,
+            "sobre_xml":    sobre_firmado,
+            "sobre_xml_b64": sobre_b64,
+            "n_casos":      len(datos.casos),
+            "folio_desde":  folio_desde,
+            "folio_hasta":  folio_desde + len(datos.casos) - 1,
         }
 
     # Enviar al SII
@@ -723,10 +727,7 @@ class EnviarSobreInput(BaseModel):
 
 
 @router.post("/enviar-sobre")
-async def enviar_sobre_directo(
-    datos: EnviarSobreInput,
-    db: AsyncSession = Depends(get_db),
-):
+async def enviar_sobre_directo(datos: EnviarSobreInput):
     """
     Recibe un sobre XML ya firmado y lo envía al SII.
     No genera ni consume CAFs — solo autentica y envía.
