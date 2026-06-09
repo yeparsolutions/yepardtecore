@@ -674,19 +674,31 @@ async def generar_set(datos: GenerarSetInput):
         raise HTTPException(500, f"Error armando sobre: {ex}")
 
     if not datos.auto_enviar:
-        import base64 as _b64e
-        # Devolver también en base64 para preservar encoding ISO-8859-1
-        sobre_b64 = _b64e.b64encode(sobre_firmado.encode('ISO-8859-1')).decode('ascii')
         return {
-            "ok":           True,
-            "sobre_xml":    sobre_firmado,
-            "sobre_xml_b64": sobre_b64,
-            "n_casos":      len(datos.casos),
-            "folio_desde":  folio_desde,
-            "folio_hasta":  folio_desde + len(datos.casos) - 1,
+            "ok":          True,
+            "sobre_xml":   sobre_firmado,
+            "n_casos":     len(datos.casos),
+            "folio_desde": folio_desde,
+            "folio_hasta": folio_desde + len(datos.casos) - 1,
         }
 
-    # Enviar al SII
+    # Enviar al SII — usar auth_p12 de BD para autenticarse (certificado registrado)
+    # El pfx del cliente firma el XML pero el auth_p12 de BD obtiene el token SII
+    auth_p12 = pfx_bytes
+    auth_pwd  = datos.pfx_password
+    try:
+        cert_auth = (await db.execute(
+            select(Certificado).where(
+                Certificado.activo == True,
+                Certificado.certificado_auth_p12 != None,
+            ).limit(1)
+        )).scalar_one_or_none()
+        if cert_auth and cert_auth.certificado_auth_p12:
+            auth_p12 = bytes(cert_auth.certificado_auth_p12)
+            auth_pwd  = cert_auth.certificado_auth_password or datos.pfx_password
+    except Exception as _ex:
+        logger.warning(f"[SET] No se pudo cargar auth_p12 de BD: {_ex}")
+
     try:
         resultado = await sender.enviar_sobre(
             sobre_xml      = sobre_firmado,
@@ -694,8 +706,8 @@ async def generar_set(datos: GenerarSetInput):
             rut_enviador   = rut_firmante,
             p12_bytes      = pfx_bytes,
             password       = datos.pfx_password,
-            auth_p12_bytes = pfx_bytes,
-            auth_password  = datos.pfx_password,
+            auth_p12_bytes = auth_p12,
+            auth_password  = auth_pwd,
         )
         return {
             "ok":          True,
