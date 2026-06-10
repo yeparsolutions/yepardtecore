@@ -140,11 +140,7 @@ class SIISender:
         # maullin2/rahue no es accesible desde servidores fuera de Chile
         # El endpoint de upload acepta el mismo token para DTE y boletas
         es_boleta = "EnvioBOLETA" in sobre_xml[:500]
-        # Boletas usan maullin2 (token boleta) — DTEs usan maullin (token DTE)
-        if es_boleta:
-            token = await self._obtener_token_boleta(token_p12, token_pwd)
-        else:
-            token = await self._obtener_token(token_p12, token_pwd)
+        token = await self._obtener_token(token_p12, token_pwd)
 
         url_envio   = self.url_upload
         rut_limpio  = self.limpiar_rut(rut_emisor)
