@@ -709,10 +709,15 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
             auth_p12_bytes = auth_p12,
             auth_password  = auth_pwd,
         )
+        estado   = resultado.get("estado", "ENVIADO")
+        track_id = resultado.get("track_id")
+        mensaje  = resultado.get("mensaje", "")
+        logger.info(f"[SET] Resultado SII: estado={estado} track_id={track_id} mensaje={mensaje}")
         return {
-            "ok":          True,
-            "track_id":    resultado.get("track_id"),
-            "estado":      resultado.get("estado", "ENVIADO"),
+            "ok":          track_id is not None,
+            "track_id":    track_id,
+            "estado":      estado,
+            "mensaje":     mensaje,
             "sobre_xml":   sobre_firmado,
             "n_casos":     len(datos.casos),
             "folio_desde": folio_desde,
