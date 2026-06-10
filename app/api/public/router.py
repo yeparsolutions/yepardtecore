@@ -510,7 +510,7 @@ class GenerarSetInput(BaseModel):
 
 
 @router.post("/generar-set")
-async def generar_set(datos: GenerarSetInput):
+async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)):
     """
     Stateless: genera el EnvioBOLETA/EnvioDTE completo con todos los casos.
     El cliente provee su pfx y CAF. YeparDTEcore firma y arma el sobre.
