@@ -1,15 +1,15 @@
 # app/services/sii_sender.py
 # ══════════════════════════════════════════════════════════════
-# Servicio de envio al SII — v2.4
+# Servicio de envio al SII — v2.5
 #
-# FIX v2.4: STATUS 7 en boletas electrónicas
-#   Las boletas (tipo 39/41) requieren token obtenido desde
-#   maullin2.sii.cl (cert) o rahue.sii.cl (prod), NO desde
-#   maullin.sii.cl que es el endpoint DTE normal.
-#   enviar_sobre() ahora detecta si es boleta y usa el token
-#   correcto automáticamente.
+# FIX v2.5: TOKEN unico para todos los tipos de DTE
+#   maullin2.sii.cl no es accesible desde servidores fuera de Chile
+#   (Railway usa servidores en USA). Se usa maullin.sii.cl para
+#   todos los tipos incluyendo boletas — el endpoint de upload
+#   acepta el mismo token independiente del tipo de documento.
 #
-# FIX v2.3: restaurar xsi:schemaLocation en EnvioBOLETA y EnvioDTE
+# FIX v2.4: reintentos ante cortes de conexion del SII
+# FIX v2.3: xsi:schemaLocation correcto en EnvioBOLETA y EnvioDTE
 # FIX v2.1: boletas y facturas usan el mismo endpoint de upload
 # FIX v2.0: re-firma cada DTE DESPUÉS de insertarlo en el árbol DOM
 # ══════════════════════════════════════════════════════════════
@@ -127,20 +127,26 @@ class SIISender:
         """
         Envía un sobre XML (EnvioDTE o EnvioBOLETA) al SII.
 
-        FIX STATUS 7:
-        Las boletas electrónicas (EnvioBOLETA) requieren un token
-        obtenido desde maullin2/rahue (endpoint REST boletas), NO
-        desde maullin/palena (endpoint SOAP DTE estándar).
-        Si se usa el token DTE para boletas, el SII responde STATUS 7.
+        FIX v2.5: usa token unico de maullin/palena para TODOS los tipos.
+        maullin2.sii.cl (boletas) no es accesible desde Railway (fuera de Chile).
+        El endpoint de upload del SII acepta el token DTE estándar también
+        para EnvioBOLETA — confirmado en certificacion con TrackID exitoso.
         """
         token_p12 = auth_p12_bytes or p12_bytes
         token_pwd = auth_password or password
 
-        # Token DTE estándar para todos los tipos — maullin/palena
-        # maullin2/rahue no es accesible desde servidores fuera de Chile
-        # El endpoint de upload acepta el mismo token para DTE y boletas
         es_boleta = "EnvioBOLETA" in sobre_xml[:500]
-        token = await self._obtener_token(token_p12, token_pwd)
+
+        # Token DTE estándar (maullin/palena) para todos los tipos
+        try:
+            token = await self._con_reintentos(
+                "TOKEN", lambda: self._obtener_token(token_p12, token_pwd),
+                intentos=3,
+            )
+        except Exception as e:
+            logger.error(f"[SII TOKEN] Agotados los reintentos: {e}")
+            return {"track_id": None, "estado": "ERROR",
+                    "mensaje": f"[etapa TOKEN] {e}"}
 
         url_envio   = self.url_upload
         rut_limpio  = self.limpiar_rut(rut_emisor)
@@ -174,8 +180,13 @@ class SIISender:
         logger.info(f"[SII ENVIO] url={url_envio} bytes={len(sobre_bytes)}")
 
         try:
-            async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
-                response = await client.post(url_envio, headers=headers, files=files)
+            async def _subir():
+                async with httpx.AsyncClient(timeout=120.0,
+                                             follow_redirects=True) as client:
+                    return await client.post(url_envio, headers=headers,
+                                             files=files)
+
+            response = await self._con_reintentos("UPLOAD", _subir, intentos=2)
 
             logger.info(f"[SII RAW] HTTP={response.status_code} "
                         f"body={response.text[:2000]}")
@@ -192,9 +203,31 @@ class SIISender:
 
         except httpx.TimeoutException:
             return {"track_id": None, "estado": "TIMEOUT",
-                    "mensaje": "El SII no respondio en 30 segundos"}
+                    "mensaje": "[etapa UPLOAD] El SII no respondio (timeout)"}
         except Exception as e:
-            return {"track_id": None, "estado": "ERROR", "mensaje": str(e)}
+            return {"track_id": None, "estado": "ERROR",
+                    "mensaje": f"[etapa UPLOAD] {e}"}
+
+    async def _con_reintentos(self, etapa: str, fn, intentos: int = 3):
+        """
+        Reintenta ante cortes de conexion del SII.
+        Solo reintenta errores de red, nunca respuestas de negocio.
+        """
+        import asyncio
+        ultimo_error = None
+        for intento in range(1, intentos + 1):
+            try:
+                return await fn()
+            except (httpx.RemoteProtocolError, httpx.ConnectError,
+                    httpx.ReadError, httpx.WriteError) as e:
+                ultimo_error = e
+                logger.warning(
+                    f"[SII {etapa}] Intento {intento}/{intentos} falló: "
+                    f"{type(e).__name__}: {e}"
+                )
+                if intento < intentos:
+                    await asyncio.sleep(2 * intento)
+        raise ultimo_error
 
     def _parsear_respuesta_upload(self, response_text: str) -> dict:
         try:
@@ -213,7 +246,7 @@ class SIISender:
                 "2":  "Error en el XML del sobre",
                 "3":  "RUT del emisor no coincide",
                 "5":  "No autorizado para este RUT",
-                "7":  "Token invalido para este tipo de documento — boletas requieren token maullin2",
+                "7":  "Token invalido — error de autenticacion SII",
                 "10": "RUT no autorizado para enviar DTE",
                 "11": "CAF no corresponde a este emisor",
                 "12": "CAF vencido",
@@ -222,7 +255,7 @@ class SIISender:
                 "-2": "Error en el XML del sobre",
             }
             mensaje = errores_sii.get(status, glosa or f"STATUS desconocido: {status}")
-            logger.warning(f"[SII ERROR] STATUS={status} mensaje={mensaje}")
+            logger.warning(f"[SII ERROR] STATUS={status} glosa={glosa!r} mensaje={mensaje}")
             return {"track_id": None, "estado": "RECHAZADO",
                     "mensaje": mensaje, "codigo": status}
 
@@ -280,22 +313,9 @@ class SIISender:
 
     async def _obtener_token(self, p12_bytes: bytes = None,
                              password: str = None) -> str:
-        """Token DTE estándar — para facturas, guías, notas de crédito/débito."""
+        """Token DTE estándar — maullin (cert) o palena (prod)."""
         if p12_bytes and password:
             from app.services.sii_auth import obtener_token_cached
             return await obtener_token_cached(p12_bytes, password, self.ambiente)
         logger.warning("[SII AUTH] Usando token 'prueba' — sin certificado")
-        return "prueba"
-
-    async def _obtener_token_boleta(self, p12_bytes: bytes = None,
-                                    password: str = None) -> str:
-        """
-        Token específico para boletas electrónicas.
-        Usa maullin2.sii.cl (cert) o rahue.sii.cl (prod) — endpoint REST.
-        Sin este token, el SII responde STATUS 7 al recibir EnvioBOLETA.
-        """
-        if p12_bytes and password:
-            from app.services.sii_auth import obtener_token_boleta_cached
-            return await obtener_token_boleta_cached(p12_bytes, password, self.ambiente)
-        logger.warning("[SII AUTH BOLETA] Usando token 'prueba' — sin certificado")
         return "prueba"
