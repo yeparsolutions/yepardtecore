@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 COPY . .
 # Cache bust DESPUÉS del COPY para forzar rebuild del código fuente
-ARG BUST=1
+ARG BUST=2
 RUN echo "bust=$BUST"
 RUN javac FirmaDTE.java
 EXPOSE 8000
