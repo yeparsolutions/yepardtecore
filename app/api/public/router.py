@@ -127,10 +127,31 @@ async def emitir_dte(
 
 @router.get("/estado/{track_id}")
 async def estado_envio(
-    track_id: str,
-    emisor:   Emisor = Depends(get_emisor_by_api_key),
-    db:       AsyncSession = Depends(get_db),
+    track_id:   str,
+    rut_emisor: Optional[str] = None,   # RUT de la EMPRESA emisora del DTE (cliente de YeparDTE)
+    tipo:       Optional[int] = None,   # tipo de DTE: 39/41 → ventanilla boletas; resto → QueryEstUp
+    ambiente:   Optional[str] = None,   # "certificacion" | "produccion" — si no viene, usa el del emisor API
+    emisor:     Emisor = Depends(get_emisor_by_api_key),
+    db:         AsyncSession = Depends(get_db),
 ):
+    """
+    Consulta al SII el estado de un envío por su track_id.
+
+    Analogía: el track_id es el número de seguimiento de una carta
+    certificada — el SII nunca avisa solo, hay que ir a la ventanilla
+    a preguntar. Este endpoint ES esa visita.
+
+    Autenticación al SII: usa el certificado del emisor dueño de la
+    API Key (Yepar Solutions, que tiene el e-Sign registrado en el SII),
+    NO el certificado de la empresa cliente — exactamente el mismo
+    principio que /v1/enviar-sobre/directo.
+    """
+    from app.services.sii_status import SIIStatusChecker, TIPOS_BOLETA
+    from app.services.sii_auth import (
+        obtener_token_cached, obtener_token_boleta_cached,
+    )
+
+    # ── Certificado de autenticación (el de Yepar, registrado en SII) ────────
     cert = (await db.execute(
         select(Certificado).where(Certificado.emisor_id == emisor.id,
                                    Certificado.activo == True).limit(1)
@@ -138,17 +159,59 @@ async def estado_envio(
     if not cert:
         raise HTTPException(400, "No hay certificado configurado")
 
-    sender = SIISender(
-        ambiente  = emisor.ambiente or "certificacion",
-        nro_resol = emisor.nro_resolucion or "0",
-        fch_resol = emisor.fch_resolucion or "2000-01-01",
-    )
+    # Preferir el certificado e-Sign de autenticación; si no existe, el de firma
+    auth_p12 = bytes(cert.certificado_auth_p12) if cert.certificado_auth_p12 \
+               else bytes(cert.certificado_p12)
+    auth_pwd = cert.certificado_auth_password if cert.certificado_auth_p12 \
+               else cert.certificado_password
+
+    ambiente_q = ambiente or emisor.ambiente or "certificacion"
+    rut_query  = rut_emisor or emisor.rut
+
+    # ── ¿Ventanilla boletas o ventanilla DTE? ─────────────────────────────────
+    # Detector principal: el tipo. De respaldo: los track_id de boleta
+    # tienen 15 dígitos; los de DTE clásico, 10.
+    es_boleta = (tipo in TIPOS_BOLETA) if tipo is not None \
+                else len(str(track_id).strip()) >= 15
+
+    checker = SIIStatusChecker(ambiente=ambiente_q)
+
     try:
-        resultado = await sender.consultar_estado(track_id=track_id, rut_emisor=emisor.rut)
+        if es_boleta:
+            # Token de boletas — reutiliza el persistido en BD si maullin2
+            # no es alcanzable directamente desde el servidor
+            token = await obtener_token_boleta_cached(
+                auth_p12, auth_pwd, ambiente_q,
+                db=db, emisor_id=emisor.id,
+            )
+            resultado = await checker.consultar_envio_boleta(
+                rut_emisor=rut_query, track_id=track_id, token_boleta=token,
+            )
+        else:
+            # Token DTE estándar (maullin/palena)
+            token = await obtener_token_cached(auth_p12, auth_pwd, ambiente_q)
+            resultado = await checker.consultar_envio_dte(
+                rut_emisor=rut_query, track_id=track_id, token=token,
+            )
     except Exception as e:
+        logger.error(f"[ESTADO] Error consultando SII track={track_id}: {e}",
+                     exc_info=True)
         raise HTTPException(500, f"Error consultando SII: {e}")
-    return {"track_id": track_id, "estado": resultado.get("estado"),
-            "glosa": resultado.get("glosa"), "detalle": resultado.get("detalle")}
+
+    return {
+        "track_id":   track_id,
+        "rut_emisor": rut_query,
+        "ambiente":   ambiente_q,
+        "es_boleta":  es_boleta,
+        "estado":     resultado.get("estado"),
+        "codigo_sii": resultado.get("codigo_sii"),
+        "glosa":      resultado.get("glosa"),
+        "informados": resultado.get("informados"),
+        "aceptados":  resultado.get("aceptados"),
+        "rechazados": resultado.get("rechazados"),
+        "reparos":    resultado.get("reparos"),
+        "detalle":    resultado.get("detalle"),
+    }
 
 
 @router.get("/folios")
@@ -236,7 +299,11 @@ class FirmarYEnviarInput(BaseModel):
 
 
 @router.post("/firmar-y-enviar")
-async def firmar_y_enviar(datos: FirmarYEnviarInput):
+async def firmar_y_enviar(
+    datos:      FirmarYEnviarInput,
+    emisor_api: Emisor = Depends(get_emisor_by_api_key),
+    db:         AsyncSession = Depends(get_db),
+):
     """
     Endpoint stateless — firma y envía un DTE al SII.
     El cliente provee su certificado (.p12) y CAF (XML) en base64.
@@ -431,21 +498,61 @@ async def firmar_y_enviar(datos: FirmarYEnviarInput):
                 nro_resol = e.nro_resolucion,
                 fch_resol = e.fch_resolucion,
             )
-            rut_firmante = getattr(firma, "rut_certificado", None) or e.rut
+            # ── FIX AUTENTICACIÓN SII ─────────────────────────────────────────
+            # El .p12 del CLIENTE firma los DTEs, pero NO sirve para
+            # autenticarse ante el SII (no está registrado como enviador
+            # → el SII devuelve xsi:nil en la semilla).
+            #
+            # Analogía: el cliente firma sus propias cartas, pero quien
+            # las lleva a Correos y se identifica en el mostrador es el
+            # cartero acreditado (el e-Sign de Yepar, registrado en SII).
+            # Mismo principio que /v1/enviar-sobre/directo.
+            cert_yepar = (await db.execute(
+                select(Certificado).where(
+                    Certificado.emisor_id == emisor_api.id,
+                    Certificado.activo == True,
+                ).limit(1)
+            )).scalar_one_or_none()
+
+            if cert_yepar and cert_yepar.certificado_auth_p12:
+                auth_p12 = bytes(cert_yepar.certificado_auth_p12)
+                auth_pwd = cert_yepar.certificado_auth_password
+                rut_enviador = cert_yepar.rut_firmante or \
+                               getattr(firma, "rut_certificado", None) or e.rut
+                # El SOBRE lo firma el enviador acreditado (Yepar) para que
+                # la firma del EnvioDTE/EnvioBOLETA coincida con RutEnvia.
+                # El DTE interno conserva la firma del cliente (su .p12).
+                from app.services.firma_digital import FirmaDigital as _FD
+                firma_sobre = _FD(
+                    bytes(cert_yepar.certificado_p12),
+                    cert_yepar.certificado_password,
+                    ambiente=datos.ambiente,
+                ) if cert_yepar.certificado_p12 else firma
+            else:
+                # Sin cert auth configurado: fallback al p12 del cliente
+                # (comportamiento anterior — solo funciona si ese RUT
+                # está autorizado como enviador en el SII)
+                auth_p12 = pfx_bytes
+                auth_pwd = datos.pfx_password
+                rut_enviador = getattr(firma, "rut_certificado", None) or e.rut
+                firma_sobre  = firma
+
+            # El RutEnvia de la carátula debe coincidir con quien se
+            # autentica ante el SII (el enviador acreditado)
             sobre_xml = await sender.construir_sobre(
                 dtes_xml     = [xml_firmado],
                 rut_emisor   = e.rut,
-                rut_enviador = rut_firmante,
-                firma_service= firma,
+                rut_enviador = rut_enviador,
+                firma_service= firma_sobre,
             )
             resultado = await sender.enviar_sobre(
                 sobre_xml      = sobre_xml,
                 rut_emisor     = e.rut,
-                rut_enviador   = rut_firmante,
+                rut_enviador   = rut_enviador,
                 p12_bytes      = pfx_bytes,
                 password       = datos.pfx_password,
-                auth_p12_bytes = pfx_bytes,
-                auth_password  = datos.pfx_password,
+                auth_p12_bytes = auth_p12,
+                auth_password  = auth_pwd,
             )
             track_id   = resultado.get("track_id")
             estado_sii = resultado.get("estado", "ENVIADO")
