@@ -296,6 +296,12 @@ class FirmarYEnviarInput(BaseModel):
     referencias:  list[ReferenciaStateless] = []
     ambiente:     str = "certificacion"
     auto_enviar:  bool = True
+    folio_actual: Optional[int] = None  # Folio a usar (el contador lo lleva
+                                        # el cliente). Si no viene, se usa el
+                                        # inicio del rango del CAF. El CAF
+                                        # jamás se modifica: es la chequera
+                                        # firmada por el banco, esto solo
+                                        # indica por cuál cheque vamos.
 
 
 @router.post("/firmar-y-enviar")
@@ -446,17 +452,28 @@ async def firmar_y_enviar(
         logger.error(f"[STATELESS] Error construyendo input: {ex}", exc_info=True)
         raise HTTPException(500, f"Error construyendo DTE: {ex}")
 
-    # ── Extraer folio del CAF ─────────────────────────────────────────────────
+    # ── Determinar folio: el contador del cliente, validado contra el CAF ────
     try:
         from lxml import etree as _etree
-        caf_el    = _etree.fromstring(caf_xml_bytes)
-        folio     = int(caf_el.findtext(".//D") or caf_el.findtext(".//DESDE") or 1)
-        # Actualizar folio en input_dte
+        caf_el      = _etree.fromstring(caf_xml_bytes)
+        folio_desde = int(caf_el.findtext(".//D") or caf_el.findtext(".//DESDE") or 1)
+        folio_hasta = int(caf_el.findtext(".//H") or caf_el.findtext(".//HASTA") or folio_desde)
+
+        # El cliente lleva el contador (folio_actual); el CAF firmado por el
+        # SII define el rango permitido. Validamos que el contador esté
+        # dentro de la chequera — nunca reimprimimos la chequera.
+        folio = datos.folio_actual or folio_desde
+        if folio < folio_desde or folio > folio_hasta:
+            raise HTTPException(400,
+                f"Folio {folio} fuera del rango del CAF ({folio_desde}-{folio_hasta})")
+
         input_dte.folio = folio
         if datos.tipo in TIPOS_BOLETA:
             builder = XMLBuilderBoleta(input_dte)
         else:
             builder = XMLBuilder(input_dte)
+    except HTTPException:
+        raise
     except Exception as ex:
         raise HTTPException(400, f"Error parseando CAF: {ex}")
 
@@ -608,12 +625,17 @@ class GenerarSetInput(BaseModel):
     emisor:         EmisorStateless
     pfx_base64:     str
     pfx_password:   str
-    caf_base64:     str            # CAF del tipo principal del set
+    caf_base64:     str            # CAF del tipo principal del set — VERBATIM,
+                                   # tal como lo firmó el SII (jamás modificarlo)
     casos:          list[CasoSetInput]
     natencion:      str = "SET"
     fecha:          Optional[str] = None
     ambiente:       str = "certificacion"
     auto_enviar:    bool = False   # True = enviar al SII, False = solo descargar
+    folio_inicio:   Optional[int] = None  # Primer folio a usar. Si no viene,
+                                          # se usa el inicio del rango del CAF.
+                                          # Así el cliente controla el contador
+                                          # SIN tocar el CAF firmado.
 
 
 @router.post("/generar-set")
@@ -657,8 +679,20 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
     except Exception as e:
         raise HTTPException(400, f"Error parseando CAF: {e}")
 
-    if len(datos.casos) > (folio_hasta - folio_desde + 1):
-        raise HTTPException(400, f"CAF insuficiente: tiene {folio_hasta - folio_desde + 1} folios pero hay {len(datos.casos)} casos")
+    # ── Folio inicial: parámetro explícito, validado contra el CAF real ──────
+    # El CAF dice "estás autorizado del folio D al H" (firmado por el SII).
+    # El cliente nos dice DESDE dónde de ese rango quiere partir (su contador).
+    # Analogía: el CAF es la chequera autorizada por el banco; folio_inicio
+    # es por cuál cheque vas — se hojea la chequera, NUNCA se reimprime.
+    folio_base = datos.folio_inicio or folio_desde
+    if folio_base < folio_desde:
+        raise HTTPException(400,
+            f"folio_inicio {folio_base} es menor al inicio del CAF ({folio_desde})")
+    if folio_base + len(datos.casos) - 1 > folio_hasta:
+        disponibles = folio_hasta - folio_base + 1
+        raise HTTPException(400,
+            f"CAF insuficiente: desde el folio {folio_base} quedan {disponibles} "
+            f"folios pero hay {len(datos.casos)} casos")
 
     fecha_str = datos.fecha or datetime.now().strftime("%Y-%m-%d")
     fecha_dt  = _date.fromisoformat(fecha_str)
@@ -677,7 +711,7 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
     xmls_timbrados = []
 
     for i, caso in enumerate(datos.casos):
-        folio = folio_desde + i
+        folio = folio_base + i   # hojear la chequera desde donde va el contador
 
         tipo_dte = caso.tipo_dte
         es_boleta = tipo_dte in TIPOS_BOLETA
@@ -795,8 +829,8 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
             "sobre_id":    sobre_id,
             "sobre_xml":   sobre_firmado,
             "n_casos":     len(datos.casos),
-            "folio_desde": folio_desde,
-            "folio_hasta": folio_desde + len(datos.casos) - 1,
+            "folio_desde": folio_base,
+            "folio_hasta": folio_base + len(datos.casos) - 1,
         }
 
     # Enviar al SII — usar auth_p12 de BD para autenticarse (certificado registrado)
@@ -837,8 +871,8 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
             "mensaje":     mensaje,
             "sobre_xml":   sobre_firmado,
             "n_casos":     len(datos.casos),
-            "folio_desde": folio_desde,
-            "folio_hasta": folio_desde + len(datos.casos) - 1,
+            "folio_desde": folio_base,
+            "folio_hasta": folio_base + len(datos.casos) - 1,
         }
     except Exception as ex:
         logger.error(f"[SET] Error enviando: {ex}", exc_info=True)
