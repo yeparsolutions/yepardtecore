@@ -197,11 +197,21 @@ class SIIStatusChecker:
             return self._error(f"API boletas respondió HTTP {resp.status_code}",
                                raw=resp.text[:300])
 
-        # La API REST de boletas devuelve JSON con estado + estadística
+        # La API REST de boletas normalmente devuelve JSON con estado +
+        # estadística — pero el SII a veces contesta XML (SII:RESPUESTA) o
+        # una página de error. Plan A: JSON. Plan B: XML. Plan C: mostrar
+        # el cuerpo crudo para diagnóstico en vez de un error opaco.
         try:
             data = resp.json()
         except Exception:
-            return self._error("Respuesta no es JSON", raw=resp.text[:300])
+            try:
+                inner = etree.fromstring(resp.content)
+                return self._normalizar_respuesta_sii(inner, raw=resp.text[:400])
+            except Exception:
+                return self._error(
+                    "Respuesta del SII no es JSON ni XML — ver campo raw",
+                    raw=resp.text[:400],
+                )
 
         codigo = str(data.get("estado", "")).strip()
         glosa  = data.get("glosa", "") or data.get("descripcion", "") or ""
