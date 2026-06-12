@@ -216,6 +216,8 @@ async def estado_envio(
         "rechazados": resultado.get("rechazados"),
         "reparos":    resultado.get("reparos"),
         "detalle":    resultado.get("detalle"),
+        # Cuerpo crudo del SII solo cuando algo falla — diagnóstico a la vista
+        "raw":        resultado.get("raw") if resultado.get("estado") in ("ERROR", "DESCONOCIDO") else None,
     }
 
 
