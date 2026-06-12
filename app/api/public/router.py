@@ -283,6 +283,24 @@ class ReferenciaStateless(BaseModel):
     razon_ref:    Optional[str] = None
     cod_ref:      Optional[int] = None
 
+def _norm_rut(rut: str) -> str:
+    """
+    Normaliza un RUT al formato que exige el esquema del SII: sin puntos,
+    con guion, dígito verificador en mayúscula. '78.377.021-0' → '78377021-0'.
+
+    Analogía: el SII es un portero con lista estricta — si tu nombre está
+    escrito con adornos, no te encuentra. Aquí le quitamos los adornos
+    a TODOS los RUT antes de que entren al XML.
+    """
+    if not rut:
+        return rut
+    limpio = rut.replace(".", "").replace(" ", "").strip().upper()
+    # Asegurar el guion si vino sin él (raro, pero defensivo)
+    if "-" not in limpio and len(limpio) > 1:
+        limpio = f"{limpio[:-1]}-{limpio[-1]}"
+    return limpio
+
+
 class FirmarYEnviarInput(BaseModel):
     emisor:       EmisorStateless
     pfx_base64:   str
@@ -345,6 +363,9 @@ async def firmar_y_enviar(
     # ── Construir dataclasses de emisor/receptor/items ────────────────────────
     e = datos.emisor
     r = datos.receptor
+    # Normalizar RUTs en la puerta — el esquema del SII no perdona puntos
+    e.rut = _norm_rut(e.rut)
+    r.rut = _norm_rut(r.rut)
     fecha_hoy = _date.today().isoformat()
 
     def parse_ref(ref):
@@ -697,6 +718,7 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
     fecha_str = datos.fecha or datetime.now().strftime("%Y-%m-%d")
     fecha_dt  = _date.fromisoformat(fecha_str)
     e         = datos.emisor
+    e.rut     = _norm_rut(e.rut)  # sin puntos: el esquema del SII es estricto
 
     firma = FirmaDigital(pfx_bytes, datos.pfx_password, ambiente=datos.ambiente)
 
@@ -716,7 +738,7 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
         tipo_dte = caso.tipo_dte
         es_boleta = tipo_dte in TIPOS_BOLETA
 
-        rut_recep = caso.rut_receptor or "66666666-6"
+        rut_recep = _norm_rut(caso.rut_receptor or "66666666-6")
         nom_recep = caso.nombre_receptor or "Consumidor Final"
 
         if es_boleta:
