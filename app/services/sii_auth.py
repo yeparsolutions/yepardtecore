@@ -374,6 +374,92 @@ class SIIAuthBoleta(SIIAuth):
         self.url_token   = SII_BOLETA_TOKEN_CERT   if ambiente == "certificacion" else SII_BOLETA_TOKEN_PROD
 
 
+# ── Autenticación de boletas vía REST moderna (apicert/api.sii.cl) ────────────
+# maullin2/rahue son hosts antiguos cuyo DNS no resuelve desde fuera de Chile
+# ([Errno -2] Name or service not known desde Railway US). El SII publica los
+# mismos servicios de semilla y token por REST en apicert.sii.cl (certificación)
+# y api.sii.cl (producción) — los hosts públicos pensados para software en la
+# nube. Analogía: maullin2 es la oficina antigua del centro que solo atiende
+# a vecinos del barrio; apicert es la sucursal con atención nacional.
+SII_BOLETA_REST_SEMILLA_CERT = "https://apicert.sii.cl/recursos/v1/boleta.electronica.semilla"
+SII_BOLETA_REST_TOKEN_CERT   = "https://apicert.sii.cl/recursos/v1/boleta.electronica.token"
+SII_BOLETA_REST_SEMILLA_PROD = "https://api.sii.cl/recursos/v1/boleta.electronica.semilla"
+SII_BOLETA_REST_TOKEN_PROD   = "https://api.sii.cl/recursos/v1/boleta.electronica.token"
+
+_REST_HEADERS_BASE = {
+    "User-Agent": "Mozilla/4.0 (compatible; PROG 1.0; YeparDTEcore)",
+    "Accept":     "application/xml",
+}
+
+
+class SIIAuthBoletaRest(SIIAuth):
+    """
+    Token de boletas por la API REST oficial del SII.
+
+    El flujo es el mismo de siempre (semilla → firmar → token) y la firma
+    XMLDSig se REUTILIZA del padre sin cambios; solo cambia el transporte:
+      - Semilla: GET simple (sin SOAP)
+      - Token:   POST del XML firmado crudo (sin sobre SOAP)
+    """
+
+    def __init__(self, p12_bytes: bytes, password: str, ambiente: str = "certificacion"):
+        super().__init__(p12_bytes, password, ambiente)
+        es_cert = ambiente == "certificacion"
+        self.url_semilla = SII_BOLETA_REST_SEMILLA_CERT if es_cert else SII_BOLETA_REST_SEMILLA_PROD
+        self.url_token   = SII_BOLETA_REST_TOKEN_CERT   if es_cert else SII_BOLETA_REST_TOKEN_PROD
+
+    async def _pedir_semilla(self) -> str:
+        """Semilla por GET REST. Respuesta: SII:RESPUESTA con <SEMILLA>."""
+        async with get_sii_client(timeout=30.0) as client:
+            response = await client.get(self.url_semilla, headers=_REST_HEADERS_BASE)
+
+        if response.status_code != 200:
+            raise Exception(f"SII REST no respondió la semilla: HTTP {response.status_code}")
+
+        inner   = etree.fromstring(response.content)
+        semilla = (inner.findtext(".//{http://www.sii.cl/XMLSchema}SEMILLA")
+                   or inner.findtext(".//SEMILLA"))
+        estado  = (inner.findtext(".//{http://www.sii.cl/XMLSchema}ESTADO")
+                   or inner.findtext(".//ESTADO"))
+        if estado not in ("00", None) and not semilla:
+            glosa = (inner.findtext(".//{http://www.sii.cl/XMLSchema}GLOSA")
+                     or inner.findtext(".//GLOSA") or "")
+            raise Exception(f"SII REST rechazó la semilla: [{estado}] {glosa}")
+        if not semilla:
+            raise Exception(f"SII REST no devolvió semilla: {response.text[:200]}")
+        return semilla.strip()
+
+    async def _obtener_token_con_semilla(self, semilla_firmada: str) -> str:
+        """Token por POST REST: viaja el XML firmado tal cual, sin sobre SOAP."""
+        headers = dict(_REST_HEADERS_BASE)
+        headers["Content-Type"] = "application/xml"
+
+        async with get_sii_client(timeout=30.0) as client:
+            response = await client.post(
+                self.url_token,
+                content=semilla_firmada.encode("utf-8"),
+                headers=headers,
+            )
+
+        if response.status_code != 200:
+            raise Exception(f"SII REST no respondió el token: HTTP {response.status_code} "
+                            f"{response.text[:200]}")
+
+        inner  = etree.fromstring(response.content)
+        estado = (inner.findtext(".//{http://www.sii.cl/XMLSchema}ESTADO")
+                  or inner.findtext(".//ESTADO"))
+        token  = (inner.findtext(".//{http://www.sii.cl/XMLSchema}TOKEN")
+                  or inner.findtext(".//TOKEN"))
+
+        if estado != "00":
+            glosa = (inner.findtext(".//{http://www.sii.cl/XMLSchema}GLOSA")
+                     or inner.findtext(".//GLOSA") or "")
+            raise Exception(f"SII REST rechazó la autenticación: [{estado}] {glosa}")
+        if not token:
+            raise Exception(f"SII REST no devolvió token: {response.text[:200]}")
+        return token.strip()
+
+
 async def obtener_token_boleta_cached(
     p12_bytes: bytes,
     password: str,
@@ -423,12 +509,22 @@ async def obtener_token_boleta_cached(
         except Exception as ex:
             _logger.warning(f"[SII AUTH BOLETA] No se pudo leer token desde BD: {ex}")
 
-    # 3. Obtener token fresco desde maullin2 (requiere acceso a red chilena)
-    _logger.info(f"[SII AUTH BOLETA] Obteniendo token fresco desde maullin2 ({ambiente})")
-    auth  = SIIAuthBoleta(p12_bytes, password, ambiente)
-    token = await auth.obtener_token()
+    # 3. Obtener token fresco — REST primero (funciona desde cualquier nube),
+    #    maullin2 como último recurso histórico (solo resuelve desde Chile)
+    token = None
+    try:
+        _logger.info(f"[SII AUTH BOLETA] Obteniendo token vía REST apicert/api ({ambiente})")
+        auth  = SIIAuthBoletaRest(p12_bytes, password, ambiente)
+        token = await auth.obtener_token()
+        _logger.info(f"[SII AUTH BOLETA] Token REST obtenido: {token[:10]}...")
+    except Exception as ex_rest:
+        _logger.warning(f"[SII AUTH BOLETA] REST falló ({ex_rest}) — "
+                        f"intentando maullin2 (último recurso)")
+        auth  = SIIAuthBoleta(p12_bytes, password, ambiente)
+        token = await auth.obtener_token()
+        _logger.info(f"[SII AUTH BOLETA] Token maullin2 obtenido: {token[:10]}...")
+
     expira_nueva = ahora + timedelta(minutes=55)
-    _logger.info(f"[SII AUTH BOLETA] Token obtenido: {token[:10]}...")
 
     # Guardar en caché en memoria
     _token_cache_boleta[cache_key] = {"token": token, "expira": expira_nueva}
