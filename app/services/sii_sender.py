@@ -199,7 +199,10 @@ class SIISender:
                     return await client.post(url_envio, headers=headers,
                                              files=files)
 
-            response = await self._con_reintentos("UPLOAD", _subir, intentos=2)
+            # 4 intentos: reintentar es SEGURO porque si un intento "fallido"
+            # en realidad entró al SII, el siguiente recibe STATUS 99 y el
+            # parser rescata el TrackID original (no se duplica nada).
+            response = await self._con_reintentos("UPLOAD", _subir, intentos=4)
 
             logger.info(f"[SII RAW] HTTP={response.status_code} "
                         f"body={response.text[:2000]}")
