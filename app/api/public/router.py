@@ -151,6 +151,11 @@ async def estado_envio(
         obtener_token_cached, obtener_token_boleta_cached,
     )
 
+    # Sanitizar entradas: espacios colados al copiar/pegar y RUT con puntos
+    track_id = str(track_id).strip()
+    if rut_emisor:
+        rut_emisor = _norm_rut(rut_emisor)
+
     # ── Certificado de autenticación (el de Yepar, registrado en SII) ────────
     cert = (await db.execute(
         select(Certificado).where(Certificado.emisor_id == emisor.id,
