@@ -781,8 +781,18 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
         raise HTTPException(500, f"Error armando sobre: {ex}")
 
     if not datos.auto_enviar:
+        # ── Guardarropa: colgar el sobre ORIGINAL y entregar el ticket ────────
+        # Los bytes ISO-8859-1 que se guardan aquí son EXACTAMENTE los que
+        # subirán al SII cuando llegue el ticket de vuelta. El sobre_xml del
+        # response es solo una copia de cortesía para visualizar/descargar.
+        from app.services import sobre_store
+        sobre_id = sobre_store.guardar(
+            sobre_firmado.encode("ISO-8859-1"),
+            emisor_rut=e.rut,
+        )
         return {
             "ok":          True,
+            "sobre_id":    sobre_id,
             "sobre_xml":   sobre_firmado,
             "n_casos":     len(datos.casos),
             "folio_desde": folio_desde,
