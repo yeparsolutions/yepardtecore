@@ -19,6 +19,9 @@ class EnviarSobreRequest(BaseModel):
     emisor_id: int
     xml_sobre: str | None = None       # XML como string (legacy)
     xml_sobre_b64: str | None = None   # XML en base64 (preserva ISO-8859-1)
+    sobre_id: str | None = None        # Ticket del guardarropa — PREFERIDO:
+                                       # usa los bytes originales firmados,
+                                       # sin viaje de ida y vuelta por JSON
 
 
 @router.post("/directo")
@@ -54,9 +57,24 @@ async def enviar_sobre_directo(
         nro_resol = nro_resol,
     )
 
-    # Decodificar XML: preferir base64 (preserva ISO-8859-1), fallback a string
+    # Decodificar XML — orden de preferencia:
+    #   1. sobre_id (ticket del guardarropa: bytes originales, cero riesgo)
+    #   2. base64 (preserva ISO-8859-1 pero hizo viaje por JSON)
+    #   3. string plano (legacy)
     import base64
-    if body.xml_sobre_b64:
+    sobre_id_usado = None
+    if body.sobre_id:
+        from app.services import sobre_store
+        sobre_bytes = sobre_store.obtener(body.sobre_id)
+        if sobre_bytes is None:
+            raise HTTPException(
+                410,
+                "El sobre temporal ya no está disponible (expiró o el "
+                "servicio se reinició). Genera el set nuevamente."
+            )
+        sobre_xml_final = sobre_bytes.decode("ISO-8859-1")
+        sobre_id_usado  = body.sobre_id
+    elif body.xml_sobre_b64:
         sobre_xml_final = base64.b64decode(body.xml_sobre_b64).decode("ISO-8859-1")
     else:
         sobre_xml_final = body.xml_sobre or ""
@@ -111,6 +129,13 @@ async def enviar_sobre_directo(
             logging.getLogger("yepardtecore.enviar_sobre").warning(
                 f"[ENVIAR-SOBRE] No se pudo persistir token boleta: {ex}"
             )
+
+    # Envío exitoso → retirar el sobre del guardarropa.
+    # Si falló, se CONSERVA: el mismo ticket sirve para reintentar
+    # sin regenerar (y sin quemar folios).
+    if sobre_id_usado and resultado.get("track_id"):
+        from app.services import sobre_store
+        sobre_store.descartar(sobre_id_usado)
 
     return {
         "ok":       resultado.get("track_id") is not None or resultado.get("estado") == "RECIBIDO",
