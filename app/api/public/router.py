@@ -590,6 +590,18 @@ async def firmar_y_enviar(
                 rut_enviador = rut_enviador,
                 firma_service= firma_sobre,
             )
+            # ── Rescatar el DTE FIRMADO desde el sobre ───────────────────────
+            # firmar_dte solo TIMBRA (TED); la firma XMLDSig la aplica el
+            # motor Java al firmar el sobre completo. El DTE verdaderamente
+            # firmado (con <Signature>) vive DENTRO del sobre firmado — lo
+            # extraemos de ahí para que el cliente guarde la versión
+            # notariada, no la fotocopia sin firma.
+            import re as _re_dte
+            m_dte = _re_dte.search(r"<DTE[\s>].*?</DTE>", sobre_xml, _re_dte.DOTALL)
+            if m_dte:
+                xml_firmado = ('<?xml version="1.0" encoding="ISO-8859-1"?>\n'
+                               + m_dte.group(0))
+
             resultado = await sender.enviar_sobre(
                 sobre_xml      = sobre_xml,
                 rut_emisor     = e.rut,
