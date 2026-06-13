@@ -279,11 +279,11 @@ class XMLBuilderBoleta:
         etree.SubElement(emisor, f"{{{NS}}}GiroEmisor").text   = self._sanitizar(em.giro, 80)
 
         # Acteco NO existe en EnvioBOLETA_v11 XSD — omitir completamente
-        # Teléfono y correo son opcionales
-        if em.telefono:
-            etree.SubElement(emisor, f"{{{NS}}}Telefono").text     = em.telefono
-        if em.correo:
-            etree.SubElement(emisor, f"{{{NS}}}CorreoEmisor").text = em.correo
+        # Telefono y CorreoEmisor TAMPOCO existen en el esquema de boletas
+        # (son del esquema de facturas/EnvioDTE). El formulario de boletas
+        # es más austero: incluirlos provoca STATUS 7 (esquema inválido)
+        # en el upload, aunque el dato venga con buena intención.
+        # → Se omiten SIEMPRE, sin importar lo que traiga el input.
 
         # Dirección del emisor
         etree.SubElement(emisor, f"{{{NS}}}DirOrigen").text   = self._sanitizar(em.direccion)
