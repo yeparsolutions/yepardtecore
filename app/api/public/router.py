@@ -82,7 +82,7 @@ async def emitir_dte(
     if datos.tipo not in tipos_validos:
         raise HTTPException(422, f"Tipo DTE no válido: {datos.tipo}")
 
-    fecha = datos.fecha or datetime.now().strftime("%Y-%m-%d")
+    fecha = datos.fecha or _hoy_chile()
     datos_dte = {
         "tipo_dte":      datos.tipo,
         "fecha_emision": fecha,
@@ -290,6 +290,21 @@ class ReferenciaStateless(BaseModel):
     razon_ref:    Optional[str] = None
     cod_ref:      Optional[int] = None
 
+def _hoy_chile() -> str:
+    """
+    Fecha de HOY en Chile (America/Santiago), formato YYYY-MM-DD.
+
+    El servidor corre en UTC: después de las ~20:00 hora chilena, su
+    calendario ya marca "mañana". Una boleta emitida a las 20:09 en
+    Santiago nacía fechada al día siguiente — el SII no acepta
+    documentos del futuro y el consumo de folios diario se desordena.
+    El reloj que manda es el de Chile, donde ocurre la venta.
+    """
+    from zoneinfo import ZoneInfo
+    from datetime import datetime as _dtn
+    return _dtn.now(ZoneInfo("America/Santiago")).strftime("%Y-%m-%d")
+
+
 def _norm_rut(rut: str) -> str:
     """
     Normaliza un RUT al formato que exige el esquema del SII: sin puntos,
@@ -364,7 +379,7 @@ async def firmar_y_enviar(
     except Exception:
         raise HTTPException(400, "caf_base64 inválido")
 
-    fecha_str = datos.fecha or datetime.now().strftime("%Y-%m-%d")
+    fecha_str = datos.fecha or _hoy_chile()
     fecha_dt  = _date.fromisoformat(fecha_str)
 
     # ── Construir dataclasses de emisor/receptor/items ────────────────────────
@@ -373,7 +388,7 @@ async def firmar_y_enviar(
     # Normalizar RUTs en la puerta — el esquema del SII no perdona puntos
     e.rut = _norm_rut(e.rut)
     r.rut = _norm_rut(r.rut)
-    fecha_hoy = _date.today().isoformat()
+    fecha_hoy = _hoy_chile()
 
     def parse_ref(ref):
         try:
@@ -381,9 +396,9 @@ async def firmar_y_enviar(
         except (ValueError, TypeError):
             folio_ref_int = 0
         try:
-            fecha_ref_dt = _date.fromisoformat(ref.fecha_ref) if ref.fecha_ref else _date.today()
+            fecha_ref_dt = _date.fromisoformat(ref.fecha_ref) if ref.fecha_ref else _date.fromisoformat(_hoy_chile())
         except ValueError:
-            fecha_ref_dt = _date.today()
+            fecha_ref_dt = _date.fromisoformat(_hoy_chile())
         razon = ref.razon or ref.razon_ref or ""
         # tipo_doc_ref es siempre int (801=SET)
         try:
@@ -599,8 +614,14 @@ async def firmar_y_enviar(
             import re as _re_dte
             m_dte = _re_dte.search(r"<DTE[\s>].*?</DTE>", sobre_xml, _re_dte.DOTALL)
             if m_dte:
+                dte_extraido = m_dte.group(0)
+                # Dentro del sobre, el DTE hereda el namespace del padre;
+                # al extraerlo standalone hay que declarárselo explícito
+                if "xmlns=" not in dte_extraido[:80]:
+                    dte_extraido = dte_extraido.replace(
+                        "<DTE ", '<DTE xmlns="http://www.sii.cl/SiiDte" ', 1)
                 xml_firmado = ('<?xml version="1.0" encoding="ISO-8859-1"?>\n'
-                               + m_dte.group(0))
+                               + dte_extraido)
 
             resultado = await sender.enviar_sobre(
                 sobre_xml      = sobre_xml,
@@ -734,7 +755,7 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
             f"CAF insuficiente: desde el folio {folio_base} quedan {disponibles} "
             f"folios pero hay {len(datos.casos)} casos")
 
-    fecha_str = datos.fecha or datetime.now().strftime("%Y-%m-%d")
+    fecha_str = datos.fecha or _hoy_chile()
     fecha_dt  = _date.fromisoformat(fecha_str)
     e         = datos.emisor
     e.rut     = _norm_rut(e.rut)  # sin puntos: el esquema del SII es estricto
