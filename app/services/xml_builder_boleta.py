@@ -299,8 +299,10 @@ class XMLBuilderBoleta:
         etree.SubElement(receptor, f"{{{NS}}}RznSocRecep").text = self._sanitizar(rc.razon_social)
 
         # Correo del receptor solo si existe (útil para boleta electrónica)
-        if rc.correo:
-            etree.SubElement(receptor, f"{{{NS}}}CorreoRecep").text = rc.correo
+        # CorreoRecep NO existe en el esquema de boletas (es del esquema
+        # de facturas/EnvioDTE) — emitirlo provoca STATUS 7. El correo del
+        # cliente vive en la BD de YeparDTE para enviarle el PDF por email;
+        # el SII simplemente no lo quiere en la boleta.
 
         # ── Totales ───────────────────────────────────────────
         # Orden XSD para boleta: [MntNeto], [MntExe], [TasaIVA], [IVA], MntTotal
