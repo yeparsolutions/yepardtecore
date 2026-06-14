@@ -680,7 +680,16 @@ class CasoSetInput(BaseModel):
     items:           list[ItemSetInput]
     rut_receptor:    str = "66666666-6"
     nombre_receptor: str = "Consumidor Final"
+    # Datos completos del receptor (para facturas/guías/notas — el SII repara
+    # si falta el giro). Para boletas se ignoran.
+    receptor:        Optional[dict] = None
     observacion:     str = ""
+    # Referencia al documento que esta NC/ND corrige. Sin ella, el SII
+    # rechaza por esquema las notas de crédito/débito.
+    #   caso_ref: número de caso referido (ej. "4841543-1")
+    #   razon:    motivo (ej. "CORRIGE GIRO DEL RECEPTOR")
+    #   tipo_doc_ref: tipo del documento referido (33, 61, etc.)
+    referencia:      Optional[dict] = None
 
 class GenerarSetInput(BaseModel):
     emisor:         EmisorStateless
@@ -772,6 +781,48 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
 
     xmls_timbrados = []
 
+    # Mapa "numero_caso del set" → folio asignado. Las NC/ND referencian al
+    # documento que corrigen por su número de caso (ej. "4841543-1"); aquí
+    # traducimos ese número al folio real que le tocó al emitirse en orden.
+    # Analogía: la nota de crédito dice "corrijo la factura del caso 1"; este
+    # mapa sabe que el caso 1 quedó con el folio 141.
+    folio_por_caso = {}
+    for j, c in enumerate(datos.casos):
+        folio_por_caso[str(c.numero_caso)] = folio_base + j
+        # también indexar por el sufijo del caso_ref (ej. "4841543-1" → "1")
+        folio_por_caso[str(j + 1)] = folio_base + j
+
+    def _resolver_ref(caso_obj, folio_actual):
+        """Construye las referencias del documento. Siempre la referencia al
+        SET; además, si es NC/ND con referencia a otro caso, la referencia al
+        documento corregido (obligatoria para que el SII no rechace)."""
+        from app.services.xml_builder import ReferenciaDTE as _RefDTE
+        refs_out = [_RefDTE(
+            tipo_doc_ref="SET", folio_ref=folio_actual,
+            fecha_ref=fecha_dt, razon_ref=f"CASO-{caso_obj.numero_caso}",
+            cod_ref=0,
+        )]
+        ref = caso_obj.referencia
+        if ref and ref.get("caso_ref"):
+            # El caso_ref viene como "4841543-1" → tomar el sufijo tras el guión
+            sufijo = str(ref["caso_ref"]).split("-")[-1]
+            folio_ref = folio_por_caso.get(sufijo)
+            if folio_ref:
+                # Tipo del documento referido: el indicado, o inferir por el
+                # tipo de la nota (NC/ND de factura → 33; de exenta → 34)
+                tipo_ref = ref.get("tipo_doc_ref") or 33
+                # cod_ref: 1=anula, 2=corrige texto, 3=corrige monto.
+                # El SII acepta 1 para anulación; usamos 2 (corrige) por
+                # defecto salvo que la razón diga "ANULA".
+                razon = (ref.get("razon") or "").upper()
+                cod = 1 if "ANULA" in razon else (3 if "MONTO" in razon else 2)
+                refs_out.append(_RefDTE(
+                    tipo_doc_ref=str(tipo_ref), folio_ref=folio_ref,
+                    fecha_ref=fecha_dt, razon_ref=ref.get("razon") or "",
+                    cod_ref=cod,
+                ))
+        return refs_out
+
     for i, caso in enumerate(datos.casos):
         folio = folio_base + i   # hojear la chequera desde donde va el contador
 
@@ -822,17 +873,20 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
                     exento=it.exento, unidad=it.unidad, codigo=it.codigo,
                     descuento_pct=it.descuento,
                 ))
-            refs = [ReferenciaDTE(
-                tipo_doc_ref="SET", folio_ref=folio,
-                fecha_ref=fecha_dt, razon_ref=f"CASO-{caso.numero_caso}",
-                cod_ref=0,
-            )]
+            # Referencias: al SET + (si es NC/ND) al documento corregido
+            refs = _resolver_ref(caso, folio)
+            # Receptor completo (con giro/dirección) para evitar reparos del SII
+            rcpt = caso.receptor or {}
             input_obj = InputDTE(
                 tipo_dte=tipo_dte, folio=folio, fecha_emision=fecha_dt,
                 emisor=emisor_dte,
                 receptor=ReceptorDTE(
                     rut=rut_recep, razon_social=nom_recep,
-                    giro="", direccion="", comuna="", ciudad="", correo="",
+                    giro=rcpt.get("giro", "") or "",
+                    direccion=rcpt.get("direccion", "") or "",
+                    comuna=rcpt.get("comuna", "") or "",
+                    ciudad=rcpt.get("ciudad", "") or "",
+                    correo=rcpt.get("correo", "") or "",
                 ),
                 items=items_d, referencias=refs, ambiente=datos.ambiente,
             )
