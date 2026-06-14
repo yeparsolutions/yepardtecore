@@ -7,6 +7,7 @@
 
 import hashlib
 import textwrap
+import re
 from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, utils
@@ -88,7 +89,19 @@ class FirmaSobre:
         C14N = C14N_ALGORITHM
 
         parser = etree.XMLParser(remove_blank_text=True)
-        root   = etree.fromstring(sobre_xml.encode(), parser)
+        # El sobre declara encoding="ISO-8859-1". Hay que entregar a lxml los
+        # bytes EN ESE encoding, no en UTF-8 (lo que hacía .encode() sin
+        # argumento). Si los bytes son UTF-8 pero la declaración dice ISO,
+        # lxml interpreta mal los acentos y al re-serializar quedan corruptos
+        # (ó → Ã³), y el SII rechaza por "caracteres especiales".
+        # Analogía: hay que entregar la carta en el idioma que dice el sobre;
+        # no sirve rotular "ISO-8859-1" y escribir el contenido en UTF-8.
+        # La declaración se conserva para que lxml sepa cómo leer los bytes.
+        if isinstance(sobre_xml, bytes):
+            sobre_bytes = sobre_xml
+        else:
+            sobre_bytes = sobre_xml.encode('ISO-8859-1')
+        root   = etree.fromstring(sobre_bytes, parser)
         ns     = {'sii': SII_NS}
 
         set_el = root.find(".//sii:SetDTE[@ID='SetDoc']", ns)
@@ -150,5 +163,20 @@ class FirmaSobre:
         x509c  = etree.SubElement(x509d, f'{{{NS}}}X509Certificate')
         x509c.text = _wrap64(self._cert_der_b64)
 
-        xml_body = etree.tostring(root, encoding='unicode')
-        return '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + xml_body
+        # ── Serializar en ISO-8859-1 REAL (no UTF-8 con etiqueta mentirosa) ──
+        # El SII espera DTEs en ISO-8859-1 y lee los bytes según la declaración
+        # del encabezado. Si serializamos en UTF-8 (encoding='unicode') pero
+        # declaramos ISO-8859-1, los acentos quedan como bytes UTF-8 (ó = C3 B3)
+        # que el SII, leyendo como ISO-8859-1, interpreta como basura "Ã³" y
+        # rechaza por "caracteres especiales".
+        # Analogía: es como rotular un sobre "en español" pero escribir la carta
+        # en otro alfabeto; el cartero la lee según el rótulo y no entiende nada.
+        # lxml.tostring con encoding='ISO-8859-1' produce los bytes correctos
+        # Y agrega la declaración XML coherente automáticamente.
+        xml_bytes = etree.tostring(
+            root, encoding='ISO-8859-1', xml_declaration=True
+        )
+        # Retornar como str decodificado desde los MISMOS bytes ISO-8859-1,
+        # para que quien lo envíe al SII (con .encode('ISO-8859-1')) reproduzca
+        # exactamente estos bytes válidos.
+        return xml_bytes.decode('ISO-8859-1')
