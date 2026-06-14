@@ -511,6 +511,16 @@ async def firmar_y_enviar(
                 f"Folio {folio} fuera del rango del CAF ({folio_desde}-{folio_hasta})")
 
         input_dte.folio = folio
+        # ── Corregir FolioRef de las referencias al SET ───────────────────────
+        # El cliente no conoce el folio antes de que se asigne aquí, así que
+        # manda la referencia al SET con folio_ref=1 como marcador. El SII
+        # espera que la referencia al SET use el FOLIO REAL del documento.
+        # Analogía: la referencia al set es como anotar "este es mi documento
+        # n° 141 del set"; no tendría sentido que dijera "n° 1" si el folio
+        # asignado fue 141.
+        for _ref in input_dte.referencias:
+            if str(_ref.tipo_doc_ref).upper() == "SET" and (not _ref.folio_ref or _ref.folio_ref in (0, 1)):
+                _ref.folio_ref = folio
         if datos.tipo in TIPOS_BOLETA:
             builder = XMLBuilderBoleta(input_dte)
         else:
