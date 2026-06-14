@@ -162,8 +162,17 @@ class FirmaDTE:
                     rut_receptor: str = '66666666-6',
                     rsoc_receptor: str = 'CONSUMIDOR FINAL') -> bytes:
         caf_str, rsask_text = FirmaDTE._caf_sin_ns(xml_caf)
+        # Reparar doble-codificación (Ã³ → ó) antes de meter el nombre al TED.
+        # El SII compara el IT1 del timbre con el del detalle; ambos deben
+        # tener los acentos correctos o rechaza por caracteres especiales.
+        it1_fix = it1_nombre
+        if 'Ã' in it1_fix or 'Â' in it1_fix:
+            try:
+                it1_fix = it1_fix.encode('latin-1').decode('utf-8')
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                pass
         it1_safe = (
-            it1_nombre[:40]
+            it1_fix[:40]
             .replace('&', ' y ').replace("'", '').replace('"', '')
             .replace('#', '').replace('<', '&lt;').replace('>', '&gt;')
         ).strip()
