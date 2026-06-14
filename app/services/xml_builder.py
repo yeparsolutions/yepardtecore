@@ -94,6 +94,29 @@ class InputDTE:
     desc_global_solo_afectos: bool = True
 
 
+def _reparar_mojibake(texto: str) -> str:
+    """
+    Repara texto doble-codificado (mojibake). Cuando bytes UTF-8 se leen como
+    Latin-1, "ó" (UTF-8: C3 B3) aparece como "Ã³" (dos caracteres). Esto pasa
+    cuando en algún punto de la cadena se hizo decode/encode con el encoding
+    equivocado. Aquí lo deshacemos: re-codificamos a Latin-1 y decodificamos
+    como UTF-8, recuperando el carácter original.
+    Analogía: alguien tradujo mal del español al inglés y de vuelta; esto
+    revierte ese viaje y recupera la palabra original.
+    """
+    # Marcadores típicos de mojibake (Ã seguido de otro símbolo)
+    if 'Ã' not in texto and 'Â' not in texto:
+        return texto  # no hay señales de doble-codificación
+    try:
+        # El texto tiene caracteres que, re-codificados a Latin-1, dan los
+        # bytes UTF-8 originales; decodificarlos como UTF-8 los repara.
+        reparado = texto.encode('latin-1').decode('utf-8')
+        return reparado
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        # Si no se puede reparar limpiamente, dejar el texto como está
+        return texto
+
+
 def _sanitizar_texto(texto: str, largo: int = 80) -> str:
     """
     Elimina caracteres que el SII rechaza en campos de texto.
@@ -102,6 +125,9 @@ def _sanitizar_texto(texto: str, largo: int = 80) -> str:
     Si se reemplaza & por ' y ', el nombre cambia y el SII rechaza con
     'El Item No Corresponde a lo Especificado'.
     """
+    # Primero reparar cualquier doble-codificación (Ã³ → ó) antes de recortar,
+    # para que el SII reciba los acentos correctos y no "caracteres especiales".
+    texto = _reparar_mojibake(texto)
     reemplazos = {
         # '&': NO → lxml lo maneja como &amp; correctamente
         "'": '',   # comilla simple
@@ -392,4 +418,3 @@ class XMLBuilder:
                 etree.SubElement(r, f"{{{NS}}}CodRef").text = str(ref.cod_ref)
             if ref.razon_ref:
                 etree.SubElement(r, f"{{{NS}}}RazonRef").text = ref.razon_ref[:90]
-                
