@@ -834,6 +834,14 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
         folio_por_caso[str(c.numero_caso)] = folio_asignado
         folio_por_caso[str(j + 1)] = folio_asignado
 
+    # Resumen de folios usados por tipo (para la respuesta al cliente):
+    # cada tipo informa desde/hasta los folios que consumió de su CAF.
+    folios_por_tipo = {}
+    for tipo in tipos_set:
+        ini = folio_actual_por_tipo[tipo]
+        fin = _contador[tipo] - 1   # último folio efectivamente asignado
+        folios_por_tipo[str(tipo)] = {"desde": ini, "hasta": fin}
+
     def _resolver_ref(caso_obj, folio_actual):
         """Construye las referencias del documento. Siempre la referencia al
         SET; además, si es NC/ND con referencia a otro caso, la referencia al
@@ -989,8 +997,7 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
             "sobre_id":    sobre_id,
             "sobre_xml":   sobre_firmado,
             "n_casos":     len(datos.casos),
-            "folio_desde": folio_base,
-            "folio_hasta": folio_base + len(datos.casos) - 1,
+            "folios_por_tipo": folios_por_tipo,
         }
 
     # Enviar al SII — usar auth_p12 de BD para autenticarse (certificado registrado)
@@ -1031,8 +1038,7 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
             "mensaje":     mensaje,
             "sobre_xml":   sobre_firmado,
             "n_casos":     len(datos.casos),
-            "folio_desde": folio_base,
-            "folio_hasta": folio_base + len(datos.casos) - 1,
+            "folios_por_tipo": folios_por_tipo,
         }
     except Exception as ex:
         logger.error(f"[SET] Error enviando: {ex}", exc_info=True)
