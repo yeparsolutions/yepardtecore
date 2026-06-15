@@ -1342,6 +1342,8 @@ async def generar_libro_desde_xml_publico(
     fch_resol:       str             = Form("2026-04-19"),
     nro_resol:       str             = Form("0"),
     folios_anulados: str             = Form(""),    # LibroGuías: folios anulados "76,77"
+    auto_enviar:     bool            = Form(False), # True = enviar al SII; False = solo generar
+    ambiente:        str             = Form("certificacion"),
     emisor:          Emisor          = Depends(get_emisor_by_api_key),
     db:              AsyncSession    = Depends(get_db),
 ):
@@ -1429,6 +1431,40 @@ async def generar_libro_desde_xml_publico(
     # Devolver el XML firmado en base64 para que YeparDTE lo reenvíe/descargue
     # igual que el sobre del set (mismo patrón, sin recodificar).
     libro_b64 = _b64.b64encode(xml_firmado.encode("ISO-8859-1")).decode()
+
+    resultado_envio = None
+    if auto_enviar:
+        # ── Enviar el libro al SII ────────────────────────────────────────────
+        # Los libros se suben al MISMO endpoint que los DTEs (DTEUpload) con el
+        # mismo token. Reutilizamos SIISender.enviar_sobre, que ya sabe pedir
+        # token y subir el XML. El certificado de autenticación es el de Yepar
+        # (e-Sign registrado), igual que en el envío del set.
+        # Analogía: el libro viaja por la misma ventanilla y con la misma
+        # credencial que las facturas; solo cambia el contenido del paquete.
+        auth_p12 = bytes(cert.certificado_auth_p12) if cert.certificado_auth_p12 \
+                   else bytes(cert.certificado_p12)
+        auth_pwd = cert.certificado_auth_password if cert.certificado_auth_p12 \
+                   else cert.certificado_password
+        rut_firmante = cert.rut_firmante or emisor.rut
+        sender = SIISender(ambiente=ambiente)
+        try:
+            resultado_envio = await sender.enviar_sobre(
+                sobre_xml      = xml_firmado,
+                rut_emisor     = emisor.rut,
+                rut_enviador   = rut_firmante,
+                p12_bytes      = bytes(cert.certificado_p12),
+                password       = cert.certificado_password or "",
+                auth_p12_bytes = auth_p12,
+                auth_password  = auth_pwd,
+            )
+            logger.warning(
+                f"[LIBRO-PUB] Enviado {tipo_libro} track_id="
+                f"{resultado_envio.get('track_id')} estado={resultado_envio.get('estado')}"
+            )
+        except Exception as e:
+            logger.error(f"[LIBRO-PUB] Error enviando libro: {e}", exc_info=True)
+            raise HTTPException(500, f"Libro generado pero falló el envío: {e}")
+
     return {
         "ok":           True,
         "tipo_libro":   tipo_libro,
@@ -1438,4 +1474,9 @@ async def generar_libro_desde_xml_publico(
         "nombre":       nombre,
         "libro_xml":    xml_firmado,
         "libro_xml_b64": libro_b64,
+        # Si se envió al SII, datos del envío (track_id para consultar estado)
+        "enviado":      auto_enviar,
+        "track_id":     (resultado_envio or {}).get("track_id"),
+        "estado":       (resultado_envio or {}).get("estado"),
+        "mensaje":      (resultado_envio or {}).get("mensaje"),
     }
