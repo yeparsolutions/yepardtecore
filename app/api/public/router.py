@@ -801,6 +801,23 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
     _tipos_caf   = sorted((datos.cafs_por_tipo or {}).keys())
     logger.info(f"[SET] Tipos en casos: {_tipos_casos} | CAFs recibidos por tipo: {_tipos_caf}")
 
+    # Log diagnóstico de CODIFICACIÓN: muestra el primer nombre con acento tal
+    # como llega, en bytes UTF-8 y su repr. Si en los logs ves "CajÃ³n" o bytes
+    # c3 83 c2 b3 (doble-codificado), el texto llega corrupto ANTES de Core.
+    # Si ves "Cajón" o bytes c3 b3, llega bien y la corrupción es posterior.
+    for _c in datos.casos:
+        for _it in _c.items:
+            if any(ord(ch) > 127 for ch in _it.nombre):
+                logger.info(
+                    f"[SET][ENCODING] nombre recibido='{_it.nombre}' "
+                    f"bytes_utf8={_it.nombre.encode('utf-8').hex()} "
+                    f"repr={_it.nombre!r}"
+                )
+                break
+        else:
+            continue
+        break
+
     try:
         pfx_bytes = _b64.b64decode(datos.pfx_base64)
     except Exception:
