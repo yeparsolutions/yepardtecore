@@ -795,6 +795,12 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
     if not datos.casos:
         raise HTTPException(400, "No hay casos para generar")
 
+    # Log diagnóstico: qué tipos de CAF recibió DTEcore. Si cafs_por_tipo
+    # llega vacío en un set multi-tipo, el backend no se desplegó o no lo mandó.
+    _tipos_casos = sorted({c.tipo_dte for c in datos.casos})
+    _tipos_caf   = sorted((datos.cafs_por_tipo or {}).keys())
+    logger.info(f"[SET] Tipos en casos: {_tipos_casos} | CAFs recibidos por tipo: {_tipos_caf}")
+
     try:
         pfx_bytes = _b64.b64decode(datos.pfx_base64)
     except Exception:
@@ -825,18 +831,30 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
     caf_por_tipo = {}        # tipo → caf_xml_str
     folio_actual_por_tipo = {}  # tipo → próximo folio a usar (contador vivo)
     folio_max_por_tipo = {}   # tipo → último folio autorizado del CAF
+    es_multitipo = len(tipos_set) > 1
     try:
         for tipo in tipos_set:
             cafs_in = datos.cafs_por_tipo or {}
             b64_tipo = cafs_in.get(str(tipo)) or cafs_in.get(tipo)
             if b64_tipo:
                 caf_str, f_desde, f_hasta = _parsear_caf_b64(b64_tipo)
+            elif es_multitipo:
+                # Set con varios tipos pero falta el CAF de ESTE tipo. NO caer
+                # al caf_base64 (el del tipo principal) porque eso quemaría
+                # folios del tipo equivocado en silencio — el bug que veíamos.
+                # Mejor fallar claro para que se cargue el CAF correcto.
+                raise HTTPException(400,
+                    f"Falta el CAF del tipo {tipo} para este set. El sistema no "
+                    f"puede usar el CAF de otro tipo. Verifica que tengas CAF de "
+                    f"certificación cargado para el tipo {tipo}.")
             else:
-                # Sin CAF específico para este tipo → usar el principal
+                # Set de un solo tipo: usar el CAF principal (compatibilidad)
                 caf_str, f_desde, f_hasta = _parsear_caf_b64(datos.caf_base64)
             caf_por_tipo[tipo] = caf_str
             folio_actual_por_tipo[tipo] = f_desde
             folio_max_por_tipo[tipo] = f_hasta
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(400, f"Error parseando CAF: {e}")
 
