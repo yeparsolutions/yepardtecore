@@ -83,7 +83,22 @@ async def health():
         checks["fix_cafs_por_tipo"] = "cafs_por_tipo" in GenerarSetInput.model_fields
     except Exception as ex:
         checks["fix_cafs_por_tipo"] = f"error: {ex}"
-    return {"ok": True, "servicio": "YeparDTEcore", "version": "1.2",
+    try:
+        # Verificación DEFINITIVA: leer el código fuente REAL de generar_set
+        # que está corriendo y confirmar si tiene los logs de diagnóstico.
+        # Si esto da False, el generar_set desplegado es código VIEJO aunque
+        # el resto del archivo (este /health) sea nuevo — significa que el
+        # archivo subido a GitHub quedó a medias o Railway mezcló versiones.
+        import inspect
+        fuente = inspect.getsource(generar_set)
+        checks["generar_set_tiene_log_encoding"] = "[SET][ENCODING]" in fuente
+        checks["generar_set_tiene_log_bytes"] = "[SET][BYTES]" in fuente
+        # Hash corto del código para identificar la versión exacta
+        import hashlib
+        checks["generar_set_hash"] = hashlib.md5(fuente.encode()).hexdigest()[:8]
+    except Exception as ex:
+        checks["generar_set_check"] = f"error: {ex}"
+    return {"ok": True, "servicio": "YeparDTEcore", "version": "1.3",
             "fixes": checks,
             "docs": "https://yepardtecore.cl/api/docs"}
 
@@ -1042,6 +1057,15 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
         except Exception as ex:
             logger.error(f"[SET] Error timbrando caso {caso.numero_caso} folio {folio}: {ex}", exc_info=True)
             raise HTTPException(500, f"Error timbrando caso {caso.numero_caso}: {ex}")
+
+        # Log diagnóstico CASO C: ¿en qué encoding vienen los bytes timbrados?
+        # Si los bytes son c3 b3 (UTF-8) y los decodificamos como ISO-8859-1,
+        # "Cajón" se vuelve "CajÃ³n". Si son f3 (ISO), decodifica bien.
+        _raw = xml_timbrado_bytes
+        _idx = _raw.find(b'NmbItem>')
+        if _idx >= 0:
+            _muestra = _raw[_idx:_idx+40]
+            logger.info(f"[SET][BYTES] DTE timbrado: {_muestra.hex()} | repr={_muestra[:30]!r}")
 
         xmls_timbrados.append(xml_timbrado_bytes.decode("ISO-8859-1"))
         logger.info(f"[SET] Caso {caso.numero_caso} folio {folio} timbrado OK")
