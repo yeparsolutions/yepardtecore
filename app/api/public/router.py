@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Header
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -24,6 +24,26 @@ import logging
 logger = logging.getLogger("yepardtecore.api")
 
 router = APIRouter(prefix="/api", tags=["API Desarrolladores"])
+
+
+def _fix_mojibake(texto):
+    """
+    Repara texto doble-codificado (mojibake). Cuando bytes UTF-8 se leen como
+    Latin-1 en algún punto del transporte, "ó" (UTF-8: C3 B3) aparece como
+    "Ã³" (dos caracteres). Esto re-codifica a Latin-1 y decodifica como UTF-8,
+    recuperando el carácter original. Se aplica en la ENTRADA, antes de
+    construir cualquier XML o TED, para que el texto correcto fluya a todo.
+    Analogía: deshace una mala traducción de ida y vuelta y recupera la
+    palabra original.
+    """
+    if not isinstance(texto, str):
+        return texto
+    if 'Ã' not in texto and 'Â' not in texto:
+        return texto  # sin señales de doble-codificación
+    try:
+        return texto.encode('latin-1').decode('utf-8')
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return texto  # si no se puede reparar limpiamente, dejar como está
 
 
 async def get_emisor_by_api_key(
@@ -704,6 +724,13 @@ class ItemSetInput(BaseModel):
     unidad:         str   = ""
     codigo:         str   = ""
     descuento:      float = 0.0
+
+    # Reparar doble-codificación del nombre apenas llega, antes de armar
+    # el XML o el TED, para que los acentos lleguen correctos al SII.
+    @field_validator("nombre")
+    @classmethod
+    def _reparar_nombre(cls, v):
+        return _fix_mojibake(v)
 
 class CasoSetInput(BaseModel):
     numero_caso:     int
