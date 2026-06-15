@@ -8,7 +8,8 @@
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File, Form
+from fastapi.responses import Response
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -1320,4 +1321,121 @@ async def enviar_sobre_directo(datos: EnviarSobreInput):
         "track_id": resultado.get("track_id"),
         "estado":   resultado.get("estado", "ENVIADO"),
         "mensaje":  resultado.get("mensaje", ""),
+    }
+
+
+# ── Libro de Ventas / Guías desde XML aprobado (flujo público con API Key) ────
+# Replica el endpoint interno /v1/certificacion-libros/desde-xml pero por el
+# router público, para que YeparDTE lo llame igual que /generar-set: con API Key.
+#
+# El método: el usuario sube el/los XML de EnvioDTE que el SII YA ACEPTÓ, y
+# armamos el libro con esos documentos exactos. Es el método más confiable:
+# el libro reporta lo mismo que el SII recibió, sin riesgo de discrepancias.
+# Analogía: en vez de reconstruir la lista de ventas de memoria, fotocopiamos
+# las boletas/facturas que ya timbró el SII y las pegamos en el libro.
+@router.post("/generar-libro-desde-xml")
+async def generar_libro_desde_xml_publico(
+    tipo_libro:      str             = Form(...),   # ventas | guias
+    natencion:       str             = Form(...),   # N° atención del libro (del .txt SII)
+    periodo:         str             = Form(...),   # AAAA-MM
+    archivos:        list[UploadFile] = File(...),  # XML(s) de EnvioDTE aprobados
+    fch_resol:       str             = Form("2026-04-19"),
+    nro_resol:       str             = Form("0"),
+    folios_anulados: str             = Form(""),    # LibroGuías: folios anulados "76,77"
+    emisor:          Emisor          = Depends(get_emisor_by_api_key),
+    db:              AsyncSession    = Depends(get_db),
+):
+    # Reutilizamos las funciones ya probadas del libro dinámico interno
+    from app.api.v1.endpoints.certificacion_libros_dinamico import (
+        _parsear_dtes_desde_xml, _construir_libro_xml, _DTEFake,
+    )
+    from app.services.firma_digital import FirmaDigital
+
+    tipo_libro = tipo_libro.lower().strip()
+    if tipo_libro not in ("ventas", "guias", "compras"):
+        raise HTTPException(400, "tipo_libro debe ser: ventas | guias | compras")
+
+    # Certificado del emisor dueño de la API Key (Yepar, registrado en SII)
+    cert = (await db.execute(
+        select(Certificado).where(Certificado.emisor_id == emisor.id,
+                                   Certificado.activo == True).limit(1)
+    )).scalar_one_or_none()
+    if not cert or not cert.certificado_p12:
+        raise HTTPException(400, "Sin certificado .p12 para firmar el libro")
+
+    # Folios anulados (solo LibroGuías): "76,77" → {76, 77}
+    folios_anulados_set = set()
+    for f in (folios_anulados or "").split(","):
+        f = f.strip()
+        if f.isdigit():
+            folios_anulados_set.add(int(f))
+
+    # Parsear todos los XML subidos, sin duplicar folios
+    todos_dtes = []
+    folios_vistos = set()
+    for archivo in archivos:
+        contenido = await archivo.read()
+        try:
+            dtes_xml = _parsear_dtes_desde_xml(contenido)
+        except ValueError as e:
+            raise HTTPException(400, f"Error en {archivo.filename}: {e}")
+        for d in dtes_xml:
+            key = (d["tipo_dte"], d["folio"])
+            if key not in folios_vistos:
+                folios_vistos.add(key)
+                d["anulado"] = d["folio"] in folios_anulados_set
+                todos_dtes.append(_DTEFake(d))
+
+    if not todos_dtes:
+        raise HTTPException(404, "No se encontraron DTEs válidos en los XML subidos")
+
+    todos_dtes.sort(key=lambda x: (x.tipo_dte, x.folio))
+
+    # Metadatos según el tipo de libro
+    libro_meta = {
+        "ventas":  ("VENTA",  "LibroVentas"),
+        "compras": ("COMPRA", "LibroCompras"),
+        "guias":   ("VENTA",  "LibroGuias"),
+    }
+    tipo_op, libro_id = libro_meta[tipo_libro]
+
+    logger.warning(
+        f"[LIBRO-PUB] {tipo_libro} emisor={emisor.rut} natencion={natencion} "
+        f"archivos={len(archivos)} dtes={len(todos_dtes)}"
+    )
+
+    xml_str = _construir_libro_xml(
+        emisor        = emisor,
+        dtes          = todos_dtes,
+        tipo_libro    = tipo_op,
+        tipo_envio_id = libro_id,
+        natencion     = natencion,
+        periodo       = periodo,
+        fch_resol     = fch_resol,
+        nro_resol     = nro_resol,
+        rut_envia     = cert.rut_firmante or emisor.rut,
+    )
+
+    firma = FirmaDigital(bytes(cert.certificado_p12), cert.certificado_password or "")
+    try:
+        xml_firmado = await firma.firmar_libro(xml_str)
+    except Exception as e:
+        logger.error(f"[LIBRO-PUB] Error firmando: {e}", exc_info=True)
+        raise HTTPException(500, f"Error al firmar el libro: {e}")
+
+    rut_limpio = emisor.rut.replace(".", "").replace("-", "")
+    nombre = f"Libro{tipo_libro.capitalize()}_{natencion}_{rut_limpio}_{periodo}.xml"
+
+    # Devolver el XML firmado en base64 para que YeparDTE lo reenvíe/descargue
+    # igual que el sobre del set (mismo patrón, sin recodificar).
+    libro_b64 = _b64.b64encode(xml_firmado.encode("ISO-8859-1")).decode()
+    return {
+        "ok":           True,
+        "tipo_libro":   tipo_libro,
+        "natencion":    natencion,
+        "periodo":      periodo,
+        "dtes_incluidos": len(todos_dtes),
+        "nombre":       nombre,
+        "libro_xml":    xml_firmado,
+        "libro_xml_b64": libro_b64,
     }
