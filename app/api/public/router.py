@@ -812,9 +812,11 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
 
     # Log diagnóstico: qué tipos de CAF recibió DTEcore. Si cafs_por_tipo
     # llega vacío en un set multi-tipo, el backend no se desplegó o no lo mandó.
+    # USAMOS warning porque el logger 'yepardtecore.api' no emite INFO a stdout
+    # (no hay basicConfig); warning sí llega a los logs de Railway.
     _tipos_casos = sorted({c.tipo_dte for c in datos.casos})
     _tipos_caf   = sorted((datos.cafs_por_tipo or {}).keys())
-    logger.info(f"[SET] Tipos en casos: {_tipos_casos} | CAFs recibidos por tipo: {_tipos_caf}")
+    logger.warning(f"[SET] Tipos en casos: {_tipos_casos} | CAFs recibidos por tipo: {_tipos_caf}")
 
     # Log diagnóstico de CODIFICACIÓN: muestra el primer nombre con acento tal
     # como llega, en bytes UTF-8 y su repr. Si en los logs ves "CajÃ³n" o bytes
@@ -823,7 +825,7 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
     for _c in datos.casos:
         for _it in _c.items:
             if any(ord(ch) > 127 for ch in _it.nombre):
-                logger.info(
+                logger.warning(
                     f"[SET][ENCODING] nombre recibido='{_it.nombre}' "
                     f"bytes_utf8={_it.nombre.encode('utf-8').hex()} "
                     f"repr={_it.nombre!r}"
@@ -1065,7 +1067,7 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
         _idx = _raw.find(b'NmbItem>')
         if _idx >= 0:
             _muestra = _raw[_idx:_idx+40]
-            logger.info(f"[SET][BYTES] DTE timbrado: {_muestra.hex()} | repr={_muestra[:30]!r}")
+            logger.warning(f"[SET][BYTES] DTE timbrado: {_muestra.hex()} | repr={_muestra[:30]!r}")
 
         xmls_timbrados.append(xml_timbrado_bytes.decode("ISO-8859-1"))
         logger.info(f"[SET] Caso {caso.numero_caso} folio {folio} timbrado OK")
