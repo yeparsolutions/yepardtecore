@@ -777,6 +777,11 @@ class GenerarSetInput(BaseModel):
     # tipo de DTE como string ("33", "56", "61"...), el valor el CAF en base64.
     # Si un tipo no está aquí, se usa caf_base64 (compatibilidad con boletas).
     cafs_por_tipo:  Optional[dict] = None
+    # Folio ACTUAL (próximo a usar) por tipo de DTE, según el contador de la BD
+    # del cliente. Sin esto, Core empezaría siempre desde el inicio del CAF
+    # (folio D), reusando folios ya enviados → "DTE Repetido" / "Folio ya
+    # recibido". La clave es el tipo como string ("33"), el valor el próximo folio.
+    folios_actuales_por_tipo: Optional[dict] = None
     casos:          list[CasoSetInput]
     natencion:      str = "SET"
     fecha:          Optional[str] = None
@@ -886,7 +891,15 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
                 # Set de un solo tipo: usar el CAF principal (compatibilidad)
                 caf_str, f_desde, f_hasta = _parsear_caf_b64(datos.caf_base64)
             caf_por_tipo[tipo] = caf_str
-            folio_actual_por_tipo[tipo] = f_desde
+            # Folio inicial: si el cliente nos dice su folio_actual para este
+            # tipo (su contador vivo), partimos de ahí. Si no, del inicio del
+            # CAF. Esto evita reusar folios ya enviados al SII.
+            folios_act = datos.folios_actuales_por_tipo or {}
+            folio_act_tipo = folios_act.get(str(tipo)) or folios_act.get(tipo)
+            if folio_act_tipo and f_desde <= int(folio_act_tipo) <= f_hasta:
+                folio_actual_por_tipo[tipo] = int(folio_act_tipo)
+            else:
+                folio_actual_por_tipo[tipo] = f_desde
             folio_max_por_tipo[tipo] = f_hasta
     except HTTPException:
         raise
