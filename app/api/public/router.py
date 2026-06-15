@@ -43,7 +43,28 @@ async def get_emisor_by_api_key(
 
 @router.get("/health")
 async def health():
-    return {"ok": True, "servicio": "YeparDTEcore", "version": "1.1",
+    # Verificar en vivo qué fixes están realmente cargados en este deploy.
+    # Esto permite confirmar desde el navegador si el código nuevo está activo
+    # sin tener que generar un set completo. Si un check da False, ese archivo
+    # no se desplegó.
+    checks = {}
+    try:
+        # Fix de codificación: ¿xml_builder tiene la reparación de mojibake?
+        from app.services import xml_builder as _xb
+        checks["fix_mojibake_builder"] = hasattr(_xb, "_reparar_mojibake")
+        # Prueba real: reparar "CajÃ³n" debe dar "Cajón"
+        if checks["fix_mojibake_builder"]:
+            prueba = _xb._reparar_mojibake("Caj\u00c3\u00b3n")
+            checks["mojibake_funciona"] = (prueba == "Caj\u00f3n")
+    except Exception as ex:
+        checks["fix_mojibake_builder"] = f"error: {ex}"
+    try:
+        # Fix de folios por tipo: ¿el modelo acepta cafs_por_tipo?
+        checks["fix_cafs_por_tipo"] = "cafs_por_tipo" in GenerarSetInput.model_fields
+    except Exception as ex:
+        checks["fix_cafs_por_tipo"] = f"error: {ex}"
+    return {"ok": True, "servicio": "YeparDTEcore", "version": "1.2",
+            "fixes": checks,
             "docs": "https://yepardtecore.cl/api/docs"}
 
 
