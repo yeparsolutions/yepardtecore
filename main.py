@@ -1,9 +1,22 @@
 import os
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
+
+# Configurar logging a nivel INFO para que los logger.info de la app
+# (ej. 'yepardtecore.api') se escriban al stdout que Railway captura.
+# Sin esto, los logger con nombre propio quedan en WARNING por defecto y
+# sus mensajes INFO son invisibles — por eso los logs [SET] no aparecían.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+# Asegurar que el logger de la app emita INFO
+logging.getLogger("yepardtecore").setLevel(logging.INFO)
+logging.getLogger("yepardtecore.api").setLevel(logging.INFO)
 
 from app.core.config import settings
 from app.api.v1.router import api_router
