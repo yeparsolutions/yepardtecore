@@ -973,6 +973,64 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
                 ))
         return refs_out
 
+    # ── Mapa de montos por número de caso ────────────────────────────────────
+    # Una NC/ND de ANULACIÓN debe llevar el MISMO monto del documento que anula
+    # (el SII lo exige: anular = revertir el total). Y toda NC/ND necesita al
+    # menos un <Detalle> o el SII rechaza por esquema ("se esperaba Detalle").
+    # Aquí precalculamos el monto neto de cada caso a partir de sus ítems, para
+    # que los casos sin ítems (anulaciones) puedan heredar el monto del caso
+    # que referencian.
+    # Analogía: una nota de anulación es como un recibo de devolución; tiene que
+    # decir cuánto se devuelve, y ese "cuánto" es el total de la boleta original.
+    def _monto_neto_caso(caso_obj):
+        """Suma el monto neto de los ítems de un caso (0 si no tiene ítems)."""
+        total = 0
+        for it in caso_obj.items:
+            precio = it.precio_neto or (round(it.precio_con_iva / 1.19) if it.precio_con_iva else 0)
+            cant   = it.cantidad or 1
+            bruto_linea = precio * cant
+            if it.descuento:
+                bruto_linea -= round(bruto_linea * it.descuento / 100)
+            total += bruto_linea
+        return total
+
+    # numero_caso (int) → monto neto calculado de sus ítems
+    monto_por_caso = {}
+    for c in datos.casos:
+        monto_por_caso[c.numero_caso] = _monto_neto_caso(c)
+
+    def _sufijo_caso_ref(caso_obj):
+        """Extrae el número de caso referenciado (ej. '4841543-3' → 3)."""
+        ref = caso_obj.referencia or {}
+        caso_ref = str(ref.get("caso_ref") or "")
+        m = _re.search(r'(\d+)\s*$', caso_ref)  # último número del string
+        return int(m.group(1)) if m else None
+
+    # Mapa número_caso → objeto caso, para resolver referencias en cadena
+    caso_por_numero = {c.numero_caso: c for c in datos.casos}
+
+    def _monto_resuelto(num_caso, _visto=None):
+        """
+        Monto de un caso. Si el caso no tiene ítems propios (ej. una NC que
+        CORRIGE GIRO), hereda el monto del caso que referencia (en cadena).
+        _visto evita bucles infinitos si dos casos se referencian mutuamente.
+        Analogía: si una nota no dice el monto, lo busca en el documento que
+        corrige, y si ese tampoco, sigue la cadena hasta encontrar el original.
+        """
+        if _visto is None:
+            _visto = set()
+        if num_caso in _visto or num_caso not in caso_por_numero:
+            return 0
+        _visto.add(num_caso)
+        propio = monto_por_caso.get(num_caso, 0)
+        if propio > 0:
+            return propio
+        # Sin monto propio → heredar del caso referenciado
+        ref_num = _sufijo_caso_ref(caso_por_numero[num_caso])
+        if ref_num:
+            return _monto_resuelto(ref_num, _visto)
+        return 0
+
     for i, caso in enumerate(datos.casos):
         folio = folio_de_caso[i]   # folio del CAF de SU tipo (33→CAF33, 61→CAF61...)
 
@@ -1017,14 +1075,61 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
                 telefono=getattr(e, "telefono", "") or "",
                 correo=getattr(e, "correo", "") or "",
             )
+            # Para NC de devolución (caso con ítems pero sin precio), heredar
+            # el precio del ítem con el mismo nombre en el documento referenciado.
+            # El set del SII da solo la CANTIDAD devuelta; el precio es el del
+            # documento original (ej. devolver 172 Pañuelos al precio de la
+            # factura que los vendió).
+            ref_num_items = _sufijo_caso_ref(caso) if tipo_dte in (61, 56) else None
+            precios_ref = {}
+            if ref_num_items and ref_num_items in caso_por_numero:
+                for it_ref in caso_por_numero[ref_num_items].items:
+                    precio_r = it_ref.precio_neto or (round(it_ref.precio_con_iva / 1.19) if it_ref.precio_con_iva else 0)
+                    precios_ref[it_ref.nombre.strip().upper()] = precio_r
+
             items_d = []
             for it in caso.items:
+                precio_unit = it.precio_neto or (round(it.precio_con_iva / 1.19) if it.precio_con_iva else 0)
+                # Si el ítem no trae precio, buscarlo en el documento referenciado
+                if precio_unit == 0:
+                    precio_unit = precios_ref.get(it.nombre.strip().upper(), 0)
                 items_d.append(ItemDTE(
                     nombre=it.nombre, cantidad=it.cantidad,
-                    precio_unitario=it.precio_neto or round(it.precio_con_iva / 1.19),
+                    precio_unitario=precio_unit,
                     exento=it.exento, unidad=it.unidad, codigo=it.codigo,
                     descuento_pct=it.descuento,
                 ))
+
+            # ── Si es NC/ND y no tiene ítems, generar un detalle obligatorio ──
+            # El esquema del SII exige al menos un <Detalle> en todo DTE. Las
+            # NC/ND de anulación o corrección de texto no traen ítems del set,
+            # así que armamos uno con el monto del documento que referencian.
+            # Para anulación: monto = total del documento anulado (lo revierte).
+            # Para corrección de texto (CORRIGE GIRO): monto del doc original.
+            if not items_d and tipo_dte in (61, 56):
+                ref_num = _sufijo_caso_ref(caso)
+                monto_ref = _monto_resuelto(ref_num) if ref_num else 0
+                razon = ((caso.referencia or {}).get("razon") or "").upper()
+                # Glosa del detalle según la operación
+                if "ANULA" in razon:
+                    glosa = "Anula documento de referencia"
+                elif "CORRIGE" in razon:
+                    glosa = "Corrige documento de referencia"
+                else:
+                    glosa = "Ajuste documento de referencia"
+                # Si no pudimos resolver el monto del referido, usar 1 como
+                # mínimo válido (el SII no acepta MontoItem vacío en el detalle).
+                precio_detalle = monto_ref if monto_ref > 0 else 0
+                items_d.append(ItemDTE(
+                    nombre=glosa, cantidad=1,
+                    precio_unitario=precio_detalle,
+                    exento=False, unidad="", codigo="",
+                    descuento_pct=0,
+                ))
+                logger.warning(
+                    f"[SET] NC/ND caso {caso.numero_caso} sin ítems → detalle "
+                    f"generado: '{glosa}' monto={precio_detalle} (ref caso {ref_num})"
+                )
             # Referencias: al SET + (si es NC/ND) al documento corregido
             refs = _resolver_ref(caso, folio)
             # Receptor completo (con giro/dirección) para evitar reparos del SII
