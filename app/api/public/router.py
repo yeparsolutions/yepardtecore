@@ -707,6 +707,12 @@ class GenerarSetInput(BaseModel):
     pfx_password:   str
     caf_base64:     str            # CAF del tipo principal del set — VERBATIM,
                                    # tal como lo firmó el SII (jamás modificarlo)
+    # CAFs adicionales por tipo de DTE, para sets que mezclan tipos (ej. el set
+    # básico tiene facturas=33, notas de crédito=61 y notas de débito=56, cada
+    # una con SU PROPIO CAF y su propia secuencia de folios). La clave es el
+    # tipo de DTE como string ("33", "56", "61"...), el valor el CAF en base64.
+    # Si un tipo no está aquí, se usa caf_base64 (compatibilidad con boletas).
+    cafs_por_tipo:  Optional[dict] = None
     casos:          list[CasoSetInput]
     natencion:      str = "SET"
     fecha:          Optional[str] = None
@@ -745,34 +751,57 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
         pfx_bytes = _b64.b64decode(datos.pfx_base64)
     except Exception:
         raise HTTPException(400, "pfx_base64 inválido")
-    try:
-        caf_xml_bytes = _b64.b64decode(datos.caf_base64)
-        caf_xml_str   = caf_xml_bytes.decode("utf-8")
-    except Exception:
-        raise HTTPException(400, "caf_base64 inválido")
 
-    # Extraer folio inicial del CAF
+    # ── Cargar UN CAF por cada tipo de DTE presente en el set ────────────────
+    # El set básico mezcla facturas (33), notas de crédito (61) y notas de
+    # débito (56). Cada tipo tiene su PROPIO CAF y su propia secuencia de
+    # folios. Antes se usaba un solo CAF para todo, quemando folios del tipo
+    # 33 para las notas — por eso el contador del 33 bajaba de a 8 y los de
+    # 56/61 no se movían.
+    # Analogía: cada tipo de documento es una chequera distinta del banco; no
+    # se pueden pagar cheques de la cuenta corriente con la chequera de ahorro.
+    def _parsear_caf_b64(b64_str):
+        """Devuelve (caf_xml_str, folio_desde, folio_hasta) de un CAF base64."""
+        caf_bytes = _b64.b64decode(b64_str)
+        caf_str   = caf_bytes.decode("utf-8")
+        caf_el    = _etree.fromstring(caf_bytes)
+        f_desde   = int(caf_el.findtext(".//D") or caf_el.findtext(".//DESDE") or 1)
+        f_hasta   = int(caf_el.findtext(".//H") or caf_el.findtext(".//HASTA") or f_desde)
+        return caf_str, f_desde, f_hasta
+
+    # Tipos de DTE presentes en el set (ej. {33, 61, 56})
+    tipos_set = {c.tipo_dte for c in datos.casos}
+
+    # Mapa tipo → datos de su CAF. Si cafs_por_tipo trae el tipo, se usa ese;
+    # si no, se cae al caf_base64 (compatibilidad con sets de un solo tipo).
+    caf_por_tipo = {}        # tipo → caf_xml_str
+    folio_actual_por_tipo = {}  # tipo → próximo folio a usar (contador vivo)
+    folio_max_por_tipo = {}   # tipo → último folio autorizado del CAF
     try:
-        caf_el      = _etree.fromstring(caf_xml_bytes)
-        folio_desde = int(caf_el.findtext(".//D") or caf_el.findtext(".//DESDE") or 1)
-        folio_hasta = int(caf_el.findtext(".//H") or caf_el.findtext(".//HASTA") or folio_desde)
+        for tipo in tipos_set:
+            cafs_in = datos.cafs_por_tipo or {}
+            b64_tipo = cafs_in.get(str(tipo)) or cafs_in.get(tipo)
+            if b64_tipo:
+                caf_str, f_desde, f_hasta = _parsear_caf_b64(b64_tipo)
+            else:
+                # Sin CAF específico para este tipo → usar el principal
+                caf_str, f_desde, f_hasta = _parsear_caf_b64(datos.caf_base64)
+            caf_por_tipo[tipo] = caf_str
+            folio_actual_por_tipo[tipo] = f_desde
+            folio_max_por_tipo[tipo] = f_hasta
     except Exception as e:
         raise HTTPException(400, f"Error parseando CAF: {e}")
 
-    # ── Folio inicial: parámetro explícito, validado contra el CAF real ──────
-    # El CAF dice "estás autorizado del folio D al H" (firmado por el SII).
-    # El cliente nos dice DESDE dónde de ese rango quiere partir (su contador).
-    # Analogía: el CAF es la chequera autorizada por el banco; folio_inicio
-    # es por cuál cheque vas — se hojea la chequera, NUNCA se reimprime.
-    folio_base = datos.folio_inicio or folio_desde
-    if folio_base < folio_desde:
-        raise HTTPException(400,
-            f"folio_inicio {folio_base} es menor al inicio del CAF ({folio_desde})")
-    if folio_base + len(datos.casos) - 1 > folio_hasta:
-        disponibles = folio_hasta - folio_base + 1
-        raise HTTPException(400,
-            f"CAF insuficiente: desde el folio {folio_base} quedan {disponibles} "
-            f"folios pero hay {len(datos.casos)} casos")
+    # Validar que cada tipo tenga folios suficientes para sus casos
+    casos_por_tipo = {}
+    for c in datos.casos:
+        casos_por_tipo[c.tipo_dte] = casos_por_tipo.get(c.tipo_dte, 0) + 1
+    for tipo, n in casos_por_tipo.items():
+        disponibles = folio_max_por_tipo[tipo] - folio_actual_por_tipo[tipo] + 1
+        if n > disponibles:
+            raise HTTPException(400,
+                f"CAF del tipo {tipo} insuficiente: {n} casos pero solo "
+                f"{disponibles} folios disponibles")
 
     fecha_str = datos.fecha or _hoy_chile()
     fecha_dt  = _date.fromisoformat(fecha_str)
@@ -791,16 +820,19 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
 
     xmls_timbrados = []
 
-    # Mapa "numero_caso del set" → folio asignado. Las NC/ND referencian al
-    # documento que corrigen por su número de caso (ej. "4841543-1"); aquí
-    # traducimos ese número al folio real que le tocó al emitirse en orden.
-    # Analogía: la nota de crédito dice "corrijo la factura del caso 1"; este
-    # mapa sabe que el caso 1 quedó con el folio 141.
-    folio_por_caso = {}
+    # ── Asignar el folio definitivo a cada caso, del CAF de SU tipo ──────────
+    # Recorremos los casos en orden y a cada uno le damos el siguiente folio
+    # disponible de la chequera (CAF) de su tipo. Así el tipo 33 gasta folios
+    # del CAF 33, el 61 del CAF 61, etc., cada uno con su propia secuencia.
+    folio_de_caso = {}   # índice del caso → folio asignado
+    folio_por_caso = {}  # numero_caso / sufijo → folio (para las referencias)
+    _contador = dict(folio_actual_por_tipo)  # copia para ir avanzando
     for j, c in enumerate(datos.casos):
-        folio_por_caso[str(c.numero_caso)] = folio_base + j
-        # también indexar por el sufijo del caso_ref (ej. "4841543-1" → "1")
-        folio_por_caso[str(j + 1)] = folio_base + j
+        folio_asignado = _contador[c.tipo_dte]
+        _contador[c.tipo_dte] += 1   # avanzar el contador SOLO de ese tipo
+        folio_de_caso[j] = folio_asignado
+        folio_por_caso[str(c.numero_caso)] = folio_asignado
+        folio_por_caso[str(j + 1)] = folio_asignado
 
     def _resolver_ref(caso_obj, folio_actual):
         """Construye las referencias del documento. Siempre la referencia al
@@ -834,10 +866,12 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
         return refs_out
 
     for i, caso in enumerate(datos.casos):
-        folio = folio_base + i   # hojear la chequera desde donde va el contador
+        folio = folio_de_caso[i]   # folio del CAF de SU tipo (33→CAF33, 61→CAF61...)
 
         tipo_dte = caso.tipo_dte
         es_boleta = tipo_dte in TIPOS_BOLETA
+        # CAF correspondiente al tipo de este caso (cada tipo su chequera)
+        caf_xml_str = caf_por_tipo[tipo_dte]
 
         rut_recep = _norm_rut(caso.rut_receptor or "66666666-6")
         nom_recep = caso.nombre_receptor or "Consumidor Final"
