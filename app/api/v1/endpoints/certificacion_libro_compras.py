@@ -25,46 +25,47 @@ FCT_PROP  = "0.60"
 def _iva(n): return round(n * 0.19)
 
 DOCUMENTOS = [
-    # Doc 30 - Factura No Afecta o Exenta (IVA normal)
+    # Set 4841545. Cada documento refleja EXACTAMENTE lo que el SII pide en el
+    # .txt de compras, con su situación tributaria. La clasificación del tipo y
+    # del código de IVA no recuperable es lo que el SII evalúa estrictamente.
+    #
+    # Doc 30 - Factura (giro con derecho a crédito) — folio 234, afecto 34744
     {"tipo": 30, "folio": 234, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
      "neto": 34744, "exe": 0, "iva": _iva(34744), "total": 34744 + _iva(34744), "tipo_especial": None},
 
-    # Doc 30 - Factura No Afecta (IVA uso común)
+    # Doc 33 - Factura Electrónica (giro con derecho a crédito) — folio 32,
+    # exento 9597 + afecto 8608
+    {"tipo": 33, "folio": 32, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
+     "neto": 8608, "exe": 9597, "iva": _iva(8608), "total": 8608 + _iva(8608) + 9597, "tipo_especial": None},
+
+    # Doc 30 - Factura (IVA USO COMÚN, factor 0.60) — folio 781, afecto 29947
     {"tipo": 30, "folio": 781, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
      "neto": 29947, "exe": 0, "iva": 0, "iva_uso_comun": _iva(29947),
      "total": 29947 + _iva(29947), "tipo_especial": "iva_uso_comun"},
 
-    # Doc 33 - Factura Electrónica (con monto exento + IVA normal)
-    {"tipo": 33, "folio": 32, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 8608, "exe": 9597, "iva": _iva(8608), "total": 8608 + _iva(8608) + 9597, "tipo_especial": None},
+    # Doc 60 - NOTA DE CRÉDITO por descuento a factura 234 — folio 451, monto 2807
+    # El set dice "NOTA DE CREDITO" → tipo 60 (antes estaba mal como 61, por eso
+    # el reparo "Resumen Doc 60 no aparece en el libro").
+    {"tipo": 60, "folio": 451, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
+     "neto": 2807, "exe": 0, "iva": _iva(2807), "total": 2807 + _iva(2807), "tipo_especial": None},
 
-    # Doc 33 - Factura Electrónica (IVA no recuperable cod. 9)
-    # FIX REPARO 1: iva=0 en el dict para que TotMntIVA del resumen no lo sume;
-    # el IVA no recuperable va SOLO en iva_no_rec / TotIVANoRec.
+    # Doc 33 - Factura Electrónica (ENTREGA GRATUITA → IVA NO RECUPERABLE)
+    # El set dice "ENTREGA GRATUITA DEL PROVEEDOR" → CodIVANoRec=4 (entregas
+    # gratuitas recibidas), NO 9. El IVA va solo en iva_no_rec.
     {"tipo": 33, "folio": 67, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 10913, "exe": 0, "iva": 0, "iva_no_rec": _iva(10913), "cod_iva_no_rec": 9,
+     "neto": 10913, "exe": 0, "iva": 0, "iva_no_rec": _iva(10913), "cod_iva_no_rec": 4,
      "total": 10913 + _iva(10913), "tipo_especial": "iva_no_rec"},
 
-    # Doc 46 - Factura de Compra (IVA retenido total)
-    # FIX REPARO 2: iva=0 para que MntIVA sea 0 en el detalle y TotMntIVA=0 en resumen.
-    # El IVA retenido se informa SOLO en iva_ret_total / IVARetTotal.
-    # TotMntTotal = neto + iva_ret_total (el comprador igual registra el total del doc).
+    # Doc 46 - Factura de Compra Electrónica (RETENCIÓN TOTAL DEL IVA) — folio 9
+    # El IVA retenido se informa solo en iva_ret_total / IVARetTotal.
     {"tipo": 46, "folio": 9, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
      "neto": 10019, "exe": 0, "iva": 0, "iva_ret_total": _iva(10019),
      "total": 10019 + _iva(10019), "tipo_especial": "iva_ret_total"},
 
-    # Doc 60 - Liquidación-Factura Electrónica
-    # FIX REPARO 3: tipo 60 agregado; el set de prueba lo requiere y no existía.
-    {"tipo": 60, "folio": 1, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 5000, "exe": 0, "iva": _iva(5000), "total": 5000 + _iva(5000), "tipo_especial": None},
-
-    # Doc 61 - Nota de Débito Electrónica (con IVA)
-    {"tipo": 61, "folio": 451, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 2807, "exe": 0, "iva": _iva(2807), "total": 2807 + _iva(2807), "tipo_especial": None},
-
-    # Doc 61 - Nota de Débito Electrónica (solo exento)
-    {"tipo": 61, "folio": 211, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 0, "exe": 6396, "iva": 0, "total": 6396, "tipo_especial": None},
+    # Doc 60 - NOTA DE CRÉDITO por descuento a factura electrónica 32 — folio 211,
+    # monto 6396. El set dice "NOTA DE CREDITO" → tipo 60.
+    {"tipo": 60, "folio": 211, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
+     "neto": 6396, "exe": 0, "iva": _iva(6396), "total": 6396 + _iva(6396), "tipo_especial": None},
 ]
 
 def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
@@ -104,8 +105,9 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
         t_nr = sum(d.get("iva_no_rec", 0) for d in dt)
         if t_nr:
             inr = etree.SubElement(tot, f"{{{NS}}}TotIVANoRec")
-            # Agrupar por código si hubiera varios; aquí todos son cod 9
-            cod_nr = next(d.get("cod_iva_no_rec", 9) for d in dt if d.get("iva_no_rec", 0))
+            # Código de IVA no recuperable del documento (4 = entrega gratuita
+            # recibida, para la factura 67 del set). Se toma del dict, no fijo.
+            cod_nr = next(d.get("cod_iva_no_rec", 1) for d in dt if d.get("iva_no_rec", 0))
             etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text    = str(cod_nr)
             etree.SubElement(inr, f"{{{NS}}}TotOpIVANoRec").text  = str(sum(1 for d in dt if d.get("iva_no_rec", 0)))
             etree.SubElement(inr, f"{{{NS}}}TotMntIVANoRec").text = str(t_nr)
