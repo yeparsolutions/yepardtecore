@@ -57,10 +57,15 @@ DOCUMENTOS = [
      "total": 10913 + _iva(10913), "tipo_especial": "iva_no_rec"},
 
     # Doc 46 - Factura de Compra Electrónica (RETENCIÓN TOTAL DEL IVA) — folio 9
-    # El IVA retenido se informa solo en iva_ret_total / IVARetTotal.
+    # OJO: el MntIVA SÍ se declara (neto×19%), NO va en 0 — el SII exige que
+    # MntIVA = MntNeto*TasaImp. La RETENCIÓN se informa ADEMÁS en iva_ret_total.
+    # Y el MntTotal es solo el NETO: en retención total, el comprador retiene
+    # todo el IVA, así que no lo paga al proveedor (total = neto).
+    # Analogía: el IVA existe y se anota, pero el comprador se lo queda para
+    # enterarlo él al fisco; por eso no infla el total a pagar.
     {"tipo": 46, "folio": 9, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 10019, "exe": 0, "iva": 0, "iva_ret_total": _iva(10019),
-     "total": 10019 + _iva(10019), "tipo_especial": "iva_ret_total"},
+     "neto": 10019, "exe": 0, "iva": _iva(10019), "iva_ret_total": _iva(10019),
+     "total": 10019, "tipo_especial": "iva_ret_total"},
 
     # Doc 60 - NOTA DE CRÉDITO por descuento a factura electrónica 32 — folio 211,
     # monto 6396. El set dice "NOTA DE CREDITO" → tipo 60.
@@ -159,8 +164,10 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
             etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc["cod_iva_no_rec"])
             etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
         elif te == "iva_ret_total":
-            # FIX REPARO 2: MntIVA=0 (no es crédito fiscal), retención en IVARetTotal
-            etree.SubElement(det, f"{{{NS}}}MntIVA").text      = "0"
+            # El SII exige MntIVA = MntNeto*TasaImp SIEMPRE (no puede ir en 0).
+            # La retención se informa ADEMÁS en IVARetTotal. El comprador declara
+            # el IVA y a la vez registra que lo retuvo para enterarlo él.
+            etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
             etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
         else:
             etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
