@@ -104,7 +104,19 @@ async def health():
         checks["generar_set_hash"] = hashlib.md5(fuente.encode()).hexdigest()[:8]
     except Exception as ex:
         checks["generar_set_check"] = f"error: {ex}"
-    return {"ok": True, "servicio": "YeparDTEcore", "version": "1.5",
+    # Verificar el fix del LIBRO DE COMPRAS (archivo separado): las NC deben ser
+    # tipo 60 y la entrega gratuita código 4. Si esto da False, ese archivo no
+    # se subió con el fix.
+    try:
+        from app.api.v1.endpoints import certificacion_libro_compras as _clc
+        import inspect as _insp
+        src_compras = _insp.getsource(_clc)
+        checks["fix_compras_nc_tipo60"] = '"tipo": 60, "folio": 451' in src_compras
+        checks["fix_compras_iva_norec_cod4"] = '"cod_iva_no_rec": 4' in src_compras
+        checks["fix_compras_sin_doc60_inventado"] = '"folio": 1, "fecha"' not in src_compras
+    except Exception as ex:
+        checks["fix_compras_check"] = f"error: {ex}"
+    return {"ok": True, "servicio": "YeparDTEcore", "version": "1.6",
             "fixes": checks,
             "docs": "https://yepardtecore.cl/api/docs"}
 
