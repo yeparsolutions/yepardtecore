@@ -114,9 +114,10 @@ async def health():
         checks["fix_compras_nc_tipo60"] = '"tipo": 60, "folio": 451' in src_compras
         checks["fix_compras_iva_norec_cod4"] = '"cod_iva_no_rec": 4' in src_compras
         checks["fix_compras_sin_doc60_inventado"] = '"folio": 1, "fecha"' not in src_compras
+        checks["fix_compras_periodo_del_set"] = 'periodo = fecha_doc[:7]' in src_compras
     except Exception as ex:
         checks["fix_compras_check"] = f"error: {ex}"
-    return {"ok": True, "servicio": "YeparDTEcore", "version": "1.6",
+    return {"ok": True, "servicio": "YeparDTEcore", "version": "1.7",
             "fixes": checks,
             "docs": "https://yepardtecore.cl/api/docs"}
 
@@ -1584,9 +1585,17 @@ async def generar_libro_compras_publico(
     emisor:      Emisor       = Depends(get_emisor_by_api_key),
     db:          AsyncSession = Depends(get_db),
 ):
-    from app.api.v1.endpoints.certificacion_libro_compras import _construir_libro_xml
+    from app.api.v1.endpoints.certificacion_libro_compras import _construir_libro_xml, DOCUMENTOS as _DOCS_COMPRA
     from app.services.firma_digital import FirmaDigital
     from datetime import datetime as _dt
+
+    # El período del libro de compras lo define la fecha de sus documentos
+    # (mayo del set), no el mes actual. Lo derivamos aquí para que el nombre del
+    # archivo y la respuesta sean consistentes con lo que va dentro del XML.
+    if _DOCS_COMPRA:
+        _f = _DOCS_COMPRA[0].get("fecha", "")
+        if len(_f) >= 7:
+            periodo = _f[:7]
 
     cert = (await db.execute(
         select(Certificado).where(Certificado.emisor_id == emisor.id,
