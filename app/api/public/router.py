@@ -113,13 +113,19 @@ async def health():
         src_compras = _insp.getsource(_clc)
         checks["fix_compras_nc_tipo60"] = '"tipo": 60, "folio": 451' in src_compras
         checks["fix_compras_iva_norec_cod4"] = '"cod_iva_no_rec": 4' in src_compras
-        checks["fix_compras_sin_doc60_inventado"] = '"folio": 1, "fecha"' not in src_compras
+        # El doc 60 inventado tenía neto 5000; si ya no está, el fix se aplicó.
+        # (Las NC reales del set son 2807 y 6396, nunca 5000.)
+        checks["fix_compras_sin_doc60_inventado"] = '"neto": 5000' not in src_compras
         checks["fix_compras_periodo_del_set"] = 'periodo = fecha_doc[:7]' in src_compras
         checks["fix_compras_t46_mntiva"] = 'MntIVA = MntNeto*TasaImp SIEMPRE' in src_compras
         checks["fix_compras_t46_total_bruto"] = 'total BRUTO del documento' in src_compras
+        # Verificar que la función _construir_libro_xml sea REALMENTE importable
+        # (no solo que el texto esté en el archivo). Si el archivo se subió con un
+        # error de indentación, el texto está pero la función no se puede importar.
+        checks["fix_compras_funcion_importable"] = hasattr(_clc, "_construir_libro_xml")
     except Exception as ex:
         checks["fix_compras_check"] = f"error: {ex}"
-    return {"ok": True, "servicio": "YeparDTEcore", "version": "1.9",
+    return {"ok": True, "servicio": "YeparDTEcore", "version": "2.0",
             "fixes": checks,
             "docs": "https://yepardtecore.cl/api/docs"}
 
@@ -1586,6 +1592,27 @@ async def generar_libro_compras_publico(
     ambiente:    str          = Form("certificacion"),
     emisor:      Emisor       = Depends(get_emisor_by_api_key),
     db:          AsyncSession = Depends(get_db),
+):
+    # Todo el cuerpo va dentro de un try que loguea el traceback COMPLETO y lo
+    # devuelve en el mensaje de error. Así, si algo falla, el log y la respuesta
+    # muestran la causa exacta en vez de un "Internal Server Error" sin pistas.
+    import traceback as _tb
+    try:
+        return await _generar_libro_compras_impl(
+            natencion, periodo, auto_enviar, ambiente, emisor, db)
+    except HTTPException:
+        raise
+    except Exception as _e:
+        detalle = _tb.format_exc()
+        logger.error(f"[LIBRO-COMPRAS] Error no capturado:\n{detalle}")
+        # Devolver las últimas líneas del traceback en el mensaje para verlo en la UI
+        ultimas = " | ".join(detalle.strip().splitlines()[-3:])
+        raise HTTPException(500, f"Error libro compras: {ultimas}")
+
+
+async def _generar_libro_compras_impl(
+    natencion: str, periodo: str, auto_enviar: bool, ambiente: str,
+    emisor: Emisor, db: AsyncSession,
 ):
     from app.api.v1.endpoints.certificacion_libro_compras import _construir_libro_xml, DOCUMENTOS as _DOCS_COMPRA
     from app.services.firma_digital import FirmaDigital
