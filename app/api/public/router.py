@@ -94,12 +94,16 @@ async def health():
         fuente = inspect.getsource(generar_set)
         checks["generar_set_tiene_log_encoding"] = "[SET][ENCODING]" in fuente
         checks["generar_set_tiene_log_bytes"] = "[SET][BYTES]" in fuente
+        # Confirmar que el fix de CodRef está desplegado (corrige texto → monto 0,
+        # anula → replica ítems). Si esto es False, el deploy quedó a medias.
+        checks["fix_codref_texto_monto0"] = 'CodRef=2 (texto) → monto 0' in fuente
+        checks["fix_codref_anula_replica"] = 'CodRef=1 (anula) →' in fuente
         # Hash corto del código para identificar la versión exacta
         import hashlib
         checks["generar_set_hash"] = hashlib.md5(fuente.encode()).hexdigest()[:8]
     except Exception as ex:
         checks["generar_set_check"] = f"error: {ex}"
-    return {"ok": True, "servicio": "YeparDTEcore", "version": "1.3",
+    return {"ok": True, "servicio": "YeparDTEcore", "version": "1.4",
             "fixes": checks,
             "docs": "https://yepardtecore.cl/api/docs"}
 
