@@ -1144,8 +1144,11 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
 
                 if cod_ref == 2:
                     # Corrige SOLO texto → el detalle NO lleva monto (precio 0).
+                    # Usar la RAZÓN literal como glosa (ej. "CORRIGE GIRO DEL
+                    # RECEPTOR"), igual que el XML que el SII aceptó sin reparos.
+                    glosa_texto = (ref.get("razon") or "Corrige texto").strip()
                     items_d.append(ItemDTE(
-                        nombre="Corrige glosa documento de referencia", cantidad=1,
+                        nombre=glosa_texto, cantidad=1,
                         precio_unitario=0, exento=False, unidad="", codigo="",
                         descuento_pct=0,
                     ))
