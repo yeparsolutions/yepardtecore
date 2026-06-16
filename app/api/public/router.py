@@ -98,12 +98,13 @@ async def health():
         # anula → replica ítems). Si esto es False, el deploy quedó a medias.
         checks["fix_codref_texto_monto0"] = 'CodRef=2 (texto) → monto 0' in fuente
         checks["fix_codref_anula_replica"] = 'CodRef=1 (anula) →' in fuente
+        checks["fix_anula_monto_directo"] = 'anula doc ' in fuente
         # Hash corto del código para identificar la versión exacta
         import hashlib
         checks["generar_set_hash"] = hashlib.md5(fuente.encode()).hexdigest()[:8]
     except Exception as ex:
         checks["generar_set_check"] = f"error: {ex}"
-    return {"ok": True, "servicio": "YeparDTEcore", "version": "1.4",
+    return {"ok": True, "servicio": "YeparDTEcore", "version": "1.5",
             "fixes": checks,
             "docs": "https://yepardtecore.cl/api/docs"}
 
@@ -1173,18 +1174,37 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
                         f"replica {len(doc_ref.items)} ítems del caso {ref_num}"
                     )
                 else:
-                    # Corrige monto (3), o anula un documento que no tiene ítems
-                    # propios (ej. anular una NC de corrección de texto): un solo
-                    # detalle con el monto resuelto en cadena del referido.
-                    items_d.append(ItemDTE(
-                        nombre="Ajuste documento de referencia", cantidad=1,
-                        precio_unitario=monto_ref, exento=False, unidad="", codigo="",
-                        descuento_pct=0,
-                    ))
-                    logger.warning(
-                        f"[SET] NC/ND caso {caso.numero_caso} CodRef={cod_ref} → "
-                        f"detalle ajuste monto={monto_ref} (ref caso {ref_num})"
-                    )
+                    # Llegamos acá en dos situaciones:
+                    #   (a) CodRef=3 (corrige monto) → monto del ajuste.
+                    #   (b) CodRef=1 (anula) un documento SIN ítems propios, p.ej.
+                    #       anular una NC que sólo corrige texto.
+                    # Para ANULAR, el monto debe ser el del documento DIRECTAMENTE
+                    # referido, NO el resuelto en cadena. Si esa NC corrige texto
+                    # (monto 0), el ND que la anula también es 0 — si no, el SII
+                    # repara "Anulación presenta diff de monto".
+                    if cod_ref == 1:
+                        # Monto PROPIO del documento referido (sin seguir cadena).
+                        monto_directo = monto_por_caso.get(ref_num, 0) if ref_num else 0
+                        glosa_anula = (ref.get("razon") or "Anula documento").strip()
+                        items_d.append(ItemDTE(
+                            nombre=glosa_anula, cantidad=1,
+                            precio_unitario=monto_directo, exento=False,
+                            unidad="", codigo="", descuento_pct=0,
+                        ))
+                        logger.warning(
+                            f"[SET] ND/NC caso {caso.numero_caso} CodRef=1 (anula doc "
+                            f"sin ítems) → monto directo={monto_directo} (ref caso {ref_num})"
+                        )
+                    else:
+                        items_d.append(ItemDTE(
+                            nombre="Ajuste documento de referencia", cantidad=1,
+                            precio_unitario=monto_ref, exento=False, unidad="", codigo="",
+                            descuento_pct=0,
+                        ))
+                        logger.warning(
+                            f"[SET] NC/ND caso {caso.numero_caso} CodRef={cod_ref} → "
+                            f"detalle ajuste monto={monto_ref} (ref caso {ref_num})"
+                        )
             # Referencias: al SET + (si es NC/ND) al documento corregido
             refs = _resolver_ref(caso, folio)
             # Receptor completo (con giro/dirección) para evitar reparos del SII
