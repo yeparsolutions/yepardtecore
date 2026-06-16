@@ -70,6 +70,16 @@ DOCUMENTOS = [
 
 def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
                           periodo: str, tmst: str) -> str:
+    # El período tributario DEBE corresponder al mes de los documentos del
+    # libro, no al mes en que se genera. Los documentos del set son de mayo
+    # (2026-05-22), así que derivamos el período de su fecha y NO del parámetro
+    # (que llega con el mes actual). Si el período del SII no calza con las
+    # fechas de los documentos, el libro se repara. Analogía: el libro de mayo
+    # lleva la fecha de mayo aunque lo armes en junio.
+    if DOCUMENTOS:
+        fecha_doc = DOCUMENTOS[0].get("fecha", "")  # ej. "2026-05-22"
+        if len(fecha_doc) >= 7:
+            periodo = fecha_doc[:7]  # "2026-05"
     root = etree.Element(f"{{{NS}}}LibroCompraVenta",
         nsmap={None: NS, "xsi": "http://www.w3.org/2001/XMLSchema-instance"},
         attrib={"version": "1.0",
