@@ -1554,3 +1554,90 @@ async def generar_libro_desde_xml_publico(
         "estado":       (resultado_envio or {}).get("estado"),
         "mensaje":      (resultado_envio or {}).get("mensaje"),
     }
+
+
+# ── Libro de COMPRAS desde el set 4841545 (flujo público con API Key) ─────────
+# A diferencia de ventas/guías, el libro de compras NO se arma con XML subidos
+# (las compras son documentos que el cliente RECIBE de proveedores, no DTEs
+# que él emite). Se construye con los datos del set 4841545 que el SII define
+# (facturas recibidas, IVA uso común, IVA no recuperable, retención, NC tipo 60).
+# Analogía: ventas es tu libreta de lo que vendiste; compras es la libreta de
+# las boletas que te dieron a TI — datos distintos, de otra fuente.
+@router.post("/generar-libro-compras")
+async def generar_libro_compras_publico(
+    natencion:   str          = Form("4841545"),
+    periodo:     str          = Form("2026-05"),
+    auto_enviar: bool         = Form(False),
+    ambiente:    str          = Form("certificacion"),
+    emisor:      Emisor       = Depends(get_emisor_by_api_key),
+    db:          AsyncSession = Depends(get_db),
+):
+    from app.api.v1.endpoints.certificacion_libro_compras import _construir_libro_xml
+    from app.services.firma_digital import FirmaDigital
+    from datetime import datetime as _dt
+
+    cert = (await db.execute(
+        select(Certificado).where(Certificado.emisor_id == emisor.id,
+                                   Certificado.activo == True).limit(1)
+    )).scalar_one_or_none()
+    if not cert or not cert.certificado_p12:
+        raise HTTPException(400, "Sin certificado .p12 para firmar el libro de compras")
+
+    rut_envia = cert.rut_firmante or emisor.rut
+    tmst      = _dt.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+    try:
+        xml_str = _construir_libro_xml(emisor, rut_envia, natencion, periodo, tmst)
+    except Exception as e:
+        logger.error(f"[LIBRO-COMPRAS] Error construyendo: {e}", exc_info=True)
+        raise HTTPException(500, f"Error construyendo libro de compras: {e}")
+
+    firma = FirmaDigital(bytes(cert.certificado_p12), cert.certificado_password or "")
+    try:
+        xml_firmado = await firma.firmar_libro(xml_str)
+    except Exception as e:
+        logger.error(f"[LIBRO-COMPRAS] Error firmando: {e}", exc_info=True)
+        raise HTTPException(500, f"Error al firmar el libro de compras: {e}")
+
+    rut_limpio = emisor.rut.replace(".", "").replace("-", "")
+    nombre = f"LibroCompras_{natencion}_{rut_limpio}_{periodo}.xml"
+    libro_b64 = _b64.b64encode(xml_firmado.encode("ISO-8859-1")).decode()
+
+    resultado_envio = None
+    if auto_enviar:
+        auth_p12 = bytes(cert.certificado_auth_p12) if cert.certificado_auth_p12 \
+                   else bytes(cert.certificado_p12)
+        auth_pwd = cert.certificado_auth_password if cert.certificado_auth_p12 \
+                   else cert.certificado_password
+        sender = SIISender(ambiente=ambiente)
+        try:
+            resultado_envio = await sender.enviar_sobre(
+                sobre_xml      = xml_firmado,
+                rut_emisor     = emisor.rut,
+                rut_enviador   = rut_envia,
+                p12_bytes      = bytes(cert.certificado_p12),
+                password       = cert.certificado_password or "",
+                auth_p12_bytes = auth_p12,
+                auth_password  = auth_pwd,
+            )
+            logger.warning(
+                f"[LIBRO-COMPRAS] Enviado track_id={resultado_envio.get('track_id')} "
+                f"estado={resultado_envio.get('estado')}"
+            )
+        except Exception as e:
+            logger.error(f"[LIBRO-COMPRAS] Error enviando: {e}", exc_info=True)
+            raise HTTPException(500, f"Libro generado pero falló el envío: {e}")
+
+    return {
+        "ok":            True,
+        "tipo_libro":    "compras",
+        "natencion":     natencion,
+        "periodo":       periodo,
+        "nombre":        nombre,
+        "libro_xml":     xml_firmado,
+        "libro_xml_b64": libro_b64,
+        "enviado":       auto_enviar,
+        "track_id":      (resultado_envio or {}).get("track_id"),
+        "estado":        (resultado_envio or {}).get("estado"),
+        "mensaje":       (resultado_envio or {}).get("mensaje"),
+    }
