@@ -976,10 +976,18 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
                 # tipo de la nota (NC/ND de factura → 33; de exenta → 34)
                 tipo_ref = ref.get("tipo_doc_ref") or 33
                 # cod_ref: 1=anula, 2=corrige texto, 3=corrige monto.
-                # El SII acepta 1 para anulación; usamos 2 (corrige) por
-                # defecto salvo que la razón diga "ANULA".
-                razon = (ref.get("razon") or "").upper()
-                cod = 1 if "ANULA" in razon else (3 if "MONTO" in razon else 2)
+                # USAR el cod_ref que ya viene calculado del backend (reconoce
+                # devolución→3, anula→1, corrige giro→2). Solo si no viniera,
+                # inferir por la razón como respaldo.
+                cod = ref.get("cod_ref")
+                if not cod:
+                    razon = (ref.get("razon") or "").upper()
+                    if "ANULA" in razon:
+                        cod = 1
+                    elif "DEVOLUC" in razon or "MONTO" in razon or "DESCUENTO" in razon:
+                        cod = 3
+                    else:
+                        cod = 2
                 refs_out.append(_RefDTE(
                     tipo_doc_ref=str(tipo_ref), folio_ref=folio_ref,
                     fecha_ref=fecha_dt, razon_ref=ref.get("razon") or "",
@@ -1115,35 +1123,61 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
                 ))
 
             # ── Si es NC/ND y no tiene ítems, generar un detalle obligatorio ──
-            # El esquema del SII exige al menos un <Detalle> en todo DTE. Las
-            # NC/ND de anulación o corrección de texto no traen ítems del set,
-            # así que armamos uno con el monto del documento que referencian.
-            # Para anulación: monto = total del documento anulado (lo revierte).
-            # Para corrección de texto (CORRIGE GIRO): monto del doc original.
+            # El esquema del SII exige al menos un <Detalle> en todo DTE. PERO
+            # las reglas de MONTO dependen del CodRef de la referencia:
+            #   CodRef=1 (Anula)        → monto EXACTO del documento referenciado
+            #   CodRef=2 (Corrige texto)→ SIN montos (giro, dirección) → monto 0
+            #   CodRef=3 (Corrige monto)→ con el monto del ajuste
+            # Si esto no se respeta, el SII repara: "Modifica Texto no debe tener
+            # montos" (cuando un CodRef=2 lleva monto) o "Anulación presenta
+            # diff. de monto" (cuando un CodRef=1 no calza con el referido).
             if not items_d and tipo_dte in (61, 56):
+                ref = caso.referencia or {}
                 ref_num = _sufijo_caso_ref(caso)
+                cod_ref = ref.get("cod_ref") or 0
+                razon = (ref.get("razon") or "").upper()
                 monto_ref = _monto_resuelto(ref_num) if ref_num else 0
-                razon = ((caso.referencia or {}).get("razon") or "").upper()
-                # Glosa del detalle según la operación
-                if "ANULA" in razon:
-                    glosa = "Anula documento de referencia"
-                elif "CORRIGE" in razon:
-                    glosa = "Corrige documento de referencia"
+
+                if cod_ref == 2:
+                    # Corrige SOLO texto → el detalle NO lleva monto (precio 0).
+                    items_d.append(ItemDTE(
+                        nombre="Corrige glosa documento de referencia", cantidad=1,
+                        precio_unitario=0, exento=False, unidad="", codigo="",
+                        descuento_pct=0,
+                    ))
+                    logger.warning(f"[SET] NC caso {caso.numero_caso} CodRef=2 (texto) → monto 0")
+                elif cod_ref == 1 and ref_num in caso_por_numero \
+                     and caso_por_numero[ref_num].items:
+                    # Anula → replicar los ÍTEMS EXACTOS del documento referido,
+                    # para que neto, IVA, exento y total calcen al peso con él.
+                    # Copiar los montos uno por uno es más seguro que recalcular:
+                    # si la factura tenía una parte exenta, la NC también la tiene.
+                    doc_ref = caso_por_numero[ref_num]
+                    for it_ref in doc_ref.items:
+                        precio_r = it_ref.precio_neto or (round(it_ref.precio_con_iva / 1.19) if it_ref.precio_con_iva else 0)
+                        items_d.append(ItemDTE(
+                            nombre=it_ref.nombre, cantidad=it_ref.cantidad,
+                            precio_unitario=precio_r,
+                            exento=it_ref.exento, unidad=it_ref.unidad,
+                            codigo=it_ref.codigo, descuento_pct=it_ref.descuento,
+                        ))
+                    logger.warning(
+                        f"[SET] NC caso {caso.numero_caso} CodRef=1 (anula) → "
+                        f"replica {len(doc_ref.items)} ítems del caso {ref_num}"
+                    )
                 else:
-                    glosa = "Ajuste documento de referencia"
-                # Si no pudimos resolver el monto del referido, usar 1 como
-                # mínimo válido (el SII no acepta MontoItem vacío en el detalle).
-                precio_detalle = monto_ref if monto_ref > 0 else 0
-                items_d.append(ItemDTE(
-                    nombre=glosa, cantidad=1,
-                    precio_unitario=precio_detalle,
-                    exento=False, unidad="", codigo="",
-                    descuento_pct=0,
-                ))
-                logger.warning(
-                    f"[SET] NC/ND caso {caso.numero_caso} sin ítems → detalle "
-                    f"generado: '{glosa}' monto={precio_detalle} (ref caso {ref_num})"
-                )
+                    # Corrige monto (3), o anula un documento que no tiene ítems
+                    # propios (ej. anular una NC de corrección de texto): un solo
+                    # detalle con el monto resuelto en cadena del referido.
+                    items_d.append(ItemDTE(
+                        nombre="Ajuste documento de referencia", cantidad=1,
+                        precio_unitario=monto_ref, exento=False, unidad="", codigo="",
+                        descuento_pct=0,
+                    ))
+                    logger.warning(
+                        f"[SET] NC/ND caso {caso.numero_caso} CodRef={cod_ref} → "
+                        f"detalle ajuste monto={monto_ref} (ref caso {ref_num})"
+                    )
             # Referencias: al SET + (si es NC/ND) al documento corregido
             refs = _resolver_ref(caso, folio)
             # Receptor completo (con giro/dirección) para evitar reparos del SII
