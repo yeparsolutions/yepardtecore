@@ -25,6 +25,16 @@ logger = logging.getLogger("yepardtecore.dte")
 SII_UPLOAD_CERT = "https://maullin.sii.cl/cgi_dte/UPL/DTEUpload"
 SII_UPLOAD_PROD = "https://palena.sii.cl/cgi_dte/UPL/DTEUpload"
 
+# Las BOLETAS se envían por una plataforma DESACOPLADA de la de facturas
+# (así lo exige el SII por el volumen de boletas). El endpoint es la API REST
+# de boletas, NO el DTEUpload de maullin/palena:
+#   Certificación: apicert.sii.cl/recursos/v1/boleta.electronica.envio
+#   Producción:    api.sii.cl/recursos/v1/boleta.electronica.envio
+# Enviar una boleta a palena (endpoint de facturas) da STATUS 5 aunque el
+# token sea válido — es la "puerta equivocada".
+SII_BOLETA_ENVIO_CERT = "https://apicert.sii.cl/recursos/v1/boleta.electronica.envio"
+SII_BOLETA_ENVIO_PROD = "https://api.sii.cl/recursos/v1/boleta.electronica.envio"
+
 SII_NS     = "http://www.sii.cl/SiiDte"
 XSI_NS     = "http://www.w3.org/2001/XMLSchema-instance"
 XMLDSIG_NS = "http://www.w3.org/2000/09/xmldsig#"
@@ -177,7 +187,14 @@ class SIISender:
             return {"track_id": None, "estado": "ERROR",
                     "mensaje": f"[etapa TOKEN] {e}"}
 
-        url_envio   = self.url_upload
+        # Las boletas van a su plataforma REST (api/apicert); las facturas y
+        # demás DTE van al DTEUpload de maullin/palena. Usar palena para una
+        # boleta da STATUS 5 (token válido, pero puerta equivocada).
+        if es_boleta:
+            url_envio = (SII_BOLETA_ENVIO_CERT if self.ambiente == "certificacion"
+                         else SII_BOLETA_ENVIO_PROD)
+        else:
+            url_envio = self.url_upload
         rut_limpio  = self.limpiar_rut(rut_emisor)
         env_limpio  = self.limpiar_rut(rut_enviador)
         timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -237,6 +254,11 @@ class SIISender:
                     "raw":      response.text[:500],
                 }
 
+            # Las boletas (API REST) responden JSON con el track_id; las
+            # facturas (palena/maullin) responden XML con <TRACKID>. Cada una
+            # se parsea distinto.
+            if es_boleta:
+                return self._parsear_respuesta_boleta_rest(response.text)
             return self._parsear_respuesta_upload(response.text)
 
         except httpx.TimeoutException:
@@ -272,6 +294,45 @@ class SIISender:
                 if intento < intentos:
                     await asyncio.sleep(2 * intento)
         raise ultimo_error
+
+    def _parsear_respuesta_boleta_rest(self, texto: str) -> dict:
+        """
+        Parsea la respuesta del envío de boleta por la API REST del SII.
+
+        A diferencia de palena (que devuelve XML con <TRACKID>), la API REST
+        de boletas devuelve JSON. El track_id puede venir bajo distintas
+        claves según la versión de la API, así que lo buscamos en las más
+        probables y, si no aparece, dejamos el JSON crudo en el log para
+        poder afinar el parseo con datos reales.
+
+        Analogía: es la misma carta (el sobre firmado), pero esta oficina
+        (boletas) te da el comprobante en otro formato (JSON) que la oficina
+        de facturas (XML). Hay que leer el comprobante en su idioma.
+        """
+        import json as _json
+        try:
+            data = _json.loads(texto)
+        except Exception:
+            # Si por algún motivo respondió XML, intentamos el parser viejo.
+            logger.warning(f"[SII BOLETA] respuesta no es JSON, intento XML: {texto[:300]}")
+            return self._parsear_respuesta_upload(texto)
+
+        # Buscar el track_id en las claves que usa la API REST del SII.
+        track = (data.get("trackid") or data.get("trackId")
+                 or data.get("track_id") or data.get("TRACKID"))
+        estado_api = (data.get("estado") or data.get("status") or "").upper()
+
+        if track:
+            logger.info(f"[SII OK BOLETA] TrackID={track}")
+            return {"track_id": str(track), "estado": "RECIBIDO",
+                    "mensaje": "Boleta recibida por el SII", "raw": texto[:500]}
+
+        # Sin track_id: dejar el JSON completo en el log para diagnóstico.
+        logger.warning(f"[SII BOLETA] sin trackid en respuesta JSON: {texto[:800]}")
+        return {"track_id": None, "estado": "RECHAZADO",
+                "mensaje": data.get("descripcion") or data.get("mensaje")
+                           or f"Envío de boleta sin track_id (estado API: {estado_api})",
+                "raw": texto[:800]}
 
     def _parsear_respuesta_upload(self, response_text: str) -> dict:
         try:
