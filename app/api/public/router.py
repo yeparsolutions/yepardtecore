@@ -125,7 +125,16 @@ async def health():
         checks["fix_compras_funcion_importable"] = hasattr(_clc, "_construir_libro_xml")
     except Exception as ex:
         checks["fix_compras_check"] = f"error: {ex}"
-    return {"ok": True, "servicio": "YeparDTEcore", "version": "2.0",
+    # Verificar el fix del token de BOLETAS: enviar_sobre debe elegir el token
+    # de boletas (api.sii.cl) cuando el sobre es EnvioBOLETA, no el token DTE.
+    try:
+        import inspect as _insp2
+        from app.services import sii_sender as _ss
+        src_sender = _insp2.getsource(_ss)
+        checks["fix_boleta_token_correcto"] = 'obtener_token_boleta_cached' in src_sender
+    except Exception as ex:
+        checks["fix_boleta_check"] = f"error: {ex}"
+    return {"ok": True, "servicio": "YeparDTEcore", "version": "2.1",
             "fixes": checks,
             "docs": "https://yepardtecore.cl/api/docs"}
 
@@ -724,6 +733,9 @@ async def firmar_y_enviar(
                 password       = datos.pfx_password,
                 auth_p12_bytes = auth_p12,
                 auth_password  = auth_pwd,
+                # Boletas: token desde api.sii.cl persistido en BD para reuso.
+                db             = db,
+                emisor_id      = emisor_api.id,
             )
             track_id   = resultado.get("track_id")
             estado_sii = resultado.get("estado", "ENVIADO")
