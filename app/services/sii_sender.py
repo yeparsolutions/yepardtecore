@@ -243,15 +243,20 @@ class SIISender:
             # parser rescata el TrackID original (no se duplica nada).
             response = await self._con_reintentos("UPLOAD", _subir, intentos=4)
 
-            logger.info(f"[SII RAW] HTTP={response.status_code} "
-                        f"body={response.text[:2000]}")
+            # Colapsar saltos de línea para que el cuerpo de la respuesta
+            # quede en UNA línea del log (Railway parte por \n y se vuelve
+            # ilegible). Así el XML/JSON de error del SII se lee completo.
+            cuerpo_plano = " ".join(response.text.split())
+            logger.info(f"[SII RAW] HTTP={response.status_code} body={cuerpo_plano[:2000]}")
 
             if response.status_code != 200:
                 return {
                     "track_id": None,
                     "estado":   "ERROR_HTTP",
-                    "mensaje":  f"SII respondio HTTP {response.status_code}",
-                    "raw":      response.text[:500],
+                    # Devolver el cuerpo del error en el mensaje para verlo en
+                    # la UI sin tener que bucear en el log.
+                    "mensaje":  f"SII respondio HTTP {response.status_code}: {cuerpo_plano[:400]}",
+                    "raw":      cuerpo_plano[:800],
                 }
 
             # Las boletas (API REST) responden JSON con el track_id; las
