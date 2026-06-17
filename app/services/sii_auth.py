@@ -529,7 +529,10 @@ async def obtener_token_boleta_cached(
     # Guardar en caché en memoria
     _token_cache_boleta[cache_key] = {"token": token, "expira": expira_nueva}
 
-    # Persistir en BD si viene db
+    # Persistir en BD si viene db. Si falla (p.ej. columna muy chica), NO debe
+    # tumbar el envío: el token vive en memoria y se devuelve igual. Pero hay
+    # que hacer ROLLBACK de la sesión para no dejarla en estado de error, o el
+    # siguiente uso de esa sesión revienta con un 500.
     if db is not None and emisor_id is not None:
         from sqlalchemy import select as _sel
         from app.models.certificado import Certificado
@@ -547,5 +550,10 @@ async def obtener_token_boleta_cached(
                 _logger.info(f"[SII AUTH BOLETA] Token persistido en BD")
         except Exception as ex:
             _logger.warning(f"[SII AUTH BOLETA] No se pudo persistir token: {ex}")
+            # Dejar la sesión limpia para que el resto del request no falle.
+            try:
+                await db.rollback()
+            except Exception:
+                pass
 
     return token
