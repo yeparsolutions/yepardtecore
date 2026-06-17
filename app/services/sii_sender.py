@@ -123,35 +123,57 @@ class SIISender:
                            p12_bytes: bytes = None,
                            password: str = None,
                            auth_p12_bytes: bytes = None,
-                           auth_password: str = None) -> dict:
+                           auth_password: str = None,
+                           db=None, emisor_id: int = None) -> dict:
         """
         Envía un sobre XML (EnvioDTE o EnvioBOLETA) al SII.
 
         FIX STATUS 7:
-        Las boletas electrónicas (EnvioBOLETA) requieren un token
-        obtenido desde maullin2/rahue (endpoint REST boletas), NO
-        desde maullin/palena (endpoint SOAP DTE estándar).
-        Si se usa el token DTE para boletas, el SII responde STATUS 7.
+        Las boletas electrónicas (EnvioBOLETA) requieren un token obtenido
+        desde el endpoint de boletas (maullin2 en cert, rahue en prod), NO el
+        token DTE estándar (maullin/palena). Si se usa el token DTE para una
+        boleta, el SII responde STATUS 7 (esquema/credencial no corresponde).
+
+        El token de boletas se obtiene desde Chile y se PERSISTE en BD
+        (obtener_token_boleta_cached), para que Railway (fuera de Chile) lo
+        reutilice sin tener que alcanzar rahue en cada envío.
         """
         token_p12 = auth_p12_bytes or p12_bytes
         token_pwd = auth_password or password
 
-        # Token DTE estándar para todos los tipos — maullin/palena
-        # maullin2/rahue no es accesible desde servidores fuera de Chile
-        # El endpoint de upload acepta el mismo token para DTE y boletas
         es_boleta = "EnvioBOLETA" in sobre_xml[:500]
 
         # ── ETAPA TOKEN (con reintentos) ──────────────────────────────────────
         # maullin (cert) es inestable: a veces corta la conexión sin responder
         # ("Server disconnected"). Como pedir un token es idempotente (no pasa
         # nada por pedirlo dos veces), reintentamos con calma: 3 intentos.
+        #
+        # BOLETAS: usan su propio token (rahue/maullin2, persistido en BD). Si
+        # se usara el token DTE → STATUS 7. Por eso ramificamos según es_boleta.
+        async def _pedir_token():
+            if es_boleta:
+                from app.services.sii_auth import obtener_token_boleta_cached
+                return await obtener_token_boleta_cached(
+                    token_p12, token_pwd, self.ambiente,
+                    db=db, emisor_id=emisor_id,
+                )
+            return await self._obtener_token(token_p12, token_pwd)
+
         try:
             token = await self._con_reintentos(
-                "TOKEN", lambda: self._obtener_token(token_p12, token_pwd),
-                intentos=3,
+                "TOKEN", _pedir_token, intentos=3,
             )
         except Exception as e:
             logger.error(f"[SII TOKEN] Agotados los reintentos: {e}")
+            # Mensaje claro si es boleta y no se pudo obtener el token (rahue
+            # inalcanzable desde fuera de Chile y sin token persistido en BD).
+            if es_boleta:
+                return {"track_id": None, "estado": "ERROR",
+                        "mensaje": "No se pudo obtener token de BOLETA. El "
+                                   "endpoint de boletas del SII (rahue) solo "
+                                   "responde desde Chile. Hay que precargar el "
+                                   "token de boletas desde una salida en Chile "
+                                   "(se persiste en BD y se reutiliza)."}
             return {"track_id": None, "estado": "ERROR",
                     "mensaje": f"[etapa TOKEN] {e}"}
 
@@ -253,6 +275,10 @@ class SIISender:
 
     def _parsear_respuesta_upload(self, response_text: str) -> dict:
         try:
+            # Log de la respuesta CRUDA del SII: ante cualquier rechazo, esto
+            # deja en el log el XML exacto que devolvió palena/maullin, para no
+            # tener que adivinar la causa. (Se trunca para no llenar el log.)
+            logger.info(f"[SII RAW] respuesta upload: {response_text[:600]}")
             root     = etree.fromstring(response_text.encode())
             track_id = root.findtext("TRACKID")
             status   = root.findtext("STATUS")
@@ -322,14 +348,49 @@ class SIISender:
                     "mensaje": "No se pudo parsear respuesta del SII",
                     "raw": response_text[:300]}
 
-    async def consultar_estado(self, track_id: str, rut_emisor: str) -> dict:
-        rut_limpio = self.limpiar_rut(rut_emisor)
-        host       = "maullin" if self.ambiente == "certificacion" else "palena"
-        url        = (f"https://{host}.sii.cl/cgi_dte/UPL/DTEUpload"
-                      f"?rutEmisor={rut_limpio}&trackId={track_id}")
+    async def consultar_estado(self, track_id: str, rut_emisor: str,
+                                auth_p12_bytes: bytes = None,
+                                auth_password: str = None) -> dict:
+        """
+        Consulta el estado de un envío usando el servicio SOAP QueryEstUp del SII
+        (el correcto para saber si los documentos fueron ACEPTADOS), no el
+        endpoint de upload. Requiere token de autenticación.
+
+        Analogía: enviar el sobre es echar la carta al buzón (DTEUpload); esto es
+        llamar a la oficina de correos para preguntar si la carta llegó y fue
+        aceptada (QueryEstUp). Son ventanillas distintas.
+        """
+        rut_e   = self.limpiar_rut(rut_emisor)
+        # rutEmisor se parte en cuerpo y dígito verificador
+        cuerpo, dv = rut_e.rsplit("-", 1) if "-" in rut_e else (rut_e[:-1], rut_e[-1])
+        host    = "maullin" if self.ambiente == "certificacion" else "palena"
+        url     = f"https://{host}.sii.cl/DTEWS/QueryEstUp.jws"
+
+        # Token de autenticación (mismo que para enviar)
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.get(url)
+            token = await self._obtener_token(auth_p12_bytes, auth_password)
+        except Exception as e:
+            return {"estado": "ERROR", "mensaje": f"No se pudo obtener token: {e}"}
+
+        soap = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" '
+            'xmlns:def="http://DefaultNamespace">'
+            '<soapenv:Header/><soapenv:Body>'
+            '<def:getEstUp>'
+            f'<arg0>{cuerpo}</arg0>'
+            f'<arg1>{dv}</arg1>'
+            f'<arg2>{track_id}</arg2>'
+            f'<arg3>{token}</arg3>'
+            '</def:getEstUp>'
+            '</soapenv:Body></soapenv:Envelope>'
+        )
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    url, content=soap.encode("utf-8"),
+                    headers={"Content-Type": "text/xml; charset=utf-8", "SOAPAction": ""},
+                )
             if response.status_code != 200:
                 return {"estado": "ERROR", "mensaje": f"HTTP {response.status_code}"}
             return self._parsear_estado_track(response.text)
@@ -337,34 +398,72 @@ class SIISender:
             return {"estado": "ERROR", "mensaje": str(e)}
 
     def _parsear_estado_track(self, response_text: str) -> dict:
+        # Estados del SII para un envío consultado con QueryEstUp.
+        # Distinguimos el estado del SOBRE del estado de los DOCUMENTOS:
+        #   - EPR = Envío Procesado (el sobre se procesó; mirar los documentos)
+        #   - RCT/DOK = Documentos aceptados conforme
+        #   - RFR/RCH = Rechazado
+        #   - RPR/RLV = Aceptado con reparos / reparos leves
         estados_sii = {
-            "EPR": ("PENDIENTE",   "Enviado, Pendiente de Revision"),
-            "LPR": ("PENDIENTE",   "En proceso de revision"),
+            "REC": ("RECIBIDO",    "Envío recibido, aún no procesado"),
+            "EPR": ("PROCESADO",   "Envío procesado — revisar estado de documentos"),
+            "RPR": ("REPAROS",     "Procesado con reparos"),
+            "RLV": ("REPAROS",     "Procesado con reparos leves"),
             "RCT": ("ACEPTADO",    "Recibido Conforme Total"),
-            "RPR": ("REPAROS",     "Aceptado con Reparos"),
-            "RFR": ("RECHAZADO",   "Rechazado — revisar errores"),
-            "DNK": ("DESCONOCIDO", "TrackID no encontrado"),
+            "DOK": ("ACEPTADO",    "Documentos aceptados"),
+            "SOK": ("ACEPTADO",    "Schema y firma OK"),
+            "RCH": ("RECHAZADO",   "Rechazado"),
+            "RFR": ("RECHAZADO",   "Rechazado por errores de schema/firma"),
+            "RSC": ("RECHAZADO",   "Rechazado por schema"),
+            "RDC": ("RECHAZADO",   "Rechazado, documento con error"),
+            "DNK": ("DESCONOCIDO", "TrackID no encontrado o no corresponde"),
+            "LPR": ("PENDIENTE",   "En proceso de revisión"),
         }
         try:
-            root   = etree.fromstring(response_text.encode())
-            estado = root.findtext(".//ESTADO") or root.findtext("ESTADO") or ""
-            glosa  = root.findtext(".//GLOSA")  or root.findtext("GLOSA")  or ""
-            estado_norm, descripcion = estados_sii.get(estado, ("DESCONOCIDO", glosa))
+            root = etree.fromstring(response_text.encode())
+            # La respuesta SOAP de getEstUp trae un <return> con XML escapado
+            # adentro, o los campos directos. Buscamos ESTADO en cualquier nivel.
+            ret = (root.findtext(".//{*}getEstUpReturn")
+                   or root.findtext(".//getEstUpReturn") or "")
+            # Si el return trae XML escapado, parsearlo de nuevo
+            cuerpo_xml = root
+            if ret and "<" in ret:
+                try:
+                    cuerpo_xml = etree.fromstring(ret.encode())
+                except Exception:
+                    cuerpo_xml = root
+            def _find(tag):
+                return (cuerpo_xml.findtext(f".//{{{'*'}}}{tag}")
+                        or cuerpo_xml.findtext(f".//{tag}")
+                        or root.findtext(f".//{tag}") or "")
+            estado = (_find("ESTADO") or _find("estado")).strip().upper()
+            glosa  = _find("GLOSA") or _find("glosa") or ""
+            estado_norm, descripcion = estados_sii.get(estado, ("DESCONOCIDO", glosa or estado))
+            # Detalle por documento (aceptados/rechazados/reparos)
             docs = []
-            for doc_el in (root.findall(".//DETALLE_REP_RECH") +
-                           root.findall(".//DETALLE")):
+            for doc_el in (cuerpo_xml.findall(".//{*}DETALLE_REP_RECH") +
+                           cuerpo_xml.findall(".//DETALLE_REP_RECH") +
+                           cuerpo_xml.findall(".//{*}DETALLE") +
+                           cuerpo_xml.findall(".//DETALLE")):
                 docs.append({
-                    "tipo":   doc_el.findtext("TIPO_DOC"),
-                    "folio":  doc_el.findtext("FOLIO"),
-                    "estado": doc_el.findtext("EST_DTE"),
-                    "error":  doc_el.findtext("ERR_DOC"),
+                    "tipo":   doc_el.findtext("TIPO_DOC") or doc_el.findtext("{*}TIPO_DOC"),
+                    "folio":  doc_el.findtext("FOLIO") or doc_el.findtext("{*}FOLIO"),
+                    "estado": doc_el.findtext("EST_DTE") or doc_el.findtext("{*}EST_DTE"),
+                    "error":  doc_el.findtext("ERR_DOC") or doc_el.findtext("{*}ERR_DOC"),
                 })
+            # Conteo de estadísticas si vienen (informados/aceptados/rechazados)
+            stats = {}
+            for tag in ("INFORMADOS", "ACEPTADOS", "RECHAZADOS", "REPAROS"):
+                v = _find(tag)
+                if v and v.strip().isdigit():
+                    stats[tag.lower()] = int(v.strip())
             return {"estado": estado_norm, "codigo_sii": estado,
-                    "descripcion": descripcion, "documentos": docs}
-        except Exception:
+                    "descripcion": descripcion, "documentos": docs,
+                    "estadisticas": stats, "track_id_consultado": True}
+        except Exception as e:
             return {"estado": "ERROR_PARSEO",
                     "descripcion": "No se pudo parsear respuesta del SII",
-                    "raw": response_text[:300]}
+                    "raw": response_text[:400], "error": str(e)}
 
     async def _obtener_token(self, p12_bytes: bytes = None,
                              password: str = None) -> str:
