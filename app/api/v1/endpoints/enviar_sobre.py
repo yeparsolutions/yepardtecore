@@ -93,6 +93,10 @@ async def enviar_sobre_directo(
             password       = cert.certificado_password,
             auth_p12_bytes = auth_p12,
             auth_password  = auth_pwd,
+            # Para boletas: permite obtener el token desde api.sii.cl y
+            # persistirlo en BD (cert.token_boleta) para reutilizarlo.
+            db             = db,
+            emisor_id      = body.emisor_id,
         )
     except Exception as e:
         import traceback
