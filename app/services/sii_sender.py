@@ -187,14 +187,12 @@ class SIISender:
             return {"track_id": None, "estado": "ERROR",
                     "mensaje": f"[etapa TOKEN] {e}"}
 
-        # Las boletas van a su plataforma REST (api/apicert); las facturas y
-        # demás DTE van al DTEUpload de maullin/palena. Usar palena para una
-        # boleta da STATUS 5 (token válido, pero puerta equivocada).
-        if es_boleta:
-            url_envio = (SII_BOLETA_ENVIO_CERT if self.ambiente == "certificacion"
-                         else SII_BOLETA_ENVIO_PROD)
-        else:
-            url_envio = self.url_upload
+        # Todos los documentos —incluidas las boletas— se envían al DTEUpload
+        # de maullin (cert) / palena (prod). Este es el endpoint que el SII
+        # aceptó históricamente para EnvioBOLETA (dio TrackID en certificación).
+        # El endpoint REST api.sii.cl/boleta.electronica.envio devolvía
+        # "Acceso Denegado (from client)", así que NO se usa.
+        url_envio   = self.url_upload
         rut_limpio  = self.limpiar_rut(rut_emisor)
         env_limpio  = self.limpiar_rut(rut_enviador)
         timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -259,11 +257,8 @@ class SIISender:
                     "raw":      cuerpo_plano[:800],
                 }
 
-            # Las boletas (API REST) responden JSON con el track_id; las
-            # facturas (palena/maullin) responden XML con <TRACKID>. Cada una
-            # se parsea distinto.
-            if es_boleta:
-                return self._parsear_respuesta_boleta_rest(response.text)
+            # Maullin/palena responden XML con <TRACKID> para todos los tipos
+            # (DTE y boletas). Se parsea igual para ambos.
             return self._parsear_respuesta_upload(response.text)
 
         except httpx.TimeoutException:
