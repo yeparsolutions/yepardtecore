@@ -37,7 +37,7 @@ from app.models.emisor import Emisor
 logger = logging.getLogger("yepardtecore.pagos")
 router = APIRouter(prefix="/pagos", tags=["Pagos"])
 
-MONTO_SUSCRIPCION = 1000   # $100.000 CLP
+MONTO_SUSCRIPCION = 100000   # $100.000 CLP
 DIAS_SUSCRIPCION  = 365
 
 
@@ -237,6 +237,50 @@ async def webhook_mp(
         f"[MP-WEBHOOK] ✓ Emisor {emisor_id} ({emisor.nombre_app}) activado. "
         f"Suscripción hasta {emisor.suscripcion_fin.date()}"
     )
+
+    # Enviar API key por email al desarrollador
+    if emisor.correo and emisor.api_key:
+        try:
+            from app.services.email_service import enviar_email
+            asunto = "Tu API key de YeparDTEcore está lista"
+            html = f"""
+            <!DOCTYPE html>
+            <html lang="es">
+            <head><meta charset="UTF-8"></head>
+            <body style="font-family:'DM Sans',Arial,sans-serif;background:#f8f9fa;margin:0;padding:40px 20px;">
+              <div style="max-width:480px;margin:0 auto;background:#fff;border-radius:16px;
+                          padding:36px;border:1px solid #e0e0e0;">
+                <img src="https://yepardtecore.cl/static/logo-horizontal.svg"
+                     alt="YeparDTEcore" style="height:36px;margin-bottom:28px;">
+                <h2 style="font-size:1.4rem;color:#1a1a1a;margin-bottom:10px;">
+                  ¡Tu suscripción está activa!
+                </h2>
+                <p style="color:#4a4a4a;margin-bottom:16px;line-height:1.6;">
+                  Tu pago fue confirmado. Aquí está tu API key para integrar
+                  <strong>{emisor.nombre_app}</strong> con YeparDTEcore:
+                </p>
+                <div style="background:#0a0a0a;color:#4cff91;border-radius:10px;
+                            padding:16px;font-family:monospace;font-size:0.85rem;
+                            word-break:break-all;margin:16px 0;">
+                  {emisor.api_key}
+                </div>
+                <p style="color:#6c757d;font-size:0.85rem;line-height:1.6;">
+                  Úsala en el header <code>X-API-Key</code> en cada llamada.<br>
+                  Documentación: <a href="https://yepardtecore.cl/api/docs">yepardtecore.cl/api/docs</a>
+                </p>
+                <hr style="border:none;border-top:1px solid #eee;margin:28px 0;">
+                <p style="font-size:0.75rem;color:#999;">
+                  YeparDTEcore · Yepar Solutions SpA<br>
+                  Suscripción válida hasta {emisor.suscripcion_fin.strftime('%d/%m/%Y')}
+                </p>
+              </div>
+            </body>
+            </html>
+            """
+            await enviar_email(emisor.correo, asunto, html)
+            logger.info(f"[MP-WEBHOOK] API key enviada por email a {emisor.correo}")
+        except Exception as e:
+            logger.error(f"[MP-WEBHOOK] Error enviando email: {e}")
 
     return {"ok": True, "estado": "activado", "emisor_id": emisor_id}
 
