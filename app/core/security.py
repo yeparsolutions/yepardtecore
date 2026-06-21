@@ -129,19 +129,47 @@ async def validar_api_key(
             detail="API Key inválida o emisor inactivo",
         )
 
-    # Verificar expiración de API Key (si el emisor tiene fecha de expiración)
+    # ── Vinculación de dominio (Opción C) ─────────────────────
+    # La primera vez que se usa la key, registramos el dominio de origen.
+    # Llamadas siguientes solo se aceptan desde ese dominio.
+    # El desarrollador puede liberar la vinculación desde su panel.
+    import re as _re
+    origen_header = (
+        request.headers.get("X-App-Domain")
+        or request.headers.get("Origin")
+    )
+    if origen_header and emisor.nombre_app:  # solo aplica a cuentas de desarrollador
+        dominio = _re.sub(r"https?://", "", origen_header).strip("/").lower()
+        if emisor.origen_vinculado is None:
+            # Primera llamada: vincular
+            emisor.origen_vinculado = dominio
+            emisor.vinculada_en     = datetime.now(timezone.utc)
+            logger.info(f"[AUTH] API Key {api_key[:12]}... vinculada al dominio: {dominio}")
+        elif emisor.origen_vinculado != dominio:
+            # Dominio no autorizado
+            logger.warning(
+                f"[AUTH] API Key {api_key[:12]}... dominio no autorizado: "
+                f"{dominio} (autorizado: {emisor.origen_vinculado})"
+            )
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Esta API key ya está vinculada a otra aplicación "
+                    f"({emisor.origen_vinculado}). Para moverla, libera la "
+                    "vinculación desde tu panel en yepardtecore.cl."
+                ),
+            )
+
+    # Verificar expiración de API Key
     if hasattr(emisor, 'api_key_expires_at') and emisor.api_key_expires_at:
         if datetime.now(timezone.utc) > emisor.api_key_expires_at:
-            logger.warning(
-                f"[AUTH] API Key expirada para emisor {emisor.rut}"
-            )
+            logger.warning(f"[AUTH] API Key expirada para emisor {emisor.rut}")
             raise HTTPException(
                 status_code=403,
                 detail="API Key expirada. Genera una nueva desde el portal.",
             )
 
     # Aplicar rate limiting
-    # TODO: leer el plan del emisor para aplicar límite correcto
     _check_rate_limit(api_key, RATE_LIMITS["default"])
 
     logger.debug(
