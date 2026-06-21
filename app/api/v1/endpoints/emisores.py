@@ -308,7 +308,7 @@ async def registro_desarrollador(
     # Usamos un RUT placeholder: "DEV-{timestamp}" — no es un emisor
     # fiscal, así que no necesita RUT SII real.
     api_key   = "yek_" + secrets.token_hex(30)
-    rut_dev   = f"DEV-{int(datetime.now(timezone.utc).timestamp())}"
+    rut_dev   = f"DEV-{int(datetime.now(timezone.utc).timestamp()) % 1000000}"
 
     emisor = Emisor(
         rut=rut_dev,
