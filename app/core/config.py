@@ -65,6 +65,11 @@ class Settings(BaseSettings):
             raise ValueError("SECRET_KEY debe tener al menos 32 caracteres en producción")
         return v
 
+    # ── Mercado Pago ──────────────────────────────────────────
+    MP_ACCESS_TOKEN:   str = ""   # APP_USR-... de producción
+    MP_PUBLIC_KEY:     str = ""   # APP_USR-... public key
+    MP_WEBHOOK_SECRET: str = ""   # secreto para validar webhooks
+
     # ── Email / SMTP ──────────────────────────────────────────
     # Variables de entorno que debes agregar en Railway:
     #   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, EMAIL_FROM
