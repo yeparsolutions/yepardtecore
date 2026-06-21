@@ -85,6 +85,23 @@ class Emisor(Base):
     nro_resol_prod: Mapped[str | None] = mapped_column(String(10), nullable=True, default="0")
     fch_resol_prod: Mapped[str | None] = mapped_column(String(10), nullable=True, default="2000-01-01")
 
+    # ── Datos de la APP del desarrollador (modelo API para terceros) ──────────
+    # Cuando un desarrollador contrata la API, registra el nombre y la URL de
+    # SU software. La API key se "vincula" a ese dominio: solo funciona desde
+    # ahí. Analogía: la licencia se instala en una sola máquina; para moverla,
+    # primero hay que liberarla.
+    nombre_app: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    url_app:    Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Dominio capturado en la PRIMERA llamada — la key queda atada a este.
+    # NULL = aún no se ha vinculado a ninguna app (se vincula en el primer uso).
+    origen_vinculado: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    vinculada_en:     Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # ── Cobro / suscripción anual ($100.000/año por API, DTE ilimitados) ──────
+    estado_pago:        Mapped[str | None] = mapped_column(String(20), nullable=True, default="pendiente")
+    suscripcion_inicio: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    suscripcion_fin:    Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # ── Timestamps ────────────────────────────────────────────
     created_at: Mapped[str] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
