@@ -241,6 +241,27 @@ async def webhook_mp(
     return {"ok": True, "estado": "activado", "emisor_id": emisor_id}
 
 
+# ── Buscar emisor por email (fallback si se pierde el emisorId) ──────────────
+
+@router.get("/buscar-por-email")
+async def buscar_por_email(
+    email: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Fallback: si el frontend perdió el emisorId al volver de MP,
+    lo recupera por el email del desarrollador.
+    """
+    from app.models.usuario import Usuario
+    res = await db.execute(
+        select(Usuario).where(Usuario.email == email.lower().strip())
+    )
+    usuario = res.scalar_one_or_none()
+    if not usuario or not usuario.emisor_id:
+        raise HTTPException(404, "No encontrado")
+    return {"emisor_id": usuario.emisor_id}
+
+
 # ── Consultar estado de pago ──────────────────────────────────
 
 @router.get("/estado/{emisor_id}")
