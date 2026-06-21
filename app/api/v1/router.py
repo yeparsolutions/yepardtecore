@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter
 from app.api.v1.endpoints import (
+    pagos,
     health,
     emisores,
     auth,
@@ -38,3 +39,4 @@ api_router.include_router(certificacion_cof.router)
 api_router.include_router(enviar_sobre.router)
 api_router.include_router(libro_guias.router)
 api_router.include_router(libro_compras.router)
+api_router.include_router(pagos.router)
