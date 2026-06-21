@@ -378,6 +378,41 @@
         </p>
     </div>
 
+    <!-- PANTALLA: PAGO con Mercado Pago -->
+    <div class="screen" id="s-pago">
+        <div style="text-align:center; margin-bottom:20px;">
+            <div style="font-size:2.4rem; margin-bottom:8px;">💳</div>
+            <h2>Activa tu suscripción</h2>
+            <p class="desc" style="margin-bottom:0;">Tu email fue verificado. Completa el pago para recibir tu API key.</p>
+        </div>
+        <div class="plan-card" style="margin-bottom:18px;">
+            <strong>Plan Anual</strong>
+            <div class="price">$100.000 <span>CLP / año</span></div>
+            <ul>
+                <li>DTE ilimitados</li>
+                <li>Una API key por software</li>
+                <li>Soporte técnico por email</li>
+            </ul>
+        </div>
+        <div class="error-box" id="pago-error"></div>
+        <button class="btn btn-primary" id="btn-pagar" onclick="doPagar()">
+            Pagar con Mercado Pago →
+        </button>
+        <p style="text-align:center; margin-top:12px; font-size:.78rem; color:var(--muted);">
+            Serás redirigido a Mercado Pago de forma segura.
+        </p>
+    </div>
+
+    <!-- PANTALLA: ESPERANDO CONFIRMACIÓN DE PAGO -->
+    <div class="screen" id="s-esperando">
+        <div style="text-align:center; padding:20px 0;">
+            <div class="spinner" style="margin:0 auto 16px;"></div>
+            <h2>Verificando pago...</h2>
+            <p class="desc">Estamos confirmando tu pago con Mercado Pago. Esto puede tomar unos segundos.</p>
+        </div>
+        <div class="error-box" id="espera-error"></div>
+    </div>
+
     <!-- PANTALLA: ÉXITO — API key entregada -->
     <div class="screen" id="s-success">
         <div class="success-icon">🎉</div>
@@ -398,10 +433,11 @@
 <script>
 // ── Estado global ─────────────────────────────────────────────
 const state = {
-    email:      '',    // email activo (login o registro)
-    apiKey:     '',    // API key obtenida tras registro
-    devNombre:  '',    // nombre del dev para pantalla de éxito
+    email:       '',   // email activo (login o registro)
+    apiKey:      '',   // API key obtenida tras registro
+    devNombre:   '',   // nombre del dev para pantalla de éxito
     accessToken: '',   // JWT tras login (para reenviar verificación)
+    emisorId:    null, // ID del emisor creado al registrarse
 };
 
 // ── Navegación entre pantallas ────────────────────────────────
@@ -631,6 +667,7 @@ async function doRegistrar() {
         });
 
         state.apiKey    = data.api_key;
+        state.emisorId  = data.emisor_id;
         state.email     = v('u_email').trim().toLowerCase();
         state.devNombre = v('u_nombre').trim();
 
@@ -658,10 +695,8 @@ async function doVerifyReg() {
         await api('/v1/auth/verificar-email', { email: state.email, codigo });
         hideLoader();
 
-        // Mostrar pantalla de éxito con API key
-        document.getElementById('dev-nombre').textContent  = state.devNombre;
-        document.getElementById('api-key-text').textContent = state.apiKey;
-        ir('s-success');
+        // Email verificado → ir a pago
+        ir('s-pago');
     } catch (e) {
         hideLoader();
         showError('reg-verify-error', e.message);
@@ -693,6 +728,105 @@ function copiarKey() {
 // ── Helpers ───────────────────────────────────────────────────
 function v(id)  { return document.getElementById(id).value; }
 function esc(s) { return String(s).replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ════════════════════════════════════════════════════════════
+// PAGO CON MERCADO PAGO
+// ════════════════════════════════════════════════════════════
+async function doPagar() {
+    hideError('pago-error');
+    document.getElementById('btn-pagar').disabled = true;
+    showLoader('Preparando el pago...');
+
+    try {
+        const res = await api('/v1/pagos/crear-preferencia', {
+            emisor_id: state.emisorId,
+            email:     state.email,
+        });
+
+        hideLoader();
+
+        if (res.pagado) {
+            // Ya estaba pagado (raro, pero defensivo)
+            mostrarApiKey();
+            return;
+        }
+
+        // Guardar emisorId en localStorage para recuperarlo al volver de MP
+        localStorage.setItem('yepar_emisor_id', state.emisorId);
+        localStorage.setItem('yepar_dev_nombre', state.devNombre);
+
+        // Redirigir a Mercado Pago
+        window.location.href = res.init_point;
+
+    } catch (e) {
+        hideLoader();
+        document.getElementById('btn-pagar').disabled = false;
+        showError('pago-error', e.message);
+    }
+}
+
+// Verificar si el usuario volvió de MP (URL con ?pago=exitoso)
+async function verificarRetornoMP() {
+    const params = new URLSearchParams(window.location.search);
+    const estadoPago = params.get('pago');
+    const emisorId   = params.get('emisor') || localStorage.getItem('yepar_emisor_id');
+
+    if (!estadoPago || !emisorId) return;
+
+    state.emisorId  = parseInt(emisorId);
+    state.devNombre = localStorage.getItem('yepar_dev_nombre') || '';
+
+    if (estadoPago === 'exitoso') {
+        ir('s-esperando');
+        await esperarConfirmacion(state.emisorId);
+    } else if (estadoPago === 'pendiente') {
+        ir('s-esperando');
+        showError('espera-error', 'Tu pago está pendiente de confirmación. Puede tardar unos minutos.');
+        await esperarConfirmacion(state.emisorId, 10); // más intentos para pendiente
+    } else {
+        // Pago fallido — mostrar pantalla de pago de nuevo
+        ir('s-pago');
+        showError('pago-error', 'El pago no fue completado. Puedes intentarlo de nuevo.');
+    }
+
+    // Limpiar URL y localStorage
+    window.history.replaceState({}, '', '/onboarding');
+    localStorage.removeItem('yepar_emisor_id');
+    localStorage.removeItem('yepar_dev_nombre');
+}
+
+async function esperarConfirmacion(emisorId, maxIntentos = 6) {
+    // Polling cada 3 segundos, máx 6 veces (18 seg)
+    // El webhook de MP suele llegar en <5 seg
+    for (let i = 0; i < maxIntentos; i++) {
+        await new Promise(r => setTimeout(r, 3000));
+        try {
+            const res = await fetch(`/v1/pagos/estado/${emisorId}`);
+            const data = await res.json();
+            if (data.pagado) {
+                state.apiKey = data.api_key;
+                mostrarApiKey();
+                return;
+            }
+        } catch (e) {
+            // Ignorar errores de red en el polling
+        }
+    }
+    // Si llegamos acá, el webhook aún no llegó
+    showError('espera-error',
+        'La confirmación está tardando. Si completaste el pago, ' +
+        'tu API key llegará por email en los próximos minutos. ' +
+        'También puedes consultar a soporte@yeparsolutions.com.');
+}
+
+function mostrarApiKey() {
+    document.getElementById('dev-nombre').textContent   = state.devNombre;
+    document.getElementById('api-key-text').textContent = state.apiKey;
+    ir('s-success');
+}
+
+// Ejecutar al cargar la página
+window.addEventListener('DOMContentLoaded', verificarRetornoMP);
 </script>
 
 </body>
