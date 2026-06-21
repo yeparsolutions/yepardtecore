@@ -1,8 +1,7 @@
 # app/models/usuario.py
 # ══════════════════════════════════════════════════════════════
 # Modelo: Usuario
-# Representa a cada persona que accede a YeparDTE u otros
-# productos del ecosistema Yepar.
+# Representa a cada persona que accede a YeparDTEcore.
 #
 # Analogia: el usuario es el carnet de identidad —
 # sin él no puedes entrar al edificio (la app).
@@ -25,20 +24,28 @@ class Usuario(Base):
     email:    Mapped[str] = mapped_column(String(200), unique=True, nullable=False, index=True)
 
     # Contraseña hasheada — NUNCA se guarda en texto plano
-    # Analogia: guardamos la huella, no la llave
     hashed_password: Mapped[str] = mapped_column(String(200), nullable=False)
 
     # ── Relación con Emisor ───────────────────────────────────
-    # Un usuario pertenece a un emisor (empresa)
-    # Un emisor puede tener varios usuarios
     emisor_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("emisores.id"), nullable=True, index=True
     )
 
     # ── Estado ────────────────────────────────────────────────
-    activo:       Mapped[bool] = mapped_column(Boolean, default=True)
-    verificado:   Mapped[bool] = mapped_column(Boolean, default=False)
-    es_admin:     Mapped[bool] = mapped_column(Boolean, default=False)
+    activo:     Mapped[bool] = mapped_column(Boolean, default=True)
+    verificado: Mapped[bool] = mapped_column(Boolean, default=False)
+    es_admin:   Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # ── OTP de verificación de email ──────────────────────────
+    # Se genera al registrarse; el usuario lo ingresa para activar su cuenta.
+    # Analogía: el código que te mandan al cel cuando abres una cuenta bancaria.
+    otp_verificacion:        Mapped[str | None] = mapped_column(String(6),  nullable=True)
+    otp_verificacion_expira: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # ── OTP de recuperación de contraseña ─────────────────────
+    # Se genera al solicitar "olvidé mi contraseña".
+    otp_recuperacion:        Mapped[str | None] = mapped_column(String(6),  nullable=True)
+    otp_recuperacion_expira: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # ── Timestamps ────────────────────────────────────────────
     created_at: Mapped[str] = mapped_column(
