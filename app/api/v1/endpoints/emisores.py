@@ -4,13 +4,19 @@
 # Un Emisor es cada empresa/negocio que emite DTE.
 # ══════════════════════════════════════════════════════════════
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from datetime import datetime, timedelta, timezone
 from app.db.base import get_db
 from app.models.emisor import Emisor
-from pydantic import BaseModel
+from app.models.usuario import Usuario
+from app.core.security import hash_password, crear_access_token
+from pydantic import BaseModel, EmailStr
 import secrets
+import logging
+
+logger = logging.getLogger("yepardtecore.emisores")
 
 router = APIRouter(prefix="/emisores", tags=["Emisores"])
 
@@ -216,4 +222,191 @@ async def actualizar_resolucion(
         "emisor_id": emisor_id,
         "certificacion": {"nro": emisor.nro_resol_cert, "fch": emisor.fch_resol_cert},
         "produccion":    {"nro": emisor.nro_resol_prod, "fch": emisor.fch_resol_prod},
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+# REGISTRO DE DESARROLLADORES
+# Flujo para que un desarrollador externo contrate la API:
+#   1. Se registra con sus datos + nombre de la app
+#   2. Recibe su API key + JWT para acceder a su panel
+#   3. La API key se "vincula" al dominio de su app en la
+#      primera llamada (Opción C — sin carga para el dev)
+#
+# Analogía: como abrir una cuenta de Stripe — solo necesitas
+# nombre, email y el nombre de tu negocio. La tarjeta (API key)
+# te la dan al terminar el registro.
+# ══════════════════════════════════════════════════════════════
+
+class RegistroDesarrolladorInput(BaseModel):
+    # Datos del desarrollador
+    nombre:    str
+    apellido:  str
+    email:     EmailStr
+    password:  str
+    # App que va a integrar
+    nombre_app: str
+    url_app:    str
+
+
+class RegistroDesarrolladorRespuesta(BaseModel):
+    ok:           bool
+    api_key:      str
+    emisor_id:    int
+    access_token: str   # JWT para acceder al panel/docs
+    nombre_app:   str
+    mensaje:      str
+
+
+@router.post(
+    "/registro-desarrollador",
+    response_model=RegistroDesarrolladorRespuesta,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar desarrollador externo",
+    description=(
+        "Crea la cuenta de un desarrollador que quiere integrar YeparDTEcore en su software. "
+        "No requiere datos de empresa ni certificado — solo sus datos y el nombre de su app. "
+        "Genera automáticamente su API key y un token de acceso al panel."
+    ),
+)
+async def registro_desarrollador(
+    datos: RegistroDesarrolladorInput,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Registra un desarrollador nuevo y le entrega su API key.
+
+    Flujo interno:
+      1. Valida que el email no esté en uso (en emisores ni en usuarios)
+      2. Crea el Emisor como cuenta de API (sin RUT real, con datos de la app)
+      3. Crea el Usuario vinculado al emisor (para acceso al panel)
+      4. Devuelve la API key + JWT
+
+    El campo `rut` se genera con el ID del emisor para no necesitar
+    un RUT real (los desarrolladores no son emisores fiscales).
+    """
+    # ── Validaciones previas ───────────────────────────────────
+    if len(datos.password) < 8:
+        raise HTTPException(
+            status_code=422,
+            detail="La contraseña debe tener al menos 8 caracteres"
+        )
+
+    # Verificar email libre en usuarios
+    res_usr = await db.execute(
+        select(Usuario).where(Usuario.email == datos.email.lower().strip())
+    )
+    if res_usr.scalar_one_or_none():
+        raise HTTPException(
+            status_code=409,
+            detail="Ya existe una cuenta con ese email"
+        )
+
+    # ── Crear el Emisor (cuenta de API del desarrollador) ──────
+    # Usamos un RUT placeholder: "DEV-{timestamp}" — no es un emisor
+    # fiscal, así que no necesita RUT SII real.
+    api_key   = "yek_" + secrets.token_hex(30)
+    rut_dev   = f"DEV-{int(datetime.now(timezone.utc).timestamp())}"
+
+    emisor = Emisor(
+        rut=rut_dev,
+        razon_social=datos.nombre_app,          # nombre de la app como razón social
+        giro="Desarrollo de Software",
+        direccion="No aplica",
+        comuna="No aplica",
+        ciudad="No aplica",
+        nombre_app=datos.nombre_app,
+        url_app=datos.url_app.strip("/"),        # URL sin slash final
+        api_key=api_key,
+        activo=True,
+        ambiente="produccion",
+        plan="anual",
+        estado_pago="pendiente",                 # pendiente hasta confirmar pago
+        correo=datos.email.lower().strip(),
+    )
+    db.add(emisor)
+    await db.flush()   # obtiene el ID sin commit todavía
+
+    # ── Crear el Usuario vinculado ─────────────────────────────
+    usuario = Usuario(
+        nombre=datos.nombre.strip(),
+        apellido=datos.apellido.strip(),
+        email=datos.email.lower().strip(),
+        hashed_password=hash_password(datos.password),
+        activo=True,
+        verificado=False,
+        es_admin=False,
+        emisor_id=emisor.id,
+    )
+    db.add(usuario)
+    await db.flush()
+
+    await db.commit()
+
+    # ── Generar JWT de acceso ──────────────────────────────────
+    token = crear_access_token({
+        "sub":      str(usuario.id),
+        "email":    usuario.email,
+        "emisor_id": emisor.id,
+    })
+
+    logger.info(
+        f"[REGISTRO_DEV] Nuevo desarrollador: {datos.email} — "
+        f"App: {datos.nombre_app} — Emisor ID: {emisor.id}"
+    )
+
+    return {
+        "ok":           True,
+        "api_key":      api_key,
+        "emisor_id":    emisor.id,
+        "access_token": token,
+        "nombre_app":   datos.nombre_app,
+        "mensaje": (
+            f"¡Bienvenido a YeparDTEcore! Tu API key está lista. "
+            f"Úsala en el header X-API-Key en cada llamada. "
+            f"Estado de suscripción: pendiente de pago."
+        ),
+    }
+
+
+# ── Liberar vinculación de app ─────────────────────────────────
+# Cuando el desarrollador quiere mover su API key a otra app,
+# libera el dominio vinculado desde su panel.
+# Analogía: "desinstalar la licencia de esta máquina para
+# instalarla en otra".
+
+@router.post("/{emisor_id}/liberar-app")
+async def liberar_app(
+    emisor_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Libera la vinculación de dominio de la API key.
+    Después de esto, la key se puede usar desde otro dominio
+    (se vinculará al nuevo en la primera llamada).
+    """
+    emisor = await db.get(Emisor, emisor_id)
+    if not emisor:
+        raise HTTPException(404, "Emisor no encontrado")
+
+    dominio_anterior = emisor.origen_vinculado
+
+    emisor.origen_vinculado = None
+    emisor.vinculada_en     = None
+
+    await db.commit()
+
+    logger.info(
+        f"[LIBERAR_APP] Emisor {emisor_id} liberó vinculación "
+        f"de dominio: {dominio_anterior}"
+    )
+
+    return {
+        "ok":              True,
+        "emisor_id":       emisor_id,
+        "dominio_liberado": dominio_anterior,
+        "mensaje": (
+            "Vinculación liberada. La próxima llamada a la API "
+            "vinculará la key al nuevo dominio automáticamente."
+        ),
     }
