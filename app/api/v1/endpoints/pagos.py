@@ -37,7 +37,7 @@ from app.models.emisor import Emisor
 logger = logging.getLogger("yepardtecore.pagos")
 router = APIRouter(prefix="/pagos", tags=["Pagos"])
 
-MONTO_SUSCRIPCION = 100000   # $100.000 CLP
+MONTO_SUSCRIPCION = 1000   # $100.000 CLP
 DIAS_SUSCRIPCION  = 365
 
 
