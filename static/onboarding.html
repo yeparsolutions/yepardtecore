@@ -670,6 +670,10 @@ async function doRegistrar() {
         state.emisorId  = data.emisor_id;
         state.email     = v('u_email').trim().toLowerCase();
         state.devNombre = v('u_nombre').trim();
+        // Guardar en localStorage INMEDIATAMENTE por si MP redirige
+        localStorage.setItem('yepar_emisor_id', data.emisor_id);
+        localStorage.setItem('yepar_dev_nombre', v('u_nombre').trim());
+        localStorage.setItem('yepar_email', v('u_email').trim().toLowerCase());
 
         hideLoader();
 
@@ -754,6 +758,7 @@ async function doPagar() {
         // Guardar emisorId en localStorage para recuperarlo al volver de MP
         localStorage.setItem('yepar_emisor_id', state.emisorId);
         localStorage.setItem('yepar_dev_nombre', state.devNombre);
+        localStorage.setItem('yepar_email', state.email);
 
         // Redirigir a Mercado Pago
         window.location.href = res.init_point;
@@ -767,14 +772,44 @@ async function doPagar() {
 
 // Verificar si el usuario volvió de MP (URL con ?pago=exitoso)
 async function verificarRetornoMP() {
-    const params = new URLSearchParams(window.location.search);
+    const params     = new URLSearchParams(window.location.search);
     const estadoPago = params.get('pago');
-    const emisorId   = params.get('emisor') || localStorage.getItem('yepar_emisor_id');
 
-    if (!estadoPago || !emisorId) return;
+    // Recuperar emisorId: primero de la URL, luego localStorage
+    let emisorId = params.get('emisor') || localStorage.getItem('yepar_emisor_id');
 
-    state.emisorId  = parseInt(emisorId);
+    if (!estadoPago) return;  // no venimos de MP
+
     state.devNombre = localStorage.getItem('yepar_dev_nombre') || '';
+
+    // Si no tenemos emisorId, intentar recuperarlo por email
+    if (!emisorId) {
+        const emailGuardado = localStorage.getItem('yepar_email');
+        if (emailGuardado) {
+            try {
+                const res = await fetch(`/v1/pagos/buscar-por-email?email=${encodeURIComponent(emailGuardado)}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    emisorId = data.emisor_id;
+                }
+            } catch(e) { /* ignorar */ }
+        }
+    }
+
+    if (!emisorId) {
+        // No pudimos recuperar el emisorId — mostrar mensaje de ayuda
+        ir('s-pago');
+        showError('pago-error', 'No pudimos identificar tu cuenta. Si completaste el pago, escríbenos a soporte@yeparsolutions.com con tu email.');
+        return;
+    }
+
+    state.emisorId = parseInt(emisorId);
+
+    // Limpiar URL y localStorage
+    window.history.replaceState({}, '', '/onboarding');
+    localStorage.removeItem('yepar_emisor_id');
+    localStorage.removeItem('yepar_dev_nombre');
+    localStorage.removeItem('yepar_email');
 
     if (estadoPago === 'exitoso') {
         ir('s-esperando');
@@ -782,17 +817,11 @@ async function verificarRetornoMP() {
     } else if (estadoPago === 'pendiente') {
         ir('s-esperando');
         showError('espera-error', 'Tu pago está pendiente de confirmación. Puede tardar unos minutos.');
-        await esperarConfirmacion(state.emisorId, 10); // más intentos para pendiente
+        await esperarConfirmacion(state.emisorId, 10);
     } else {
-        // Pago fallido — mostrar pantalla de pago de nuevo
         ir('s-pago');
         showError('pago-error', 'El pago no fue completado. Puedes intentarlo de nuevo.');
     }
-
-    // Limpiar URL y localStorage
-    window.history.replaceState({}, '', '/onboarding');
-    localStorage.removeItem('yepar_emisor_id');
-    localStorage.removeItem('yepar_dev_nombre');
 }
 
 async function esperarConfirmacion(emisorId, maxIntentos = 6) {
