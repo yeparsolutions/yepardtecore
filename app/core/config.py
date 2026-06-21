@@ -1,4 +1,3 @@
-
 # app/core/config.py
 # ══════════════════════════════════════════════════════════════
 # Configuración central de YeparDTEcore
@@ -65,6 +64,15 @@ class Settings(BaseSettings):
         if len(v) < 32:
             raise ValueError("SECRET_KEY debe tener al menos 32 caracteres en producción")
         return v
+
+    # ── Email / SMTP ──────────────────────────────────────────
+    # Variables de entorno que debes agregar en Railway:
+    #   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, EMAIL_FROM
+    SMTP_HOST:     str = "smtp.gmail.com"
+    SMTP_PORT:     int = 587
+    SMTP_USER:     str = ""
+    SMTP_PASSWORD: str = ""
+    EMAIL_FROM:    str = ""
 
     class Config:
         # Lee el archivo .env automáticamente si existe
