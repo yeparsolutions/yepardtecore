@@ -3,38 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YeparDTE — Onboarding</title>
+    <title>YeparDTEcore — Registro de Desarrollador</title>
     
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
     
     <style>
         :root {
-            --yepar-blue: #0057ff; /* Ajustado al color de tu logo Yepar */
-            --yepar-grey: #4a4a4a;
-            --bg: #f8f9fa;
+            --blue:    #0057ff;
+            --blue-dk: #0046cc;
+            --grey:    #4a4a4a;
+            --bg:      #f8f9fa;
             --surface: #ffffff;
-            --border: #e0e0e0;
-            --text: #1a1a1a;
-            --muted: #6c757d;
+            --border:  #e0e0e0;
+            --text:    #1a1a1a;
+            --muted:   #6c757d;
             --success: #28a745;
+            --warning: #e67e00;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        
+
         body {
             font-family: 'DM Sans', sans-serif;
-            background-color: var(--bg);
+            background: var(--bg);
             color: var(--text);
             display: flex;
             flex-direction: column;
             align-items: center;
-            padding: 40px 20px;
+            padding: 40px 20px 60px;
+            min-height: 100vh;
         }
 
-        .brand-header { margin-bottom: 40px; text-align: center; }
-        .brand-header img { height: 50px; }
+        .brand { margin-bottom: 36px; text-align: center; }
+        .brand img { height: 46px; }
+        .brand p { color: var(--muted); font-size: 0.85rem; margin-top: 6px; }
 
-        .onboarding-card {
+        .card {
             background: var(--surface);
             border: 1px solid var(--border);
             border-radius: 24px;
@@ -45,220 +49,374 @@
             position: relative;
         }
 
-        /* Indicador de pasos */
-        .steps-nav { display: flex; gap: 8px; margin-bottom: 30px; }
-        .step-pill { height: 6px; flex: 1; border-radius: 10px; background: #eee; transition: 0.3s; }
-        .step-pill.active { background: var(--yepar-blue); }
-        .step-pill.done { background: var(--yepar-grey); }
+        /* Barra de pasos */
+        .steps { display: flex; gap: 8px; margin-bottom: 32px; }
+        .pill { height: 5px; flex: 1; border-radius: 10px; background: #eee; transition: background 0.3s; }
+        .pill.active { background: var(--blue); }
+        .pill.done   { background: #bbb; }
 
-        h2 { font-family: 'Instrument Serif', serif; font-size: 2rem; margin-bottom: 10px; font-weight: 400; }
-        p.desc { color: var(--muted); font-size: 0.95rem; margin-bottom: 25px; }
-
-        /* Formularios */
-        .form-group { margin-bottom: 18px; }
-        label { display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 6px; color: var(--yepar-grey); }
-        input {
-            width: 100%; padding: 12px 16px; border: 1px solid var(--border);
-            border-radius: 12px; font-size: 1rem; transition: 0.2s; outline: none;
+        /* Step label */
+        .step-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-bottom: 6px;
         }
-        input:focus { border-color: var(--yepar-blue); box-shadow: 0 0 0 3px rgba(0,87,255,0.1); }
-        
-        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+
+        h2 {
+            font-family: 'Instrument Serif', serif;
+            font-size: 1.9rem;
+            font-weight: 400;
+            margin-bottom: 8px;
+            line-height: 1.2;
+        }
+        p.desc { color: var(--muted); font-size: 0.9rem; margin-bottom: 26px; line-height: 1.5; }
+
+        /* Form */
+        .form-group { margin-bottom: 16px; }
+        label { display: block; font-size: 0.82rem; font-weight: 600; margin-bottom: 5px; color: var(--grey); }
+        input[type=text], input[type=email], input[type=password], input[type=url] {
+            width: 100%; padding: 11px 14px;
+            border: 1.5px solid var(--border);
+            border-radius: 10px; font-size: 0.95rem;
+            font-family: 'DM Sans', sans-serif;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            outline: none; background: #fff;
+        }
+        input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0,87,255,.1); }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+        /* Hint de error / validación */
+        .field-hint { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+        .field-hint.error { color: #c0392b; }
 
         /* Botones */
         .btn {
-            width: 100%; padding: 14px; border: none; border-radius: 14px;
-            font-weight: 600; font-size: 1rem; cursor: pointer; transition: 0.2s;
+            width: 100%; padding: 13px;
+            border: none; border-radius: 12px;
+            font-family: 'DM Sans', sans-serif;
+            font-weight: 600; font-size: 0.95rem;
+            cursor: pointer; transition: background 0.2s, opacity 0.2s;
             display: flex; align-items: center; justify-content: center; gap: 8px;
         }
-        .btn-primary { background: var(--yepar-blue); color: white; }
-        .btn-primary:hover { background: #0046cc; }
-        .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
-        .btn-ghost { background: transparent; color: var(--muted); margin-top: 10px; }
+        .btn-primary  { background: var(--blue); color: #fff; }
+        .btn-primary:hover { background: var(--blue-dk); }
+        .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+        .btn-ghost    { background: transparent; color: var(--muted); margin-top: 10px; font-weight: 400; }
+        .btn-ghost:hover { color: var(--text); }
 
-        /* Estados */
-        .step-content { display: none; }
-        .step-content.active { display: block; animation: fadeIn 0.4s ease; }
+        /* Pasos */
+        .step { display: none; }
+        .step.active { display: block; animation: up .35s ease; }
+        @keyframes up { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
 
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-
+        /* Loader overlay */
         #loader {
-            display: none; position: absolute; inset: 0; background: rgba(255,255,255,0.9);
-            z-index: 100; border-radius: 24px; flex-direction: column; align-items: center; justify-content: center;
+            display: none; position: absolute; inset: 0;
+            background: rgba(255,255,255,.92); z-index: 100;
+            border-radius: 24px; flex-direction: column;
+            align-items: center; justify-content: center; gap: 14px;
+        }
+        .spinner {
+            width: 38px; height: 38px;
+            border: 4px solid #eee; border-top-color: var(--blue);
+            border-radius: 50%; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #loader-text { font-weight: 500; color: var(--grey); font-size: 0.9rem; }
+
+        /* Resumen */
+        .summary-box {
+            background: #f0f4ff; border-radius: 12px;
+            padding: 18px 20px; font-size: 0.88rem;
+            line-height: 1.8; margin-bottom: 22px;
+        }
+        .summary-box strong { color: var(--blue); }
+
+        /* Pantalla de cobro */
+        .plan-card {
+            border: 2px solid var(--blue); border-radius: 14px;
+            padding: 22px; margin-bottom: 22px; text-align: center;
+        }
+        .plan-card .price {
+            font-family: 'Instrument Serif', serif;
+            font-size: 2.6rem; color: var(--blue); margin: 6px 0;
+        }
+        .plan-card .price span { font-size: 1rem; color: var(--muted); }
+        .plan-card ul { list-style: none; margin-top: 12px; text-align: left; }
+        .plan-card ul li { padding: 4px 0; font-size: 0.88rem; color: var(--grey); }
+        .plan-card ul li::before { content: "✓ "; color: var(--success); font-weight: 700; }
+        .plan-notice {
+            background: #fff8e1; border: 1px solid #ffe082;
+            border-radius: 10px; padding: 12px 14px;
+            font-size: 0.83rem; color: var(--warning); margin-bottom: 20px; line-height: 1.5;
+        }
+
+        /* Pantalla final — éxito */
+        .success-icon { font-size: 3rem; margin-bottom: 8px; }
+        .api-key-box {
+            background: #0a0a0a; color: #4cff91;
+            border-radius: 10px; padding: 14px 16px;
+            font-family: 'Courier New', monospace; font-size: 0.82rem;
+            word-break: break-all; margin: 16px 0;
+            position: relative; cursor: pointer;
+            user-select: all;
+        }
+        .api-key-box .copy-tip {
+            position: absolute; top: 8px; right: 10px;
+            font-size: 0.7rem; color: #888; font-family: 'DM Sans', sans-serif;
+        }
+        .docs-link {
+            display: block; text-align: center;
+            color: var(--blue); font-weight: 600;
+            text-decoration: none; padding: 13px;
+            border: 2px solid var(--blue); border-radius: 12px;
+            margin-top: 10px; transition: background .2s;
+        }
+        .docs-link:hover { background: #f0f4ff; }
+        .warning-key {
+            font-size: 0.78rem; color: var(--muted);
+            text-align: center; margin-top: 10px; line-height: 1.5;
         }
     </style>
 </head>
 <body>
 
-    <div class="brand-header">
-        <img src="/static/logo-horizontal.svg" alt="Yepar Logo">
+<div class="brand">
+    <img src="/static/logo-horizontal.svg" alt="YeparDTEcore">
+    <p>API de facturación electrónica para desarrolladores</p>
+</div>
+
+<div class="card">
+    <div id="loader">
+        <div class="spinner"></div>
+        <p id="loader-text">Procesando...</p>
     </div>
 
-    <div class="onboarding-card">
-        <div id="loader">
-            <div style="width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid var(--yepar-blue); border-radius: 50%; animation: spin 1s linear infinite;"></div>
-            <p style="margin-top: 15px; font-weight: 500;" id="loader-text">Guardando configuración...</p>
-        </div>
+    <div class="steps" id="steps-nav">
+        <div class="pill active"></div>
+        <div class="pill"></div>
+        <div class="pill"></div>
+        <div class="pill"></div>
+    </div>
 
-        <div class="steps-nav" id="steps-nav">
-            <div class="step-pill active"></div>
-            <div class="step-pill"></div>
-            <div class="step-pill"></div>
-            <div class="step-pill"></div>
-        </div>
-
-        <div class="step-content active" id="step1">
-            <h2>Crear tu cuenta</h2>
-            <p class="desc">Comencemos con tus datos de acceso.</p>
-            <div class="row">
-                <div class="form-group"><label>Nombre</label><input type="text" id="u_nombre" placeholder="Ej: Alberto"></div>
-                <div class="form-group"><label>Apellido</label><input type="text" id="u_apellido" placeholder="Ej: Yépez"></div>
-            </div>
-            <div class="form-group"><label>Email Corporativo</label><input type="email" id="u_email" placeholder="alberto@empresa.cl"></div>
-            <div class="form-group"><label>Contraseña</label><input type="password" id="u_pass" placeholder="••••••••"></div>
-            <button class="btn btn-primary" onclick="nextStep(2)">Continuar</button>
-        </div>
-
-        <div class="step-content" id="step2">
-            <h2>Datos de la Empresa</h2>
-            <p class="desc">Información legal para tus documentos.</p>
-            <div class="form-group"><label>RUT Empresa</label><input type="text" id="e_rut" placeholder="76.123.456-7"></div>
-            <div class="form-group"><label>Razón Social</label><input type="text" id="e_razon" placeholder="Yepar Solutions SpA"></div>
-            <div class="form-group"><label>Giro</label><input type="text" id="e_giro" placeholder="Servicios Informáticos"></div>
-            <div class="form-group"><label>Dirección</label><input type="text" id="e_dir" placeholder="Av. Providencia 1234"></div>
-            <div class="row">
-                <div class="form-group"><label>Comuna</label><input type="text" id="e_comuna" placeholder="Providencia"></div>
-                <div class="form-group"><label>Ciudad</label><input type="text" id="e_ciudad" placeholder="Santiago"></div>
-            </div>
-            <button class="btn btn-primary" onclick="nextStep(3)">Siguiente paso</button>
-            <button class="btn btn-ghost" onclick="nextStep(1)">Volver</button>
-        </div>
-
-        <div class="step-content" id="step3">
-            <h2>Certificado Digital</h2>
-            <p class="desc">Sube tu firma (.p12 o .pfx) para firmar los DTE.</p>
+    <!-- PASO 1: Datos del desarrollador -->
+    <div class="step active" id="step1">
+        <p class="step-label">Paso 1 de 4</p>
+        <h2>Crea tu cuenta</h2>
+        <p class="desc">Ingresa tus datos de acceso. Con esto podrás ingresar al panel y ver tu API key.</p>
+        <div class="row">
             <div class="form-group">
-                <label>Archivo del certificado</label>
-                <input type="file" id="e_cert" accept=".p12,.pfx" style="padding: 8px;">
+                <label>Nombre</label>
+                <input type="text" id="u_nombre" placeholder="Ej: Alberto" autocomplete="given-name">
             </div>
-            <div class="form-group"><label>Contraseña del certificado</label><input type="password" id="e_cert_pass" placeholder="Clave de tu firma"></div>
-            <button class="btn btn-primary" onclick="nextStep(4)">Revisar final</button>
-            <button class="btn btn-ghost" onclick="nextStep(2)">Volver</button>
+            <div class="form-group">
+                <label>Apellido</label>
+                <input type="text" id="u_apellido" placeholder="Ej: González" autocomplete="family-name">
+            </div>
         </div>
-
-        <div class="step-content" id="step4">
-            <h2>¡Todo listo!</h2>
-            <p class="desc">Verifica que la información sea correcta antes de activar tu cuenta YeparDTE.</p>
-            <div id="resumen" style="background: #f0f4ff; padding: 20px; border-radius: 15px; font-size: 0.9rem; margin-bottom: 25px;">
-                </div>
-            <button class="btn btn-primary" id="final-btn" onclick="finalizarOnboarding()">Activar mi Empresa</button>
-            <button class="btn btn-ghost" onclick="nextStep(3)">Cambiar algo</button>
+        <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="u_email" placeholder="tu@empresa.cl" autocomplete="email">
         </div>
+        <div class="form-group">
+            <label>Contraseña</label>
+            <input type="password" id="u_pass" placeholder="Mínimo 8 caracteres" autocomplete="new-password">
+            <p class="field-hint">Mínimo 8 caracteres.</p>
+        </div>
+        <button class="btn btn-primary" onclick="irPaso2()">Continuar →</button>
     </div>
 
-    <script>
-        let currentStep = 1;
+    <!-- PASO 2: Nombre de la app -->
+    <div class="step" id="step2">
+        <p class="step-label">Paso 2 de 4</p>
+        <h2>Tu software</h2>
+        <p class="desc">¿Cómo se llama la app donde vas a integrar YeparDTEcore? La API key quedará vinculada a este software.</p>
+        <div class="form-group">
+            <label>Nombre del software</label>
+            <input type="text" id="app_nombre" placeholder="Ej: Mi ERP, MiApp Ventas, POS Central">
+        </div>
+        <div class="form-group">
+            <label>URL del software</label>
+            <input type="url" id="app_url" placeholder="https://miapp.cl">
+            <p class="field-hint">La URL desde donde tu app llamará a la API. Una key = un software.</p>
+        </div>
+        <button class="btn btn-primary" onclick="irPaso3()">Continuar →</button>
+        <button class="btn btn-ghost" onclick="ir(1)">← Volver</button>
+    </div>
 
-        function nextStep(step) {
-            document.querySelectorAll('.step-content').forEach(el => el.classList.remove('active'));
-            document.getElementById('step' + step).classList.add('active');
-            
-            // Actualizar pills
-            const pills = document.querySelectorAll('.step-pill');
-            pills.forEach((pill, idx) => {
-                if (idx + 1 < step) pill.className = 'step-pill done';
-                else if (idx + 1 === step) pill.className = 'step-pill active';
-                else pill.className = 'step-pill';
+    <!-- PASO 3: Plan y cobro -->
+    <div class="step" id="step3">
+        <p class="step-label">Paso 3 de 4</p>
+        <h2>Plan de acceso</h2>
+        <p class="desc">Un solo precio. Sin límite de documentos.</p>
+
+        <div class="plan-card">
+            <strong>Plan Anual</strong>
+            <div class="price">$100.000 <span>CLP / año</span></div>
+            <ul>
+                <li>DTE ilimitados (boletas, facturas, NC, ND, guías)</li>
+                <li>Una API key por software</li>
+                <li>Acceso a documentación completa</li>
+                <li>Soporte técnico por email</li>
+            </ul>
+        </div>
+
+        <div class="plan-notice">
+            💳 El pago se coordina directamente con Yepar Solutions. Al registrarte, recibes tu API key de inmediato y tienes <strong>7 días de prueba gratuitos</strong> para validar tu integración.
+        </div>
+
+        <button class="btn btn-primary" onclick="irPaso4()">Acepto y continuar →</button>
+        <button class="btn btn-ghost" onclick="ir(2)">← Volver</button>
+    </div>
+
+    <!-- PASO 4: Confirmación y registro -->
+    <div class="step" id="step4">
+        <p class="step-label">Paso 4 de 4</p>
+        <h2>Confirma tus datos</h2>
+        <p class="desc">Revisa que todo esté correcto antes de activar tu cuenta.</p>
+        <div class="summary-box" id="resumen"></div>
+        <button class="btn btn-primary" id="btn-activar" onclick="registrar()">🚀 Activar y obtener API key</button>
+        <button class="btn btn-ghost" onclick="ir(3)">← Cambiar algo</button>
+    </div>
+
+    <!-- PASO 5: Éxito -->
+    <div class="step" id="step5">
+        <div style="text-align:center; margin-bottom: 20px;">
+            <div class="success-icon">🎉</div>
+            <h2>¡Listo, <span id="dev-nombre"></span>!</h2>
+            <p class="desc" style="margin-bottom:0;">Tu API key está activa. Cópiala ahora — no se mostrará de nuevo.</p>
+        </div>
+        <div class="api-key-box" id="api-key-display" onclick="copiarKey()">
+            <span class="copy-tip">clic para copiar</span>
+            <span id="api-key-text"></span>
+        </div>
+        <p class="warning-key">⚠️ Guarda esta key en un lugar seguro. Si la pierdes, tendrás que generar una nueva desde el panel.</p>
+        <a href="/api/docs" class="docs-link">📖 Ir a la documentación →</a>
+    </div>
+
+</div><!-- /.card -->
+
+<script>
+    let currentStep = 1;
+
+    function ir(step) {
+        document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+        document.getElementById('step' + step).classList.add('active');
+
+        const pills = document.querySelectorAll('.pill');
+        pills.forEach((p, i) => {
+            p.className = 'pill' + (i + 1 < step ? ' done' : i + 1 === step ? ' active' : '');
+        });
+
+        if (step === 4) mostrarResumen();
+        currentStep = step;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function irPaso2() {
+        const nombre  = document.getElementById('u_nombre').value.trim();
+        const apellido = document.getElementById('u_apellido').value.trim();
+        const email   = document.getElementById('u_email').value.trim();
+        const pass    = document.getElementById('u_pass').value;
+
+        if (!nombre || !apellido) return alerta('Ingresa tu nombre y apellido.');
+        if (!email || !email.includes('@')) return alerta('Ingresa un email válido.');
+        if (pass.length < 8) return alerta('La contraseña debe tener al menos 8 caracteres.');
+
+        ir(2);
+    }
+
+    function irPaso3() {
+        const nombre = document.getElementById('app_nombre').value.trim();
+        const url    = document.getElementById('app_url').value.trim();
+
+        if (!nombre) return alerta('Ingresa el nombre de tu software.');
+        if (!url || !url.startsWith('http')) return alerta('Ingresa una URL válida (debe comenzar con https://).');
+
+        ir(3);
+    }
+
+    function irPaso4() {
+        ir(4);
+    }
+
+    function mostrarResumen() {
+        const html = `
+            <strong>👤 Desarrollador</strong><br>
+            ${esc(val('u_nombre'))} ${esc(val('u_apellido'))}<br>
+            ${esc(val('u_email'))}<br><br>
+            <strong>💻 Software</strong><br>
+            ${esc(val('app_nombre'))}<br>
+            ${esc(val('app_url'))}<br><br>
+            <strong>📋 Plan:</strong> Anual — $100.000 CLP/año (7 días de prueba)
+        `;
+        document.getElementById('resumen').innerHTML = html;
+    }
+
+    async function registrar() {
+        const btn = document.getElementById('btn-activar');
+        btn.disabled = true;
+
+        const loader     = document.getElementById('loader');
+        const loaderText = document.getElementById('loader-text');
+        loader.style.display = 'flex';
+
+        try {
+            loaderText.textContent = 'Creando tu cuenta...';
+
+            const res = await fetch('/v1/emisores/registro-desarrollador', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    nombre:     val('u_nombre').trim(),
+                    apellido:   val('u_apellido').trim(),
+                    email:      val('u_email').trim().toLowerCase(),
+                    password:   val('u_pass'),
+                    nombre_app: val('app_nombre').trim(),
+                    url_app:    val('app_url').trim(),
+                })
             });
 
-            if(step === 4) mostrarResumen();
-            currentStep = step;
-        }
+            const data = await res.json();
 
-        function mostrarResumen() {
-            const resumen = `
-                <b>Usuario:</b> ${document.getElementById('u_nombre').value} ${document.getElementById('u_apellido').value}<br>
-                <b>Email:</b> ${document.getElementById('u_email').value}<br><br>
-                <b>Empresa:</b> ${document.getElementById('e_razon').value}<br>
-                <b>RUT:</b> ${document.getElementById('e_rut').value}<br>
-                <b>Ubicación:</b> ${document.getElementById('e_comuna').value}, ${document.getElementById('e_ciudad').value}
-            `;
-            document.getElementById('resumen').innerHTML = resumen;
-        }
-
-        async function finalizarOnboarding() {
-            const loader = document.getElementById('loader');
-            const loaderText = document.getElementById('loader-text');
-            loader.style.display = 'flex';
-
-            try {
-                // 1. REGISTRO DE USUARIO
-                loaderText.textContent = "Creando tu perfil...";
-                const resUser = await fetch('/v1/auth/registro', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        nombre: document.getElementById('u_nombre').value,
-                        apellido: document.getElementById('u_apellido').value,
-                        email: document.getElementById('u_email').value,
-                        password: document.getElementById('u_pass').value
-                    })
-                });
-
-                if (!resUser.ok) {
-                    const err = await resUser.json();
-                    throw new Error(err.detail || "Error al crear el usuario.");
-                }
-                const userData = await resUser.json();
-
-                // 2. CREACIÓN DE EMISOR
-                loaderText.textContent = "Configurando empresa...";
-                const resEmisor = await fetch('/v1/emisores/', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${userData.access_token}`
-                    },
-                    body: JSON.stringify({
-                        rut: document.getElementById('e_rut').value,
-                        razon_social: document.getElementById('e_razon').value,
-                        giro: document.getElementById('e_giro').value,
-                        direccion: document.getElementById('e_dir').value,
-                        comuna: document.getElementById('e_comuna').value,
-                        ciudad: document.getElementById('e_ciudad').value,
-                        ambiente: "certificacion"
-                    })
-                });
-
-                if (!resEmisor.ok) throw new Error("Error al registrar la empresa.");
-                const emisorData = await resEmisor.json();
-
-                // 3. SUBIDA DE CERTIFICADO
-                const certFile = document.getElementById('e_cert').files[0];
-                if (certFile) {
-                    loaderText.textContent = "Subiendo firma digital...";
-                    const formData = new FormData();
-                    formData.append('file', certFile);
-                    formData.append('password', document.getElementById('e_cert_pass').value);
-
-                    const resCert = await fetch(`/v1/certificados/${emisorData.id}/subir`, {
-                        method: 'POST',
-                        headers: {'Authorization': `Bearer ${userData.access_token}`},
-                        body: formData
-                    });
-                    if (!resCert.ok) throw new Error("Firma subida, pero hubo un problema al validarla.");
-                }
-
-                loaderText.textContent = "¡Bienvenido a Yepar!";
-                setTimeout(() => window.location.href = "/api/docs", 2000);
-
-            } catch (error) {
-                loader.style.display = 'none';
-                alert("❌ " + error.message);
+            if (!res.ok) {
+                throw new Error(data.detail || 'Error al crear la cuenta.');
             }
-        }
-    </script>
 
-    <style> @keyframes spin { to { transform: rotate(360deg); } } </style>
+            loaderText.textContent = '¡Cuenta creada!';
+
+            // Mostrar pantalla de éxito
+            setTimeout(() => {
+                loader.style.display = 'none';
+                document.getElementById('dev-nombre').textContent = val('u_nombre').trim();
+                document.getElementById('api-key-text').textContent = data.api_key;
+                ir(5);
+            }, 800);
+
+        } catch (err) {
+            loader.style.display = 'none';
+            btn.disabled = false;
+            alerta('❌ ' + err.message);
+        }
+    }
+
+    function copiarKey() {
+        const key = document.getElementById('api-key-text').textContent;
+        navigator.clipboard.writeText(key).then(() => {
+            const box = document.getElementById('api-key-display');
+            box.querySelector('.copy-tip').textContent = '¡copiado!';
+            setTimeout(() => box.querySelector('.copy-tip').textContent = 'clic para copiar', 2000);
+        });
+    }
+
+    // Helpers
+    function val(id) { return document.getElementById(id).value; }
+    function esc(s)  { return s.replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function alerta(msg) { alert(msg); }
+</script>
+
 </body>
 </html>
