@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from contextlib import asynccontextmanager
 
 # Configurar logging a nivel INFO para que los logger.info de la app
@@ -72,6 +72,10 @@ def _leer_html(path: str, fallback: str = "") -> str:
 @app.get("/", response_class=HTMLResponse, tags=["Frontend"])
 async def root():
     return _leer_html("static/onboarding.html", "<a href='/api/docs'>API Docs</a>")
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return RedirectResponse(url="/static/favicon-32.png")
 
 @app.get("/onboarding", response_class=HTMLResponse, tags=["Frontend"])
 async def onboarding():
