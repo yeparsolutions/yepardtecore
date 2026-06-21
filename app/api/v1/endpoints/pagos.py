@@ -57,6 +57,9 @@ async def crear_preferencia(
     Crea una preferencia de pago en Mercado Pago y retorna
     la URL de pago (init_point) para redirigir al usuario.
     """
+    if not settings.MP_ACCESS_TOKEN:
+        raise HTTPException(500, "MP_ACCESS_TOKEN no configurado en Railway. Agrega la variable de entorno.")
+
     emisor = await db.get(Emisor, datos.emisor_id)
     if not emisor:
         raise HTTPException(404, "Cuenta no encontrada")
