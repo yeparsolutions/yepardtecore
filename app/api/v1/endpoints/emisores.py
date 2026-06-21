@@ -12,6 +12,8 @@ from app.db.base import get_db
 from app.models.emisor import Emisor
 from app.models.usuario import Usuario
 from app.core.security import hash_password, crear_access_token
+from app.services.email_service import enviar_email, email_verificacion
+import random
 from pydantic import BaseModel, EmailStr
 import secrets
 import logging
@@ -341,7 +343,16 @@ async def registro_desarrollador(
     db.add(usuario)
     await db.flush()
 
+    # ── Generar OTP de verificación y enviar email ────────────
+    otp = str(random.randint(100000, 999999))
+    from datetime import timedelta
+    usuario.otp_verificacion        = otp
+    usuario.otp_verificacion_expira = datetime.now(timezone.utc) + timedelta(minutes=15)
+
     await db.commit()
+
+    asunto, html = email_verificacion(usuario.nombre, otp)
+    await enviar_email(usuario.email, asunto, html)
 
     # ── Generar JWT de acceso ──────────────────────────────────
     token = crear_access_token({
