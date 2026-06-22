@@ -103,8 +103,8 @@ async def dashboard():
 
 @app.get("/admin", response_class=HTMLResponse, tags=["Frontend"])
 async def admin():
-    """Panel de administración: emisor, certificado, CAFs y certificación SII."""
-    contenido = _leer_html("static/admin.html")
+    """Panel de administración de YeparDTEcore."""
+    contenido = _leer_html("static/admin_yepar.html")
     if contenido:
         return HTMLResponse(content=contenido, media_type="text/html; charset=utf-8")
     # Si el archivo no existe, devolver página de error clara
