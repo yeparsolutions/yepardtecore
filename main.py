@@ -77,6 +77,21 @@ async def root():
 async def favicon():
     return RedirectResponse(url="/static/favicon-32.png")
 
+@app.get("/api/docs", include_in_schema=False)
+async def api_docs_redirect():
+    """Redirige /api/docs al dashboard de documentación."""
+    return RedirectResponse(url="/dashboard")
+
+@app.get("/api", include_in_schema=False)
+async def api_root():
+    """Info básica de la API."""
+    return {
+        "servicio": "YeparDTEcore API",
+        "version":  "2.1",
+        "docs":     "https://yepardtecore.cl/dashboard",
+        "health":   "https://yepardtecore.cl/api/health",
+    }
+
 @app.get("/onboarding", response_class=HTMLResponse, tags=["Frontend"])
 async def onboarding():
     return _leer_html("static/onboarding.html", "onboarding.html no encontrado")
