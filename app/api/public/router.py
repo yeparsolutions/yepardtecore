@@ -737,6 +737,8 @@ async def firmar_y_enviar(
                 password       = datos.pfx_password,
                 auth_p12_bytes = auth_p12,
                 auth_password  = auth_pwd,
+                db             = db,
+                emisor_id      = emisor_api.id,
             )
             track_id   = resultado.get("track_id")
             estado_sii = resultado.get("estado", "ENVIADO")
