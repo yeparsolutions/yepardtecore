@@ -426,7 +426,7 @@ class FirmarYEnviarInput(BaseModel):
     exento:       bool = False
     fecha:        Optional[str] = None
     referencias:  list[ReferenciaStateless] = []
-    ambiente:     str = "certificacion"
+    ambiente:     Optional[str] = None  # None → usa el del emisor; "certificacion" | "produccion"
     auto_enviar:  bool = True
     folio_actual: Optional[int] = None  # Folio a usar (el contador lo lleva
                                         # el cliente). Si no viene, se usa el
@@ -458,6 +458,10 @@ async def firmar_y_enviar(
 
     TIPOS_BOLETA = {39, 41}
     tipos_validos = {33, 34, 39, 41, 52, 56, 61}
+
+    # Resolver ambiente: override por request > default del emisor > certificacion
+    ambiente_efectivo = datos.ambiente or emisor_api.ambiente or "certificacion"
+    datos.ambiente = ambiente_efectivo
 
     if datos.tipo not in tipos_validos:
         raise HTTPException(422, f"Tipo DTE no válido: {datos.tipo}")
