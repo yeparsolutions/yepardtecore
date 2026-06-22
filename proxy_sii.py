@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
 """
-Proxy HTTP simple para el SII — YeparDTEcore
-Recibe requests de Railway y las reenvía al SII como si fuera Chile.
-
-Endpoints:
-  POST /boleta/semilla  → GET  api.sii.cl/recursos/v1/boleta.electronica.semilla
-  POST /boleta/token    → POST api.sii.cl/recursos/v1/boleta.electronica.token
-  POST /boleta/envio    → POST api.sii.cl/recursos/v1/boleta.electronica.envio
+Proxy SII para boletas electrónicas — YeparDTEcore
+Convierte las llamadas de Railway al formato que espera api.sii.cl
 
 Puerto: 8080
 """
@@ -15,19 +10,15 @@ import urllib.request
 import urllib.error
 import json
 import ssl
+import cgi
+import io
 import logging
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger("proxy-sii")
 
-SII_BASE = "https://api.sii.cl/recursos/v1"
-
-RUTAS = {
-    "/boleta/semilla": ("GET",  f"{SII_BASE}/boleta.electronica.semilla"),
-    "/boleta/token":   ("POST", f"{SII_BASE}/boleta.electronica.token"),
-    "/boleta/envio":   ("POST", f"{SII_BASE}/boleta.electronica.envio"),
-}
+BASE = "https://api.sii.cl/recursos/v1"
 
 class ProxyHandler(http.server.BaseHTTPRequestHandler):
 
@@ -35,60 +26,131 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         logger.info(f"{self.client_address[0]} {format % args}")
 
     def do_GET(self):
-        self._handle()
-
-    def do_POST(self):
-        self._handle()
-
-    def _handle(self):
-        ruta = RUTAS.get(self.path)
-        if not ruta:
+        if self.path == "/boleta/semilla":
+            self._proxy_get(BASE + "/boleta.electronica.semilla")
+        else:
             self.send_response(404)
             self.end_headers()
-            self.wfile.write(b'{"error":"ruta no encontrada"}')
-            return
 
-        metodo, url_sii = ruta
+    def do_POST(self):
+        if self.path == "/boleta/token":
+            self._proxy_post_xml(BASE + "/boleta.electronica.token")
+        elif self.path == "/boleta/envio":
+            self._proxy_envio(BASE + "/boleta.electronica.envio")
+        else:
+            self.send_response(404)
+            self.end_headers()
 
-        # Leer body si viene
-        length = int(self.headers.get("Content-Length", 0))
-        body   = self.rfile.read(length) if length else None
+    def _proxy_get(self, url):
+        try:
+            ctx = ssl.create_default_context()
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
+                rb = resp.read()
+                ct = resp.headers.get("Content-Type", "application/xml")
+            self.send_response(200)
+            self.send_header("Content-Type", ct)
+            self.send_header("Content-Length", str(len(rb)))
+            self.end_headers()
+            self.wfile.write(rb)
+            logger.info(f"GET {url} -> 200 {len(rb)}b")
+        except Exception as ex:
+            logger.error(f"GET error: {ex}")
+            self.send_response(502)
+            self.end_headers()
+            self.wfile.write(str(ex).encode())
 
-        # Copiar headers relevantes
+    def _proxy_post_xml(self, url):
+        """Reenvía el body XML tal cual con Authorization del header."""
+        n = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(n) if n else b""
+        # Token viene en Authorization o Cookie
+        auth = self.headers.get("Authorization", "")
+        cookie = self.headers.get("Cookie", "")
+        headers = {"Content-Type": "application/xml"}
+        if auth:
+            headers["Authorization"] = auth
+        elif cookie:
+            headers["Cookie"] = cookie
+        try:
+            ctx = ssl.create_default_context()
+            req = urllib.request.Request(url, data=body,
+                                          headers=headers, method="POST")
+            with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
+                rb = resp.read()
+                ct = resp.headers.get("Content-Type", "application/xml")
+            self.send_response(200)
+            self.send_header("Content-Type", ct)
+            self.send_header("Content-Length", str(len(rb)))
+            self.end_headers()
+            self.wfile.write(rb)
+            logger.info(f"POST token -> 200 {len(rb)}b")
+        except urllib.error.HTTPError as e:
+            rb = e.read()
+            logger.warning(f"POST token HTTP {e.code}")
+            self.send_response(e.code)
+            self.end_headers()
+            self.wfile.write(rb)
+        except Exception as ex:
+            logger.error(f"POST token error: {ex}")
+            self.send_response(502)
+            self.end_headers()
+            self.wfile.write(str(ex).encode())
+
+    def _proxy_envio(self, url):
+        """
+        Railway manda multipart/form-data con:
+          rutSender, dvSender, rutCompany, dvCompany, archivo (XML)
+          Token en Cookie: TOKEN=xxx
+
+        api.sii.cl espera:
+          Authorization: Bearer TOKEN
+          Content-Type: multipart/form-data
+          Mismos campos multipart
+        """
+        n = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(n) if n else b""
+
+        # Extraer token de la Cookie
+        cookie = self.headers.get("Cookie", "")
+        token = ""
+        for part in cookie.split(";"):
+            part = part.strip()
+            if part.startswith("TOKEN="):
+                token = part[6:]
+                break
+
+        ct_original = self.headers.get("Content-Type", "")
+
         headers = {}
-        for h in ("Authorization", "Content-Type", "Accept", "Cookie"):
-            v = self.headers.get(h)
-            if v:
-                headers[h] = v
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        headers["Content-Type"] = ct_original
 
-        logger.info(f"→ {metodo} {url_sii} body={len(body or b'')}b")
+        logger.info(f"POST envio -> {url} token={token[:8]}... {len(body)}b")
 
         try:
             ctx = ssl.create_default_context()
-            req = urllib.request.Request(url_sii, data=body,
-                                         headers=headers, method=metodo)
-            with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
-                status  = resp.status
-                rbody   = resp.read()
-                rct     = resp.headers.get("Content-Type", "application/json")
-
-            logger.info(f"← {status} {len(rbody)}b")
+            req = urllib.request.Request(url, data=body,
+                                          headers=headers, method="POST")
+            with urllib.request.urlopen(req, context=ctx, timeout=60) as resp:
+                rb = resp.read()
+                ct = resp.headers.get("Content-Type", "application/json")
+                status = resp.status
+            logger.info(f"POST envio <- {status} {len(rb)}b: {rb[:200]}")
             self.send_response(status)
-            self.send_header("Content-Type", rct)
-            self.send_header("Content-Length", str(len(rbody)))
+            self.send_header("Content-Type", ct)
+            self.send_header("Content-Length", str(len(rb)))
             self.end_headers()
-            self.wfile.write(rbody)
-
+            self.wfile.write(rb)
         except urllib.error.HTTPError as e:
-            rbody = e.read()
-            logger.warning(f"← HTTP {e.code}: {rbody[:200]}")
+            rb = e.read()
+            logger.warning(f"POST envio HTTP {e.code}: {rb[:300]}")
             self.send_response(e.code)
-            self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(rbody)
-
+            self.wfile.write(rb)
         except Exception as ex:
-            logger.error(f"Error: {ex}")
+            logger.error(f"POST envio error: {ex}")
             self.send_response(502)
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(ex)}).encode())
