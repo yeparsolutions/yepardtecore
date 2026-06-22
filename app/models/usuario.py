@@ -51,6 +51,13 @@ class Usuario(Base):
     created_at: Mapped[str] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    # ── Aceptación de Términos y Condiciones ──────────────────
+    # Guardamos fecha y versión para trazabilidad legal.
+    tyc_aceptado:    Mapped[bool]          = mapped_column(Boolean, default=False)
+    tyc_fecha:       Mapped[str | None]    = mapped_column(DateTime(timezone=True), nullable=True)
+    tyc_version:     Mapped[str | None]    = mapped_column(String(10), nullable=True)  # ej: "1.0"
+    tyc_ip:          Mapped[str | None]    = mapped_column(String(45), nullable=True)  # IP del cliente
+
     ultimo_login: Mapped[str | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
