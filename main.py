@@ -81,6 +81,11 @@ async def favicon():
 async def onboarding():
     return _leer_html("static/onboarding.html", "onboarding.html no encontrado")
 
+@app.get("/dashboard", response_class=HTMLResponse, tags=["Frontend"])
+async def dashboard():
+    """Panel de desarrollador — métricas, API key y suscripción."""
+    return _leer_html("static/dashboard.html", "dashboard.html no encontrado")
+
 @app.get("/admin", response_class=HTMLResponse, tags=["Frontend"])
 async def admin():
     """Panel de administración: emisor, certificado, CAFs y certificación SII."""
