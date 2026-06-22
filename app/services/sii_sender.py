@@ -161,12 +161,8 @@ class SIISender:
         # BOLETAS: usan su propio token (rahue/maullin2, persistido en BD). Si
         # se usara el token DTE → STATUS 7. Por eso ramificamos según es_boleta.
         async def _pedir_token():
-            if es_boleta:
-                from app.services.sii_auth import obtener_token_boleta_cached
-                return await obtener_token_boleta_cached(
-                    token_p12, token_pwd, self.ambiente,
-                    db=db, emisor_id=emisor_id,
-                )
+            # Token DTE estándar para todos los tipos incluyendo boletas.
+            # maullin (cert) y palena (prod) aceptan EnvioBOLETA con su propio token.
             return await self._obtener_token(token_p12, token_pwd)
 
         try:
@@ -187,14 +183,8 @@ class SIISender:
             return {"track_id": None, "estado": "ERROR",
                     "mensaje": f"[etapa TOKEN] {e}"}
 
-        # Boletas en producción: endpoint REST via proxy Chile (LightNode)
-        # Facturas: DTEUpload de palena/maullin como siempre
-        import os as _os
-        _proxy = _os.environ.get("SII_BOLETA_PROXY_URL", "").rstrip("/")
-        if es_boleta and self.ambiente == "produccion" and _proxy:
-            url_envio = _proxy + "/boleta/envio"
-        else:
-            url_envio = self.url_upload
+        # Siempre DTEUpload (maullin/palena) para todos los tipos
+        url_envio = self.url_upload
         rut_limpio  = self.limpiar_rut(rut_emisor)
         env_limpio  = self.limpiar_rut(rut_enviador)
         timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -259,11 +249,7 @@ class SIISender:
                     "raw":      cuerpo_plano[:800],
                 }
 
-            # Boletas via proxy REST devuelven JSON; DTEUpload devuelve XML
-            import os as _os
-            _proxy = _os.environ.get("SII_BOLETA_PROXY_URL", "")
-            if es_boleta and _proxy and _proxy in url_envio:
-                return self._parsear_respuesta_boleta_rest(response.text)
+            # DTEUpload siempre devuelve XML
             return self._parsear_respuesta_upload(response.text)
 
         except httpx.TimeoutException:
