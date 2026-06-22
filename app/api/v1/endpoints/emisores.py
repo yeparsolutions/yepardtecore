@@ -240,6 +240,8 @@ async def actualizar_resolucion(
 # te la dan al terminar el registro.
 # ══════════════════════════════════════════════════════════════
 
+TYC_VERSION = "1.0"  # Incrementar cuando cambien los T&C
+
 class RegistroDesarrolladorInput(BaseModel):
     # Datos del desarrollador
     nombre:    str
@@ -249,6 +251,8 @@ class RegistroDesarrolladorInput(BaseModel):
     # App que va a integrar
     nombre_app: str
     url_app:    str
+    # Términos y condiciones
+    tyc_aceptado: bool = False
 
 
 class RegistroDesarrolladorRespuesta(BaseModel):
@@ -288,6 +292,12 @@ async def registro_desarrollador(
     un RUT real (los desarrolladores no son emisores fiscales).
     """
     # ── Validaciones previas ───────────────────────────────────
+    if not datos.tyc_aceptado:
+        raise HTTPException(
+            status_code=422,
+            detail="Debes aceptar los Términos y Condiciones para continuar"
+        )
+
     if len(datos.password) < 8:
         raise HTTPException(
             status_code=422,
@@ -339,6 +349,9 @@ async def registro_desarrollador(
         verificado=False,
         es_admin=False,
         emisor_id=emisor.id,
+        tyc_aceptado=True,
+        tyc_fecha=datetime.now(timezone.utc),
+        tyc_version=TYC_VERSION,
     )
     db.add(usuario)
     await db.flush()
