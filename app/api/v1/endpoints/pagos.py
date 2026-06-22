@@ -448,3 +448,127 @@ async def dashboard(
             "recientes":      recientes,
         },
     }
+
+
+# ══════════════════════════════════════════════════════════════
+# JOB DIARIO — Notificaciones de renovación
+# Se llama desde un endpoint protegido que Railway ejecuta
+# vía cron job (o puede llamarse desde un scheduler externo).
+#
+# Lógica:
+#   - 30 días antes del vencimiento → email de aviso
+#   - 7 días antes → email urgente
+#   - El día del vencimiento → email final
+# ══════════════════════════════════════════════════════════════
+
+@router.post("/notificar-renovaciones")
+async def notificar_renovaciones(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Job diario que envía emails de renovación a cuentas por vencer.
+    Protegido por header X-Cron-Secret para que solo Railway lo llame.
+    """
+    # Validar secret para que no lo llame cualquiera
+    secret = request.headers.get("X-Cron-Secret", "")
+    if secret != settings.MP_WEBHOOK_SECRET:
+        raise HTTPException(403, "No autorizado")
+
+    ahora = datetime.now(timezone.utc)
+    notificados = []
+
+    # Buscar emisores que vencen en 30, 7 o 1 día
+    for dias_aviso in [30, 7, 1]:
+        fecha_objetivo = ahora + timedelta(days=dias_aviso)
+        fecha_desde    = fecha_objetivo.replace(hour=0, minute=0, second=0, microsecond=0)
+        fecha_hasta    = fecha_objetivo.replace(hour=23, minute=59, second=59)
+
+        res = await db.execute(
+            select(Emisor).where(
+                Emisor.estado_pago == "pagado",
+                Emisor.suscripcion_fin >= fecha_desde,
+                Emisor.suscripcion_fin <= fecha_hasta,
+                Emisor.correo.isnot(None),
+            )
+        )
+        emisores = res.scalars().all()
+
+        for emisor in emisores:
+            try:
+                from app.services.email_service import enviar_email
+
+                if dias_aviso == 30:
+                    asunto = "Tu suscripción YeparDTEcore vence en 30 días"
+                    urgencia = "En 30 días"
+                    color = "#d97706"
+                elif dias_aviso == 7:
+                    asunto = "⚠️ Tu suscripción YeparDTEcore vence en 7 días"
+                    urgencia = "En solo 7 días"
+                    color = "#dc2626"
+                else:
+                    asunto = "🚨 Tu suscripción YeparDTEcore vence HOY"
+                    urgencia = "HOY"
+                    color = "#dc2626"
+
+                fin_fmt = emisor.suscripcion_fin.strftime("%d/%m/%Y") if emisor.suscripcion_fin else "—"
+
+                html = f"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"></head>
+<body style="font-family:'DM Sans',Arial,sans-serif;background:#f8f9fa;margin:0;padding:40px 20px;">
+  <div style="max-width:480px;margin:0 auto;background:#fff;border-radius:16px;
+              padding:36px;border:1px solid #e0e0e0;">
+    <img src="https://yepardtecore.cl/static/logo-horizontal.svg"
+         alt="YeparDTEcore" style="height:36px;margin-bottom:28px;">
+    <h2 style="color:{color};font-size:1.3rem;margin-bottom:10px;">
+      Tu suscripción vence {urgencia}
+    </h2>
+    <p style="color:#4a4a4a;line-height:1.7;margin-bottom:16px;">
+      Hola <strong>{emisor.nombre_app}</strong>, tu suscripción a YeparDTEcore
+      vence el <strong>{fin_fmt}</strong>. Para continuar usando la API sin
+      interrupciones, renueva ahora.
+    </p>
+    <div style="background:#f0f4ff;border-radius:10px;padding:16px;margin-bottom:20px;">
+      <strong>Plan Anual — $100.000 CLP</strong><br>
+      <span style="font-size:.85rem;color:#64748b;">
+        DTEs ilimitados · Misma API key · Sin cambios en tu software
+      </span>
+    </div>
+    <a href="https://yepardtecore.cl/dashboard"
+       style="display:block;text-align:center;background:{color};color:#fff;
+              padding:13px;border-radius:10px;text-decoration:none;
+              font-weight:700;font-size:.95rem;margin-bottom:16px;">
+      Renovar suscripción →
+    </a>
+    <p style="font-size:.78rem;color:#94a3b8;line-height:1.5;">
+      Si ya renovaste, ignora este mensaje.<br>
+      Soporte: soporte@yeparsolutions.com
+    </p>
+    <hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
+    <p style="font-size:.72rem;color:#999;">
+      YeparDTEcore · Yepar Solutions SpA · Santiago, Chile
+    </p>
+  </div>
+</body></html>"""
+
+                enviado = await enviar_email(emisor.correo, asunto, html)
+                if enviado:
+                    notificados.append({
+                        "emisor_id": emisor.id,
+                        "nombre_app": emisor.nombre_app,
+                        "dias": dias_aviso,
+                        "vence": fin_fmt,
+                    })
+                    logger.info(
+                        f"[RENOVACION] Email enviado a {emisor.correo} "
+                        f"({dias_aviso} días para vencer)"
+                    )
+            except Exception as e:
+                logger.error(f"[RENOVACION] Error notificando {emisor.correo}: {e}")
+
+    return {
+        "ok":          True,
+        "notificados": len(notificados),
+        "detalle":     notificados,
+        "ejecutado":   ahora.isoformat(),
+    }
