@@ -529,7 +529,7 @@ async function doLogin() {
             ir('s-verify');
         } else {
             // Ir a docs directamente
-            window.location.href = '/api/docs';
+            window.location.href = `/dashboard?emisor=${data.usuario.emisor_id || ''}`;
         }
     } catch (e) {
         hideLoader();
@@ -549,7 +549,7 @@ async function doVerify() {
     try {
         await api('/v1/auth/verificar-email', { email: state.email, codigo });
         hideLoader();
-        window.location.href = '/api/docs';
+        window.location.href = `/dashboard?emisor=${state.emisorId || ''}`;
     } catch (e) {
         hideLoader();
         showError('verify-error', e.message);
