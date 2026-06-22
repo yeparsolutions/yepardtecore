@@ -315,7 +315,6 @@
         <span id="nav-app" style="font-size:.82rem;color:var(--muted);"></span>
     </div>
     <div class="topbar-right">
-        <span class="badge-env" id="nav-env"></span>
         <button class="btn-icon" onclick="toggleTheme()" title="Cambiar tema" id="theme-btn">🌙</button>
         <button class="btn-logout" onclick="logout()">Cerrar sesión</button>
     </div>
@@ -470,6 +469,16 @@ curl -X POST https://yepardtecore.cl/api/firmar-y-enviar \
         🔑 <strong>Autenticación:</strong> todas las llamadas requieren el header
         <code>X-API-Key: yek_tu_key</code>. El endpoint base es
         <code>https://yepardtecore.cl/api</code>
+    </div>
+
+    <div class="alert-info" style="background:#f0fdf4;border-color:#bbf7d0;">
+        🌍 <strong>Control de ambiente:</strong> tú decides en cada llamada si vas a
+        certificación o producción usando el campo <code>ambiente</code>.<br>
+        <code>"ambiente": "certificacion"</code> → SII de pruebas (maullin.sii.cl)<br>
+        <code>"ambiente": "produccion"</code> → SII real (palena.sii.cl)<br>
+        Si no mandas el campo, Core usa <strong>certificación por defecto</strong>.
+        Tu software es quien controla esto — igual que en YeparDTE donde tú
+        activas o desactivas el modo pruebas.
     </div>
 
     <!-- INICIO RÁPIDO -->
@@ -1284,6 +1293,8 @@ function render(data) {
     const envEl = document.getElementById('nav-env');
     envEl.textContent = cuenta.ambiente === 'produccion' ? 'Producción' : 'Certificación';
     envEl.className = 'badge-env ' + (cuenta.ambiente === 'produccion' ? 'badge-prod' : 'badge-cert');
+
+
 
     // Overview subtitle
     document.getElementById('sub-overview').textContent =
