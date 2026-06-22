@@ -183,8 +183,14 @@ class SIISender:
             return {"track_id": None, "estado": "ERROR",
                     "mensaje": f"[etapa TOKEN] {e}"}
 
-        # Siempre DTEUpload (maullin/palena) para todos los tipos
-        url_envio = self.url_upload
+        # Boletas en producción: usar proxy Chile que reenvía a api.sii.cl
+        # Facturas y certificación: DTEUpload directo (maullin/palena)
+        import os as _os
+        _proxy = _os.environ.get("SII_BOLETA_PROXY_URL", "").rstrip("/")
+        if es_boleta and self.ambiente == "produccion" and _proxy:
+            url_envio = _proxy + "/boleta/envio"
+        else:
+            url_envio = self.url_upload
         rut_limpio  = self.limpiar_rut(rut_emisor)
         env_limpio  = self.limpiar_rut(rut_enviador)
         timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -249,7 +255,11 @@ class SIISender:
                     "raw":      cuerpo_plano[:800],
                 }
 
-            # DTEUpload siempre devuelve XML
+            # Proxy de boletas puede devolver JSON; DTEUpload devuelve XML
+            import os as _os
+            _proxy = _os.environ.get("SII_BOLETA_PROXY_URL", "")
+            if es_boleta and _proxy and _proxy in url_envio:
+                return self._parsear_respuesta_boleta_rest(response.text)
             return self._parsear_respuesta_upload(response.text)
 
         except httpx.TimeoutException:
