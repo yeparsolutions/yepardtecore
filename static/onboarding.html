@@ -350,6 +350,135 @@
         <button class="btn btn-ghost" onclick="irReg(2)">← Volver</button>
     </div>
 
+    <!-- ONBOARDING: TÉRMINOS Y CONDICIONES -->
+    <div class="screen" id="s-tyc">
+        <div class="steps">
+            <div class="pill done"></div><div class="pill done"></div>
+            <div class="pill done"></div><div class="pill active"></div>
+        </div>
+        <p class="step-label">Paso 3.5 de 4</p>
+        <h2>Términos y condiciones</h2>
+        <p class="desc">Lee y acepta antes de continuar.</p>
+
+        <div style="height:320px;overflow-y:auto;border:1.5px solid var(--border);
+                    border-radius:12px;padding:18px;font-size:.78rem;
+                    line-height:1.8;color:var(--grey);margin-bottom:16px;
+                    background:var(--bg);" id="tyc-scroll">
+
+            <strong style="font-size:.88rem;color:var(--text);">
+                TÉRMINOS Y CONDICIONES DE USO — YeparDTEcore API<br>
+                Yepar Solutions SpA · Versión 1.0 · Vigente desde junio 2026
+            </strong>
+
+            <br><br><strong>1. PARTES Y OBJETO</strong><br>
+            El presente contrato regula el acceso y uso de la API YeparDTEcore
+            (en adelante "el Servicio"), desarrollada y operada por
+            <strong>Yepar Solutions SpA</strong>, RUT 78.377.021-0, con domicilio
+            en Santiago, Chile (en adelante "Yepar"). El usuario que acepta estos
+            términos (en adelante "el Desarrollador") accede al Servicio para
+            integrar capacidades de facturación electrónica en su propio software.
+
+            <br><br><strong>2. RESPONSABILIDAD POR LOS DOCUMENTOS EMITIDOS</strong><br>
+            <strong style="color:var(--error);">El Desarrollador es el único y exclusivo
+            responsable de la exactitud, veracidad y legalidad de la información
+            contenida en los Documentos Tributarios Electrónicos (DTE) emitidos
+            a través del Servicio.</strong> Yepar actúa como un motor técnico de
+            firma y envío — no valida, verifica ni es responsable por el contenido
+            de los documentos, incluyendo pero no limitado a: montos, RUTs de
+            receptores, descripciones de productos o servicios, fechas, ni ningún
+            otro dato tributario.
+
+            <br><br>El Desarrollador comprende que la emisión de DTEs con
+            información falsa, incorrecta o maliciosa puede constituir un delito
+            tributario conforme a la legislación chilena, siendo de su exclusiva
+            responsabilidad las consecuencias legales, tributarias y civiles
+            que de ello se deriven.
+
+            <br><br><strong>3. RESPONSABILIDAD POR CERTIFICADOS Y CAF</strong><br>
+            Los certificados digitales (.p12/.pfx) y los Códigos de Autorización
+            de Folios (CAF) proporcionados a través de la API son de propiedad
+            y responsabilidad exclusiva del emisor final. Yepar no almacena,
+            retiene ni copia estos datos en ningún momento — son transmitidos
+            de forma stateless en cada llamada. El Desarrollador es responsable
+            de su custodia, confidencialidad y correcto uso.
+
+            <br><br><strong>4. DISPONIBILIDAD DEL SERVICIO</strong><br>
+            Yepar hará sus mejores esfuerzos para mantener el Servicio disponible
+            de forma continua, pero no garantiza una disponibilidad del 100%.
+            El Servicio puede interrumpirse por mantenimiento, fallas técnicas,
+            problemas de conectividad con el SII u otras causas fuera del control
+            de Yepar. Yepar no será responsable por perjuicios derivados de
+            interrupciones del Servicio.
+
+            <br><br><strong>5. USO PERMITIDO Y PROHIBIDO</strong><br>
+            El Desarrollador se compromete a usar el Servicio exclusivamente para
+            la emisión de DTE conforme a la normativa del SII chileno. Queda
+            prohibido: (a) compartir la API key con terceros no autorizados;
+            (b) usar el Servicio para emitir documentos con información falsa;
+            (c) intentar vulnerar la seguridad del Servicio; (d) realizar un
+            número de llamadas que exceda un uso razonable o constituya un
+            ataque de denegación de servicio.
+
+            <br><br><strong>6. API KEY Y LICENCIA</strong><br>
+            La API key otorgada es personal, intransferible y válida para un
+            único software registrado. La licencia es anual y debe renovarse
+            para continuar usando el Servicio. Yepar se reserva el derecho de
+            revocar la API key en caso de uso indebido, sin derecho a reembolso.
+
+            <br><br><strong>7. PROPIEDAD INTELECTUAL</strong><br>
+            El Servicio, incluyendo su código fuente, algoritmos de firma,
+            documentación y marca, son propiedad exclusiva de Yepar Solutions SpA.
+            El acceso al Servicio no otorga al Desarrollador ningún derecho de
+            propiedad intelectual sobre los mismos.
+
+            <br><br><strong>8. DATOS PERSONALES</strong><br>
+            Yepar recopila el nombre, email y datos de la aplicación del
+            Desarrollador con el único fin de gestionar la cuenta y enviar
+            comunicaciones relacionadas con el Servicio. Estos datos no serán
+            cedidos a terceros salvo obligación legal. El Desarrollador puede
+            solicitar la eliminación de sus datos escribiendo a
+            soporte@yeparsolutions.com.
+
+            <br><br><strong>9. LIMITACIÓN DE RESPONSABILIDAD</strong><br>
+            En ningún caso Yepar será responsable por daños indirectos, lucro
+            cesante, pérdida de datos, multas del SII u otros perjuicios
+            derivados del uso o imposibilidad de uso del Servicio, incluso
+            habiendo sido advertida de la posibilidad de dichos daños.
+            La responsabilidad máxima de Yepar se limita al monto pagado
+            por el Desarrollador en la suscripción vigente.
+
+            <br><br><strong>10. MODIFICACIONES</strong><br>
+            Yepar se reserva el derecho de modificar estos Términos con
+            30 días de aviso previo al Desarrollador. El uso continuado del
+            Servicio tras la notificación constituye aceptación de los nuevos
+            términos.
+
+            <br><br><strong>11. LEY APLICABLE Y JURISDICCIÓN</strong><br>
+            El presente contrato se rige por las leyes de la República de Chile.
+            Cualquier disputa será sometida a la jurisdicción de los tribunales
+            ordinarios de la ciudad de Santiago, Chile.
+
+            <br><br><strong>12. CONTACTO</strong><br>
+            Para consultas sobre estos Términos: soporte@yeparsolutions.com<br>
+            Yepar Solutions SpA · RUT 78.377.021-0 · Santiago, Chile
+            <br><br>
+        </div>
+
+        <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:18px;">
+            <input type="checkbox" id="chk-tyc" style="margin-top:3px;width:17px;height:17px;cursor:pointer;accent-color:var(--blue);">
+            <label for="chk-tyc" style="font-size:.84rem;color:var(--grey);line-height:1.5;cursor:pointer;">
+                He leído y acepto los <strong>Términos y Condiciones</strong> de uso de
+                YeparDTEcore API. Entiendo que soy el único responsable de la veracidad
+                de los DTE que emita a través del Servicio.
+            </label>
+        </div>
+
+        <button class="btn btn-primary" id="btn-aceptar-tyc" onclick="aceptarTyc()" disabled>
+            Acepto los términos y condiciones →
+        </button>
+        <button class="btn btn-ghost" onclick="irReg(3)">← Volver</button>
+    </div>
+
     <!-- ONBOARDING: PASO 4 — Confirmar y activar -->
     <div class="screen" id="s-reg4">
         <div class="steps" id="steps4">
@@ -635,6 +764,9 @@ function irReg(paso) {
         const url    = v('app_url').trim();
         if (!nombre) return alert('Ingresa el nombre de tu software.');
         if (!url || !url.startsWith('http')) return alert('Ingresa una URL válida (debe comenzar con https://).');
+        // Ir a T&C antes del paso 4
+        ir('s-tyc');
+        return;
     }
     if (paso === 4) mostrarResumen();
     ir('s-reg' + paso);
@@ -664,6 +796,7 @@ async function doRegistrar() {
             password:   v('u_pass'),
             nombre_app: v('app_nombre').trim(),
             url_app:    v('app_url').trim(),
+            tyc_aceptado: true,
         });
 
         state.apiKey    = data.api_key;
@@ -727,6 +860,20 @@ function copiarKey() {
         tip.textContent = '¡copiado!';
         setTimeout(() => tip.textContent = 'clic para copiar', 2000);
     });
+}
+
+// ── Términos y condiciones ────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    const chk  = document.getElementById('chk-tyc');
+    const btn  = document.getElementById('btn-aceptar-tyc');
+    if (chk && btn) {
+        chk.addEventListener('change', () => btn.disabled = !chk.checked);
+    }
+});
+
+function aceptarTyc() {
+    if (!document.getElementById('chk-tyc').checked) return;
+    irReg(4);
 }
 
 // ── Helpers ───────────────────────────────────────────────────
