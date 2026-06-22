@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YeparDTEcore — Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --blue:    #0057ff;
+            --blue-dk: #0046cc;
+            --blue-bg: #f0f4ff;
+            --grey:    #4a4a4a;
+            --bg:      #f4f6fb;
+            --surface: #ffffff;
+            --border:  #e2e8f0;
+            --text:    #1a1a1a;
+            --muted:   #64748b;
+            --success: #16a34a;
+            --warning: #d97706;
+            --error:   #dc2626;
+            --green-bg: #f0fdf4;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background: var(--bg); color: var(--text);
+            min-height: 100vh;
+        }
+
+        /* ── Topbar ── */
+        .topbar {
+            background: #fff; border-bottom: 1px solid var(--border);
+            padding: 0 32px; height: 60px;
+            display: flex; align-items: center; justify-content: space-between;
+            position: sticky; top: 0; z-index: 100;
+        }
+        .topbar-brand { display: flex; align-items: center; gap: 12px; }
+        .topbar-brand img { height: 32px; }
+        .topbar-brand span { font-size: .8rem; color: var(--muted); }
+        .topbar-actions { display: flex; align-items: center; gap: 16px; }
+        .badge-env {
+            padding: 3px 10px; border-radius: 20px; font-size: .72rem;
+            font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+        }
+        .badge-prod { background: #dcfce7; color: #16a34a; }
+        .badge-cert { background: #fef9c3; color: #a16207; }
+        .btn-logout {
+            font-size: .82rem; color: var(--muted); cursor: pointer;
+            background: none; border: none; font-family: inherit;
+            padding: 6px 12px; border-radius: 8px; transition: background .2s;
+        }
+        .btn-logout:hover { background: var(--bg); color: var(--text); }
+
+        /* ── Layout ── */
+        .container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+        .welcome {
+            margin-bottom: 28px;
+        }
+        .welcome h1 {
+            font-family: 'Instrument Serif', serif;
+            font-size: 1.9rem; font-weight: 400;
+        }
+        .welcome p { color: var(--muted); font-size: .9rem; margin-top: 4px; }
+
+        /* ── Grid de cards ── */
+        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+        @media (max-width: 768px) {
+            .grid-3, .grid-2 { grid-template-columns: 1fr; }
+        }
+
+        /* ── Card base ── */
+        .card {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 16px; padding: 24px;
+        }
+        .card-title {
+            font-size: .72rem; font-weight: 600; letter-spacing: .07em;
+            text-transform: uppercase; color: var(--muted); margin-bottom: 12px;
+        }
+
+        /* ── Stat cards ── */
+        .stat-value {
+            font-size: 2.2rem; font-weight: 700; color: var(--text);
+            line-height: 1; margin-bottom: 4px;
+        }
+        .stat-label { font-size: .82rem; color: var(--muted); }
+        .stat-icon {
+            font-size: 1.6rem; margin-bottom: 10px;
+        }
+
+        /* ── API Key card ── */
+        .apikey-card { grid-column: 1 / -1; }
+        .apikey-row {
+            display: flex; align-items: center; gap: 12px;
+            background: #0a0a0a; border-radius: 10px;
+            padding: 14px 16px; margin-top: 8px;
+        }
+        .apikey-text {
+            font-family: 'Courier New', monospace; font-size: .82rem;
+            color: #4cff91; flex: 1; word-break: break-all;
+            filter: blur(5px); transition: filter .3s; cursor: pointer;
+        }
+        .apikey-text.visible { filter: none; }
+        .apikey-actions { display: flex; gap: 8px; flex-shrink: 0; }
+        .btn-sm {
+            padding: 6px 12px; border-radius: 8px; border: none;
+            font-size: .75rem; font-weight: 600; cursor: pointer;
+            font-family: inherit; transition: all .2s;
+        }
+        .btn-show { background: #1a1a1a; color: #4cff91; }
+        .btn-copy { background: var(--blue); color: white; }
+        .btn-copy:hover { background: var(--blue-dk); }
+
+        /* ── Suscripción ── */
+        .sub-bar-wrap { margin-top: 14px; }
+        .sub-bar-label {
+            display: flex; justify-content: space-between;
+            font-size: .8rem; color: var(--muted); margin-bottom: 6px;
+        }
+        .sub-bar-track {
+            height: 8px; background: #e2e8f0; border-radius: 10px; overflow: hidden;
+        }
+        .sub-bar-fill {
+            height: 100%; border-radius: 10px; transition: width .5s;
+            background: linear-gradient(90deg, var(--blue), #4f8eff);
+        }
+        .sub-bar-fill.danger { background: linear-gradient(90deg, #ef4444, #f87171); }
+        .sub-dates {
+            display: flex; justify-content: space-between;
+            font-size: .75rem; color: var(--muted); margin-top: 6px;
+        }
+        .dias-badge {
+            display: inline-block; padding: 3px 10px; border-radius: 20px;
+            font-size: .75rem; font-weight: 600; margin-top: 10px;
+        }
+        .dias-ok   { background: var(--green-bg); color: var(--success); }
+        .dias-warn { background: #fef9c3; color: var(--warning); }
+        .dias-pend { background: #fef2f2; color: var(--error); }
+
+        /* ── Por tipo ── */
+        .tipo-row {
+            display: flex; align-items: center; gap: 10px;
+            padding: 8px 0; border-bottom: 1px solid #f1f5f9;
+        }
+        .tipo-row:last-child { border-bottom: none; }
+        .tipo-name { flex: 1; font-size: .88rem; }
+        .tipo-count {
+            font-weight: 700; font-size: .95rem; color: var(--blue);
+        }
+        .tipo-bar-wrap { width: 80px; }
+        .tipo-bar {
+            height: 6px; background: #e2e8f0; border-radius: 10px; overflow: hidden;
+        }
+        .tipo-bar-fill {
+            height: 100%; background: var(--blue); border-radius: 10px;
+        }
+
+        /* ── Recientes ── */
+        .recientes-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+        .recientes-table th {
+            text-align: left; padding: 8px 10px;
+            font-size: .72rem; font-weight: 600; letter-spacing: .05em;
+            text-transform: uppercase; color: var(--muted);
+            border-bottom: 1px solid var(--border);
+        }
+        .recientes-table td {
+            padding: 10px 10px; border-bottom: 1px solid #f1f5f9;
+            color: var(--text);
+        }
+        .recientes-table tr:last-child td { border-bottom: none; }
+        .estado-badge {
+            padding: 2px 8px; border-radius: 20px; font-size: .7rem; font-weight: 600;
+        }
+        .estado-RECIBIDO  { background: #dcfce7; color: #16a34a; }
+        .estado-ENVIADO   { background: #dbeafe; color: #1d4ed8; }
+        .estado-FIRMADO   { background: #f3f4f6; color: #374151; }
+        .estado-ERROR_ENVIO { background: #fef2f2; color: #dc2626; }
+
+        /* ── Links útiles ── */
+        .links-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .link-card {
+            display: flex; align-items: center; gap: 12px;
+            padding: 14px 16px; border-radius: 12px;
+            border: 1.5px solid var(--border); text-decoration: none;
+            color: var(--text); transition: all .2s;
+        }
+        .link-card:hover {
+            border-color: var(--blue); background: var(--blue-bg);
+            color: var(--blue);
+        }
+        .link-icon { font-size: 1.4rem; flex-shrink: 0; }
+        .link-info strong { display: block; font-size: .88rem; font-weight: 600; }
+        .link-info span { font-size: .75rem; color: var(--muted); }
+
+        /* ── URL app ── */
+        .url-chip {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: var(--blue-bg); color: var(--blue);
+            padding: 5px 12px; border-radius: 20px;
+            font-size: .8rem; font-weight: 500; margin-top: 8px;
+            word-break: break-all;
+        }
+
+        /* ── Loader ── */
+        #loader {
+            position: fixed; inset: 0; background: var(--bg);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center; gap: 16px;
+            z-index: 200;
+        }
+        .spinner {
+            width: 40px; height: 40px; border: 4px solid #e2e8f0;
+            border-top-color: var(--blue); border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #loader p { color: var(--muted); font-size: .9rem; }
+
+        /* ── No pagado ── */
+        .unpaid-banner {
+            background: #fef2f2; border: 1px solid #fecaca;
+            border-radius: 12px; padding: 16px 20px; margin-bottom: 24px;
+            display: flex; align-items: center; gap: 12px;
+        }
+        .unpaid-banner p { font-size: .88rem; color: #991b1b; }
+
+        .empty-state {
+            text-align: center; padding: 32px; color: var(--muted);
+            font-size: .88rem;
+        }
+    </style>
+</head>
+<body>
+
+<div id="loader">
+    <div class="spinner"></div>
+    <p>Cargando tu panel...</p>
+</div>
+
+<div id="app" style="display:none;">
+
+    <nav class="topbar">
+        <div class="topbar-brand">
+            <img src="/static/logo-horizontal.svg" alt="YeparDTEcore">
+            <span id="nav-app-name"></span>
+        </div>
+        <div class="topbar-actions">
+            <span class="badge-env" id="nav-env-badge"></span>
+            <button class="btn-logout" onclick="irLogin()">Cerrar sesión</button>
+        </div>
+    </nav>
+
+    <div class="container">
+
+        <div class="welcome">
+            <h1>Panel de desarrollador</h1>
+            <p id="welcome-sub">Gestiona tu integración con YeparDTEcore</p>
+        </div>
+
+        <!-- Banner si no está pagado -->
+        <div class="unpaid-banner" id="unpaid-banner" style="display:none;">
+            <span style="font-size:1.4rem;">⚠️</span>
+            <p>Tu suscripción está <strong>pendiente de pago</strong>. La API key no estará activa hasta confirmar el pago. <a href="/onboarding" style="color:#991b1b;font-weight:600;">Ir a pagar →</a></p>
+        </div>
+
+        <!-- Fila 1: Stats -->
+        <div class="grid-3">
+            <div class="card">
+                <div class="stat-icon">📄</div>
+                <div class="card-title">Total DTEs</div>
+                <div class="stat-value" id="stat-total">—</div>
+                <div class="stat-label">documentos emitidos</div>
+            </div>
+            <div class="card">
+                <div class="stat-icon">📅</div>
+                <div class="card-title">Este mes</div>
+                <div class="stat-value" id="stat-mes">—</div>
+                <div class="stat-label">documentos en el mes actual</div>
+            </div>
+            <div class="card">
+                <div class="stat-icon">⏳</div>
+                <div class="card-title">Suscripción</div>
+                <div class="stat-value" id="stat-dias">—</div>
+                <div class="stat-label">días restantes</div>
+            </div>
+        </div>
+
+        <!-- Fila 2: API Key (full width) -->
+        <div class="card apikey-card" style="margin-bottom:20px;">
+            <div class="card-title">Tu API Key</div>
+            <p style="font-size:.84rem;color:var(--muted);margin-bottom:4px;">
+                Úsala en el header <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">X-API-Key</code> en cada llamada a la API.
+            </p>
+            <div class="apikey-row">
+                <span class="apikey-text" id="apikey-text"></span>
+                <div class="apikey-actions">
+                    <button class="btn-sm btn-show" onclick="toggleKey()">👁 Ver</button>
+                    <button class="btn-sm btn-copy" onclick="copiarKey()">Copiar</button>
+                </div>
+            </div>
+            <div style="margin-top:12px;">
+                <span class="card-title">Software vinculado</span>
+                <div class="url-chip" id="url-chip">🔗 <span id="url-app-text"></span></div>
+            </div>
+        </div>
+
+        <!-- Fila 3: Suscripción + Por tipo -->
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-title">Vigencia de suscripción</div>
+                <div class="sub-bar-wrap" id="sub-wrap">
+                    <div class="sub-bar-label">
+                        <span id="sub-label-desde">Inicio</span>
+                        <span id="sub-label-hasta">Fin</span>
+                    </div>
+                    <div class="sub-bar-track">
+                        <div class="sub-bar-fill" id="sub-bar" style="width:0%"></div>
+                    </div>
+                </div>
+                <div id="dias-badge-wrap" style="margin-top:10px;"></div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">DTEs por tipo</div>
+                <div id="por-tipo-list">
+                    <div class="empty-state">Sin documentos aún</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Fila 4: Recientes + Links -->
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-title">Últimos documentos</div>
+                <div id="recientes-wrap">
+                    <div class="empty-state">Sin documentos aún</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Recursos útiles</div>
+                <div class="links-grid">
+                    <a href="/api/docs" target="_blank" class="link-card">
+                        <span class="link-icon">📖</span>
+                        <div class="link-info">
+                            <strong>Swagger UI</strong>
+                            <span>Documentación interactiva</span>
+                        </div>
+                    </a>
+                    <a href="/redoc" target="_blank" class="link-card">
+                        <span class="link-icon">📋</span>
+                        <div class="link-info">
+                            <strong>ReDoc</strong>
+                            <span>Documentación completa</span>
+                        </div>
+                    </a>
+                    <a href="mailto:soporte@yeparsolutions.com" class="link-card">
+                        <span class="link-icon">✉️</span>
+                        <div class="link-info">
+                            <strong>Soporte técnico</strong>
+                            <span>soporte@yeparsolutions.com</span>
+                        </div>
+                    </a>
+                    <a href="https://yeparsolutions.com" target="_blank" class="link-card">
+                        <span class="link-icon">🌐</span>
+                        <div class="link-info">
+                            <strong>Yepar Solutions</strong>
+                            <span>yeparsolutions.com</span>
+                        </div>
+                    </a>
+                </div>
+
+                <!-- Endpoint base -->
+                <div style="margin-top:20px;">
+                    <div class="card-title">Endpoint base</div>
+                    <div style="background:#f8fafc;border-radius:8px;padding:10px 12px;
+                                font-family:monospace;font-size:.78rem;color:#334155;
+                                margin-top:6px;word-break:break-all;">
+                        https://yepardtecore.cl/api
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /.container -->
+</div><!-- /#app -->
+
+<script>
+// ── Estado ────────────────────────────────────────────────────
+let emisorId  = null;
+let apiKeyVal = '';
+let keyVisible = false;
+
+// ── Cargar dashboard ──────────────────────────────────────────
+async function cargarDashboard() {
+    // Recuperar emisorId del localStorage o URL
+    const params = new URLSearchParams(window.location.search);
+    emisorId = params.get('emisor') || localStorage.getItem('yepar_emisor_id');
+
+    if (!emisorId) {
+        // Intentar por email
+        const email = localStorage.getItem('yepar_email');
+        if (email) {
+            try {
+                const r = await fetch(`/v1/pagos/buscar-por-email?email=${encodeURIComponent(email)}`);
+                if (r.ok) { const d = await r.json(); emisorId = d.emisor_id; }
+            } catch(e) {}
+        }
+    }
+
+    if (!emisorId) {
+        window.location.href = '/onboarding';
+        return;
+    }
+
+    try {
+        const res = await fetch(`/v1/pagos/dashboard/${emisorId}`);
+        if (res.status === 404) { window.location.href = '/onboarding'; return; }
+        const data = await res.json();
+        renderDashboard(data);
+    } catch(e) {
+        document.getElementById('loader').innerHTML =
+            `<p style="color:#dc2626">Error cargando el panel. <a href="/onboarding">Volver</a></p>`;
+    }
+}
+
+function renderDashboard(data) {
+    const { cuenta, suscripcion, metricas } = data;
+
+    apiKeyVal = cuenta.api_key || '';
+
+    // Topbar
+    document.getElementById('nav-app-name').textContent = cuenta.nombre_app || '';
+    const envBadge = document.getElementById('nav-env-badge');
+    if (cuenta.ambiente === 'produccion') {
+        envBadge.textContent = 'Producción';
+        envBadge.className = 'badge-env badge-prod';
+    } else {
+        envBadge.textContent = 'Certificación';
+        envBadge.className = 'badge-env badge-cert';
+    }
+
+    // Welcome
+    document.getElementById('welcome-sub').textContent =
+        `${cuenta.nombre_app} · ${cuenta.correo}`;
+
+    // Banner no pagado
+    if (cuenta.estado_pago !== 'pagado') {
+        document.getElementById('unpaid-banner').style.display = 'flex';
+    }
+
+    // Stats
+    document.getElementById('stat-total').textContent = metricas.total_dtes.toLocaleString('es-CL');
+    document.getElementById('stat-mes').textContent   = metricas.dtes_este_mes.toLocaleString('es-CL');
+    document.getElementById('stat-dias').textContent  = suscripcion.dias_restantes ?? '—';
+
+    // API Key
+    document.getElementById('apikey-text').textContent = apiKeyVal;
+    document.getElementById('url-app-text').textContent = cuenta.url_app || 'No configurada';
+
+    // Suscripción
+    if (suscripcion.inicio) {
+        document.getElementById('sub-label-desde').textContent = suscripcion.inicio;
+        document.getElementById('sub-label-hasta').textContent = suscripcion.fin;
+        const pct = 100 - (suscripcion.porcentaje_tiempo || 0);
+        const bar = document.getElementById('sub-bar');
+        bar.style.width = pct + '%';
+        if (pct < 20) bar.classList.add('danger');
+
+        const dias = suscripcion.dias_restantes;
+        const wrap = document.getElementById('dias-badge-wrap');
+        let cls = dias > 60 ? 'dias-ok' : dias > 15 ? 'dias-warn' : 'dias-pend';
+        wrap.innerHTML = `<span class="dias-badge ${cls}">${dias} días restantes</span>`;
+    } else {
+        document.getElementById('dias-badge-wrap').innerHTML =
+            `<span class="dias-badge dias-pend">Sin suscripción activa</span>`;
+    }
+
+    // Por tipo
+    const tipos = metricas.por_tipo;
+    const maxVal = Math.max(...Object.values(tipos), 1);
+    const listEl = document.getElementById('por-tipo-list');
+    if (Object.keys(tipos).length > 0) {
+        listEl.innerHTML = Object.entries(tipos).map(([nombre, count]) => `
+            <div class="tipo-row">
+                <span class="tipo-name">${nombre}</span>
+                <div class="tipo-bar-wrap">
+                    <div class="tipo-bar">
+                        <div class="tipo-bar-fill" style="width:${Math.round(count/maxVal*100)}%"></div>
+                    </div>
+                </div>
+                <span class="tipo-count">${count}</span>
+            </div>
+        `).join('');
+    }
+
+    // Recientes
+    const recEl = document.getElementById('recientes-wrap');
+    if (metricas.recientes.length > 0) {
+        recEl.innerHTML = `
+            <table class="recientes-table">
+                <thead>
+                    <tr>
+                        <th>Tipo</th>
+                        <th>Folio</th>
+                        <th>Monto</th>
+                        <th>Estado</th>
+                        <th>Fecha</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${metricas.recientes.map(r => `
+                        <tr>
+                            <td>${r.tipo}</td>
+                            <td>${r.folio}</td>
+                            <td>$${Number(r.monto).toLocaleString('es-CL')}</td>
+                            <td><span class="estado-badge estado-${r.estado}">${r.estado}</span></td>
+                            <td>${r.fecha}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>`;
+    }
+
+    // Mostrar app
+    document.getElementById('loader').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+}
+
+// ── Acciones ──────────────────────────────────────────────────
+function toggleKey() {
+    keyVisible = !keyVisible;
+    const el = document.getElementById('apikey-text');
+    el.classList.toggle('visible', keyVisible);
+    document.querySelector('.btn-show').textContent = keyVisible ? '🙈 Ocultar' : '👁 Ver';
+}
+
+function copiarKey() {
+    navigator.clipboard.writeText(apiKeyVal).then(() => {
+        const btn = document.querySelector('.btn-copy');
+        btn.textContent = '✓ Copiado';
+        setTimeout(() => btn.textContent = 'Copiar', 2000);
+    });
+}
+
+function irLogin() {
+    localStorage.removeItem('yepar_emisor_id');
+    localStorage.removeItem('yepar_email');
+    localStorage.removeItem('yepar_dev_nombre');
+    window.location.href = '/onboarding';
+}
+
+// ── Init ──────────────────────────────────────────────────────
+cargarDashboard();
+</script>
+</body>
+</html>
