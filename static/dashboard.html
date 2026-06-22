@@ -1,407 +1,799 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YeparDTEcore — Dashboard</title>
+    <title>YeparDTEcore — Panel de Desarrollador</title>
     <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
+        /* ══════════════════════════════════════════
+           VARIABLES — CLARO / OSCURO
+        ══════════════════════════════════════════ */
         :root {
-            --blue:    #0057ff;
-            --blue-dk: #0046cc;
-            --blue-bg: #f0f4ff;
-            --grey:    #4a4a4a;
-            --bg:      #f4f6fb;
-            --surface: #ffffff;
-            --border:  #e2e8f0;
-            --text:    #1a1a1a;
-            --muted:   #64748b;
-            --success: #16a34a;
-            --warning: #d97706;
-            --error:   #dc2626;
-            --green-bg: #f0fdf4;
+            --blue:      #0057ff;
+            --blue-dk:   #0046cc;
+            --blue-bg:   #f0f4ff;
+            --bg:        #f4f6fb;
+            --surface:   #ffffff;
+            --surface2:  #f8fafc;
+            --border:    #e2e8f0;
+            --text:      #1a1a1a;
+            --text2:     #374151;
+            --muted:     #64748b;
+            --success:   #16a34a;
+            --warning:   #d97706;
+            --error:     #dc2626;
+            --code-bg:   #f1f5f9;
+            --code-text: #334155;
+            --key-bg:    #0a0a0a;
+            --key-text:  #4cff91;
+            --topbar-bg: #ffffff;
+            --nav-active:#0057ff;
         }
+        [data-theme="dark"] {
+            --bg:        #0f1117;
+            --surface:   #1a1d27;
+            --surface2:  #232636;
+            --border:    #2d3148;
+            --text:      #f1f5f9;
+            --text2:     #cbd5e1;
+            --muted:     #94a3b8;
+            --blue-bg:   #1e2a4a;
+            --code-bg:   #232636;
+            --code-text: #93c5fd;
+            --topbar-bg: #1a1d27;
+        }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: 'DM Sans', sans-serif;
             background: var(--bg); color: var(--text);
-            min-height: 100vh;
+            min-height: 100vh; transition: background .3s, color .3s;
         }
 
         /* ── Topbar ── */
         .topbar {
-            background: #fff; border-bottom: 1px solid var(--border);
-            padding: 0 32px; height: 60px;
+            background: var(--topbar-bg); border-bottom: 1px solid var(--border);
+            padding: 0 28px; height: 58px;
             display: flex; align-items: center; justify-content: space-between;
-            position: sticky; top: 0; z-index: 100;
+            position: sticky; top: 0; z-index: 200;
+            transition: background .3s, border-color .3s;
         }
-        .topbar-brand { display: flex; align-items: center; gap: 12px; }
-        .topbar-brand img { height: 32px; }
-        .topbar-brand span { font-size: .8rem; color: var(--muted); }
-        .topbar-actions { display: flex; align-items: center; gap: 16px; }
+        .topbar-left { display: flex; align-items: center; gap: 14px; }
+        .topbar-left img { height: 30px; }
+        .topbar-right { display: flex; align-items: center; gap: 10px; }
         .badge-env {
-            padding: 3px 10px; border-radius: 20px; font-size: .72rem;
-            font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+            padding: 3px 10px; border-radius: 20px; font-size: .7rem;
+            font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
         }
         .badge-prod { background: #dcfce7; color: #16a34a; }
         .badge-cert { background: #fef9c3; color: #a16207; }
+        .btn-icon {
+            width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border);
+            background: var(--surface2); cursor: pointer; font-size: 1rem;
+            display: flex; align-items: center; justify-content: center;
+            transition: all .2s; color: var(--text);
+        }
+        .btn-icon:hover { background: var(--blue-bg); border-color: var(--blue); }
         .btn-logout {
-            font-size: .82rem; color: var(--muted); cursor: pointer;
-            background: none; border: none; font-family: inherit;
-            padding: 6px 12px; border-radius: 8px; transition: background .2s;
+            font-size: .8rem; color: var(--muted); cursor: pointer;
+            background: none; border: 1px solid var(--border); font-family: inherit;
+            padding: 5px 12px; border-radius: 8px; transition: all .2s; color: var(--text);
         }
-        .btn-logout:hover { background: var(--bg); color: var(--text); }
+        .btn-logout:hover { border-color: var(--blue); color: var(--blue); }
 
-        /* ── Layout ── */
-        .container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
-
-        .welcome {
-            margin-bottom: 28px;
+        /* ── Nav lateral ── */
+        .layout { display: flex; min-height: calc(100vh - 58px); }
+        .sidebar {
+            width: 210px; flex-shrink: 0;
+            background: var(--surface); border-right: 1px solid var(--border);
+            padding: 20px 12px; position: sticky; top: 58px;
+            height: calc(100vh - 58px); overflow-y: auto;
+            transition: background .3s, border-color .3s;
         }
-        .welcome h1 {
+        .nav-section { margin-bottom: 24px; }
+        .nav-label {
+            font-size: .68rem; font-weight: 600; letter-spacing: .08em;
+            text-transform: uppercase; color: var(--muted);
+            padding: 0 10px; margin-bottom: 6px;
+        }
+        .nav-item {
+            display: flex; align-items: center; gap: 9px;
+            padding: 8px 10px; border-radius: 8px; cursor: pointer;
+            font-size: .86rem; color: var(--text2); transition: all .2s;
+            border: none; background: none; width: 100%; text-align: left;
+            font-family: inherit;
+        }
+        .nav-item:hover { background: var(--blue-bg); color: var(--blue); }
+        .nav-item.active { background: var(--blue-bg); color: var(--blue); font-weight: 600; }
+        .nav-item span { font-size: 1rem; }
+
+        /* ── Contenido principal ── */
+        .main { flex: 1; padding: 28px 32px; min-width: 0; }
+
+        /* ── Secciones ── */
+        .section { display: none; }
+        .section.active { display: block; animation: fadeIn .25s ease; }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+
+        .section-title {
             font-family: 'Instrument Serif', serif;
-            font-size: 1.9rem; font-weight: 400;
+            font-size: 1.6rem; font-weight: 400; margin-bottom: 6px;
         }
-        .welcome p { color: var(--muted); font-size: .9rem; margin-top: 4px; }
+        .section-sub { color: var(--muted); font-size: .88rem; margin-bottom: 24px; }
 
-        /* ── Grid de cards ── */
-        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
-        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
-        @media (max-width: 768px) {
-            .grid-3, .grid-2 { grid-template-columns: 1fr; }
-        }
-
-        /* ── Card base ── */
+        /* ── Cards ── */
         .card {
             background: var(--surface); border: 1px solid var(--border);
-            border-radius: 16px; padding: 24px;
+            border-radius: 14px; padding: 22px;
+            transition: background .3s, border-color .3s;
         }
         .card-title {
-            font-size: .72rem; font-weight: 600; letter-spacing: .07em;
+            font-size: .7rem; font-weight: 600; letter-spacing: .07em;
             text-transform: uppercase; color: var(--muted); margin-bottom: 12px;
         }
+        .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin-bottom: 18px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+        @media(max-width:900px){ .grid-3,.grid-2{ grid-template-columns:1fr; } .sidebar{ display:none; } }
 
         /* ── Stat cards ── */
-        .stat-value {
-            font-size: 2.2rem; font-weight: 700; color: var(--text);
-            line-height: 1; margin-bottom: 4px;
-        }
-        .stat-label { font-size: .82rem; color: var(--muted); }
-        .stat-icon {
-            font-size: 1.6rem; margin-bottom: 10px;
-        }
+        .stat-icon { font-size: 1.5rem; margin-bottom: 8px; }
+        .stat-value { font-size: 2rem; font-weight: 700; line-height: 1; margin-bottom: 3px; }
+        .stat-label { font-size: .8rem; color: var(--muted); }
 
-        /* ── API Key card ── */
-        .apikey-card { grid-column: 1 / -1; }
+        /* ── API Key ── */
         .apikey-row {
-            display: flex; align-items: center; gap: 12px;
-            background: #0a0a0a; border-radius: 10px;
-            padding: 14px 16px; margin-top: 8px;
+            display: flex; align-items: center; gap: 10px;
+            background: var(--key-bg); border-radius: 10px; padding: 13px 16px; margin-top: 8px;
         }
         .apikey-text {
-            font-family: 'Courier New', monospace; font-size: .82rem;
-            color: #4cff91; flex: 1; word-break: break-all;
+            font-family: 'Courier New', monospace; font-size: .8rem;
+            color: var(--key-text); flex: 1; word-break: break-all;
             filter: blur(5px); transition: filter .3s; cursor: pointer;
         }
         .apikey-text.visible { filter: none; }
-        .apikey-actions { display: flex; gap: 8px; flex-shrink: 0; }
         .btn-sm {
-            padding: 6px 12px; border-radius: 8px; border: none;
-            font-size: .75rem; font-weight: 600; cursor: pointer;
-            font-family: inherit; transition: all .2s;
+            padding: 5px 11px; border-radius: 7px; border: none;
+            font-size: .73rem; font-weight: 600; cursor: pointer; font-family: inherit;
         }
-        .btn-show { background: #1a1a1a; color: #4cff91; }
-        .btn-copy { background: var(--blue); color: white; }
-        .btn-copy:hover { background: var(--blue-dk); }
+        .btn-show { background: #1a1a1a; color: var(--key-text); }
+        .btn-copy { background: var(--blue); color: #fff; }
 
         /* ── Suscripción ── */
-        .sub-bar-wrap { margin-top: 14px; }
-        .sub-bar-label {
-            display: flex; justify-content: space-between;
-            font-size: .8rem; color: var(--muted); margin-bottom: 6px;
-        }
-        .sub-bar-track {
-            height: 8px; background: #e2e8f0; border-radius: 10px; overflow: hidden;
-        }
-        .sub-bar-fill {
-            height: 100%; border-radius: 10px; transition: width .5s;
-            background: linear-gradient(90deg, var(--blue), #4f8eff);
-        }
-        .sub-bar-fill.danger { background: linear-gradient(90deg, #ef4444, #f87171); }
-        .sub-dates {
-            display: flex; justify-content: space-between;
-            font-size: .75rem; color: var(--muted); margin-top: 6px;
-        }
-        .dias-badge {
-            display: inline-block; padding: 3px 10px; border-radius: 20px;
-            font-size: .75rem; font-weight: 600; margin-top: 10px;
-        }
-        .dias-ok   { background: var(--green-bg); color: var(--success); }
-        .dias-warn { background: #fef9c3; color: var(--warning); }
-        .dias-pend { background: #fef2f2; color: var(--error); }
+        .sub-bar-track { height: 7px; background: var(--border); border-radius: 10px; overflow: hidden; margin: 8px 0; }
+        .sub-bar-fill { height: 100%; background: linear-gradient(90deg,var(--blue),#4f8eff); border-radius: 10px; transition: width .6s; }
+        .sub-bar-fill.danger { background: linear-gradient(90deg,#ef4444,#f87171); }
+        .dias-badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:.73rem; font-weight:600; }
+        .dias-ok   { background:#dcfce7; color:#16a34a; }
+        .dias-warn { background:#fef9c3; color:#a16207; }
+        .dias-bad  { background:#fef2f2; color:#dc2626; }
 
-        /* ── Por tipo ── */
-        .tipo-row {
-            display: flex; align-items: center; gap: 10px;
-            padding: 8px 0; border-bottom: 1px solid #f1f5f9;
+        /* ── Tipo DTE bars ── */
+        .tipo-row { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border); }
+        .tipo-row:last-child { border-bottom:none; }
+        .tipo-name { flex:1; font-size:.86rem; }
+        .tipo-bar-wrap { width:70px; }
+        .tipo-bar { height:5px; background:var(--border); border-radius:10px; overflow:hidden; }
+        .tipo-bar-fill { height:100%; background:var(--blue); border-radius:10px; }
+        .tipo-count { font-weight:700; font-size:.9rem; color:var(--blue); min-width:24px; text-align:right; }
+
+        /* ── Tabla recientes ── */
+        .tbl { width:100%; border-collapse:collapse; font-size:.83rem; }
+        .tbl th { text-align:left; padding:7px 10px; font-size:.68rem; font-weight:600;
+                  letter-spacing:.05em; text-transform:uppercase; color:var(--muted);
+                  border-bottom:1px solid var(--border); }
+        .tbl td { padding:9px 10px; border-bottom:1px solid var(--border); }
+        .tbl tr:last-child td { border-bottom:none; }
+        .estado-badge { padding:2px 7px; border-radius:20px; font-size:.68rem; font-weight:600; }
+        .estado-RECIBIDO { background:#dcfce7; color:#16a34a; }
+        .estado-ENVIADO  { background:#dbeafe; color:#1d4ed8; }
+        .estado-FIRMADO  { background:#f3f4f6; color:#374151; }
+        .estado-ERROR_ENVIO { background:#fef2f2; color:#dc2626; }
+
+        /* ── Documentación ── */
+        .endpoint-card {
+            border: 1px solid var(--border); border-radius: 12px;
+            overflow: hidden; margin-bottom: 14px;
         }
-        .tipo-row:last-child { border-bottom: none; }
-        .tipo-name { flex: 1; font-size: .88rem; }
-        .tipo-count {
-            font-weight: 700; font-size: .95rem; color: var(--blue);
+        .endpoint-header {
+            display: flex; align-items: center; gap: 12px;
+            padding: 14px 18px; cursor: pointer; background: var(--surface);
+            transition: background .2s;
         }
-        .tipo-bar-wrap { width: 80px; }
-        .tipo-bar {
-            height: 6px; background: #e2e8f0; border-radius: 10px; overflow: hidden;
+        .endpoint-header:hover { background: var(--surface2); }
+        .method {
+            padding: 3px 9px; border-radius: 6px; font-size: .72rem;
+            font-weight: 700; font-family: monospace; min-width: 46px; text-align: center;
         }
-        .tipo-bar-fill {
-            height: 100%; background: var(--blue); border-radius: 10px;
+        .method-POST { background: #dcfce7; color: #166534; }
+        .method-GET  { background: #dbeafe; color: #1e40af; }
+        .endpoint-path { font-family: monospace; font-size: .86rem; color: var(--text); flex:1; }
+        .endpoint-desc { font-size: .8rem; color: var(--muted); }
+        .endpoint-body {
+            display: none; padding: 18px; border-top: 1px solid var(--border);
+            background: var(--surface2);
+        }
+        .endpoint-body.open { display: block; }
+        .code-block {
+            background: var(--key-bg); color: #e2e8f0; border-radius: 8px;
+            padding: 14px 16px; font-family: monospace; font-size: .78rem;
+            line-height: 1.6; overflow-x: auto; margin: 10px 0;
+            position: relative;
+        }
+        .code-block .cmt { color: #6b7280; }
+        .code-block .key { color: #93c5fd; }
+        .code-block .val { color: #86efac; }
+        .code-block .str { color: #fde68a; }
+        .copy-code {
+            position: absolute; top: 8px; right: 8px;
+            background: #1a1a1a; color: #9ca3af; border: none;
+            border-radius: 5px; padding: 3px 8px; font-size: .68rem;
+            cursor: pointer; font-family: inherit;
+        }
+        .copy-code:hover { color: #fff; }
+        .param-table { width:100%; border-collapse:collapse; font-size:.82rem; margin:10px 0; }
+        .param-table th { text-align:left; padding:6px 10px; background:var(--surface);
+                          border-bottom:1px solid var(--border); font-size:.72rem;
+                          font-weight:600; color:var(--muted); }
+        .param-table td { padding:7px 10px; border-bottom:1px solid var(--border); }
+        .param-table tr:last-child td { border-bottom:none; }
+        .param-req { color:#dc2626; font-weight:600; font-size:.7rem; }
+        .param-opt { color:#94a3b8; font-size:.7rem; }
+        code { background:var(--code-bg); color:var(--code-text); padding:1px 5px;
+               border-radius:4px; font-size:.82em; font-family:monospace; }
+        .section-h3 { font-size:1rem; font-weight:600; margin:22px 0 10px; color:var(--text); }
+        .alert-info {
+            background:var(--blue-bg); border:1px solid #bfdbfe; border-radius:10px;
+            padding:12px 16px; font-size:.84rem; color:var(--text2); margin:14px 0;
+            line-height: 1.6;
         }
 
-        /* ── Recientes ── */
-        .recientes-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
-        .recientes-table th {
-            text-align: left; padding: 8px 10px;
-            font-size: .72rem; font-weight: 600; letter-spacing: .05em;
-            text-transform: uppercase; color: var(--muted);
-            border-bottom: 1px solid var(--border);
+        /* ── Banner YeparDTE ── */
+        .dte-banner {
+            background: linear-gradient(135deg, #0057ff 0%, #003db8 100%);
+            border-radius: 16px; padding: 32px 36px; color: #fff;
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 24px; margin-bottom: 24px;
         }
-        .recientes-table td {
-            padding: 10px 10px; border-bottom: 1px solid #f1f5f9;
-            color: var(--text);
+        .dte-banner h2 { font-family:'Instrument Serif',serif; font-size:1.7rem; font-weight:400; margin-bottom:8px; }
+        .dte-banner p { font-size:.88rem; opacity:.85; line-height:1.6; max-width:500px; }
+        .btn-dte {
+            background:#fff; color:var(--blue); padding:11px 22px;
+            border-radius:10px; font-weight:700; font-size:.9rem;
+            text-decoration:none; white-space:nowrap; flex-shrink:0;
+            transition:transform .2s;
         }
-        .recientes-table tr:last-child td { border-bottom: none; }
-        .estado-badge {
-            padding: 2px 8px; border-radius: 20px; font-size: .7rem; font-weight: 600;
-        }
-        .estado-RECIBIDO  { background: #dcfce7; color: #16a34a; }
-        .estado-ENVIADO   { background: #dbeafe; color: #1d4ed8; }
-        .estado-FIRMADO   { background: #f3f4f6; color: #374151; }
-        .estado-ERROR_ENVIO { background: #fef2f2; color: #dc2626; }
+        .btn-dte:hover { transform:scale(1.03); }
 
         /* ── Links útiles ── */
-        .links-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .links-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
         .link-card {
-            display: flex; align-items: center; gap: 12px;
-            padding: 14px 16px; border-radius: 12px;
-            border: 1.5px solid var(--border); text-decoration: none;
-            color: var(--text); transition: all .2s;
+            display:flex; align-items:center; gap:10px; padding:13px 14px;
+            border-radius:10px; border:1.5px solid var(--border);
+            text-decoration:none; color:var(--text); transition:all .2s;
         }
-        .link-card:hover {
-            border-color: var(--blue); background: var(--blue-bg);
-            color: var(--blue);
-        }
-        .link-icon { font-size: 1.4rem; flex-shrink: 0; }
-        .link-info strong { display: block; font-size: .88rem; font-weight: 600; }
-        .link-info span { font-size: .75rem; color: var(--muted); }
+        .link-card:hover { border-color:var(--blue); background:var(--blue-bg); color:var(--blue); }
+        .link-icon { font-size:1.3rem; }
+        .link-info strong { display:block; font-size:.85rem; font-weight:600; }
+        .link-info span { font-size:.73rem; color:var(--muted); }
 
-        /* ── URL app ── */
+        /* ── URL chip ── */
         .url-chip {
-            display: inline-flex; align-items: center; gap: 6px;
-            background: var(--blue-bg); color: var(--blue);
-            padding: 5px 12px; border-radius: 20px;
-            font-size: .8rem; font-weight: 500; margin-top: 8px;
-            word-break: break-all;
+            display:inline-flex; align-items:center; gap:6px;
+            background:var(--blue-bg); color:var(--blue);
+            padding:4px 12px; border-radius:20px; font-size:.78rem;
+            font-weight:500; margin-top:8px; word-break:break-all;
         }
 
         /* ── Loader ── */
-        #loader {
-            position: fixed; inset: 0; background: var(--bg);
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: center; gap: 16px;
-            z-index: 200;
-        }
-        .spinner {
-            width: 40px; height: 40px; border: 4px solid #e2e8f0;
-            border-top-color: var(--blue); border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        #loader p { color: var(--muted); font-size: .9rem; }
+        #loader { position:fixed; inset:0; background:var(--bg); display:flex;
+                  flex-direction:column; align-items:center; justify-content:center;
+                  gap:14px; z-index:300; }
+        .spinner { width:38px; height:38px; border:4px solid var(--border);
+                   border-top-color:var(--blue); border-radius:50%;
+                   animation:spin 1s linear infinite; }
+        @keyframes spin { to{ transform:rotate(360deg); } }
 
-        /* ── No pagado ── */
+        .empty { text-align:center; padding:28px; color:var(--muted); font-size:.86rem; }
         .unpaid-banner {
-            background: #fef2f2; border: 1px solid #fecaca;
-            border-radius: 12px; padding: 16px 20px; margin-bottom: 24px;
-            display: flex; align-items: center; gap: 12px;
+            background:#fef2f2; border:1px solid #fecaca; border-radius:10px;
+            padding:13px 18px; margin-bottom:20px; display:flex; align-items:center; gap:10px;
         }
-        .unpaid-banner p { font-size: .88rem; color: #991b1b; }
-
-        .empty-state {
-            text-align: center; padding: 32px; color: var(--muted);
-            font-size: .88rem;
-        }
+        .unpaid-banner p { font-size:.84rem; color:#991b1b; }
     </style>
 </head>
 <body>
 
-<div id="loader">
-    <div class="spinner"></div>
-    <p>Cargando tu panel...</p>
-</div>
+<div id="loader"><div class="spinner"></div><p>Cargando tu panel...</p></div>
 
 <div id="app" style="display:none;">
 
-    <nav class="topbar">
-        <div class="topbar-brand">
-            <img src="/static/logo-horizontal.svg" alt="YeparDTEcore">
-            <span id="nav-app-name"></span>
-        </div>
-        <div class="topbar-actions">
-            <span class="badge-env" id="nav-env-badge"></span>
-            <button class="btn-logout" onclick="irLogin()">Cerrar sesión</button>
-        </div>
-    </nav>
+<!-- ══ TOPBAR ══ -->
+<nav class="topbar">
+    <div class="topbar-left">
+        <img src="/static/logo-horizontal.svg" alt="YeparDTEcore">
+        <span id="nav-app" style="font-size:.82rem;color:var(--muted);"></span>
+    </div>
+    <div class="topbar-right">
+        <span class="badge-env" id="nav-env"></span>
+        <button class="btn-icon" onclick="toggleTheme()" title="Cambiar tema" id="theme-btn">🌙</button>
+        <button class="btn-logout" onclick="logout()">Cerrar sesión</button>
+    </div>
+</nav>
 
-    <div class="container">
+<div class="layout">
 
-        <div class="welcome">
-            <h1>Panel de desarrollador</h1>
-            <p id="welcome-sub">Gestiona tu integración con YeparDTEcore</p>
+<!-- ══ SIDEBAR ══ -->
+<aside class="sidebar">
+    <div class="nav-section">
+        <div class="nav-label">Panel</div>
+        <button class="nav-item active" onclick="irA('overview')">
+            <span>📊</span> Resumen
+        </button>
+        <button class="nav-item" onclick="irA('apikey')">
+            <span>🔑</span> API Key
+        </button>
+        <button class="nav-item" onclick="irA('docs')">
+            <span>📖</span> Documentación
+        </button>
+    </div>
+    <div class="nav-section">
+        <div class="nav-label">Recursos</div>
+        <button class="nav-item" onclick="irA('yepardte')">
+            <span>🧾</span> YeparDTE
+        </button>
+        <a href="/api/docs" target="_blank" class="nav-item">
+            <span>⚡</span> Swagger UI
+        </a>
+        <a href="mailto:soporte@yeparsolutions.com" class="nav-item">
+            <span>✉️</span> Soporte
+        </a>
+    </div>
+</aside>
+
+<!-- ══ MAIN ══ -->
+<main class="main">
+
+<!-- ─── OVERVIEW ─── -->
+<div class="section active" id="sec-overview">
+    <h1 class="section-title">Resumen</h1>
+    <p class="section-sub" id="sub-overview">Bienvenido a tu panel de desarrollador</p>
+
+    <div id="unpaid-wrap"></div>
+
+    <div class="grid-3">
+        <div class="card">
+            <div class="stat-icon">📄</div>
+            <div class="card-title">Total DTEs</div>
+            <div class="stat-value" id="s-total">—</div>
+            <div class="stat-label">documentos emitidos</div>
         </div>
-
-        <!-- Banner si no está pagado -->
-        <div class="unpaid-banner" id="unpaid-banner" style="display:none;">
-            <span style="font-size:1.4rem;">⚠️</span>
-            <p>Tu suscripción está <strong>pendiente de pago</strong>. La API key no estará activa hasta confirmar el pago. <a href="/onboarding" style="color:#991b1b;font-weight:600;">Ir a pagar →</a></p>
+        <div class="card">
+            <div class="stat-icon">📅</div>
+            <div class="card-title">Este mes</div>
+            <div class="stat-value" id="s-mes">—</div>
+            <div class="stat-label">en el mes actual</div>
         </div>
+        <div class="card">
+            <div class="stat-icon">⏳</div>
+            <div class="card-title">Días restantes</div>
+            <div class="stat-value" id="s-dias">—</div>
+            <div class="stat-label" id="s-dias-label">de suscripción</div>
+        </div>
+    </div>
 
-        <!-- Fila 1: Stats -->
-        <div class="grid-3">
-            <div class="card">
-                <div class="stat-icon">📄</div>
-                <div class="card-title">Total DTEs</div>
-                <div class="stat-value" id="stat-total">—</div>
-                <div class="stat-label">documentos emitidos</div>
+    <div class="grid-2">
+        <div class="card">
+            <div class="card-title">Vigencia de suscripción</div>
+            <div style="display:flex;justify-content:space-between;font-size:.78rem;color:var(--muted);margin-top:4px;">
+                <span id="sub-desde">—</span><span id="sub-hasta">—</span>
             </div>
-            <div class="card">
-                <div class="stat-icon">📅</div>
-                <div class="card-title">Este mes</div>
-                <div class="stat-value" id="stat-mes">—</div>
-                <div class="stat-label">documentos en el mes actual</div>
-            </div>
-            <div class="card">
-                <div class="stat-icon">⏳</div>
-                <div class="card-title">Suscripción</div>
-                <div class="stat-value" id="stat-dias">—</div>
-                <div class="stat-label">días restantes</div>
-            </div>
+            <div class="sub-bar-track"><div class="sub-bar-fill" id="sub-bar" style="width:0%"></div></div>
+            <div id="dias-badge"></div>
         </div>
+        <div class="card">
+            <div class="card-title">DTEs por tipo</div>
+            <div id="por-tipo"><div class="empty">Sin documentos aún</div></div>
+        </div>
+    </div>
 
-        <!-- Fila 2: API Key (full width) -->
-        <div class="card apikey-card" style="margin-bottom:20px;">
-            <div class="card-title">Tu API Key</div>
-            <p style="font-size:.84rem;color:var(--muted);margin-bottom:4px;">
-                Úsala en el header <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">X-API-Key</code> en cada llamada a la API.
+    <div class="card">
+        <div class="card-title">Últimos documentos</div>
+        <div id="recientes"><div class="empty">Sin documentos aún</div></div>
+    </div>
+</div>
+
+<!-- ─── API KEY ─── -->
+<div class="section" id="sec-apikey">
+    <h1 class="section-title">Tu API Key</h1>
+    <p class="section-sub">Credencial para autenticar tus llamadas a la API</p>
+
+    <div class="card" style="margin-bottom:18px;">
+        <div class="card-title">API Key de producción</div>
+        <p style="font-size:.84rem;color:var(--muted);margin-bottom:4px;">
+            Inclúyela en el header <code>X-API-Key</code> en cada request.
+            Mantenla secreta — no la expongas en el frontend o código público.
+        </p>
+        <div class="apikey-row">
+            <span class="apikey-text" id="key-text-2"></span>
+            <button class="btn-sm btn-show" onclick="toggleKey()">👁 Ver</button>
+            <button class="btn-sm btn-copy" onclick="copiarKey()">Copiar</button>
+        </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px;">
+        <div class="card-title">Software vinculado</div>
+        <p style="font-size:.84rem;color:var(--muted);margin-bottom:6px;">
+            Tu API key está vinculada a este software. Si cambias de servidor, contacta soporte.
+        </p>
+        <div><strong style="font-size:.95rem;" id="app-name-2"></strong></div>
+        <div class="url-chip">🔗 <span id="url-app-2"></span></div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">Ejemplo de uso</div>
+        <div class="code-block">
+            <button class="copy-code" onclick="copiarCodigo(this)">Copiar</button>
+<span class="cmt"># Ejemplo con curl</span>
+curl -X POST https://yepardtecore.cl/api/firmar-y-enviar \
+  -H <span class="str">"X-API-Key: yek_tu_api_key_aqui"</span> \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d '{<span class="key">"emisor"</span>: {...}, <span class="key">"tipo"</span>: 33, <span class="key">"items"</span>: [...]}'
+        </div>
+    </div>
+</div>
+
+<!-- ─── DOCUMENTACIÓN ─── -->
+<div class="section" id="sec-docs">
+    <h1 class="section-title">Documentación</h1>
+    <p class="section-sub">Manual de integración para desarrolladores</p>
+
+    <div class="alert-info">
+        🔑 <strong>Autenticación:</strong> todas las llamadas requieren el header
+        <code>X-API-Key: yek_tu_key</code>. El endpoint base es
+        <code>https://yepardtecore.cl/api</code>
+    </div>
+
+    <!-- INICIO RÁPIDO -->
+    <h3 class="section-h3">🚀 Inicio rápido</h3>
+    <div class="card" style="margin-bottom:18px;">
+        <p style="font-size:.86rem;color:var(--text2);line-height:1.7;margin-bottom:12px;">
+            Integrar YeparDTEcore tiene 3 pasos: autenticarte, mandar el certificado del emisor y los datos del documento.
+            Core firma, construye el XML y lo envía al SII por ti.
+        </p>
+        <div class="code-block">
+            <button class="copy-code" onclick="copiarCodigo(this)">Copiar</button>
+<span class="cmt">// Node.js / fetch</span>
+const res = await fetch(<span class="str">'https://yepardtecore.cl/api/firmar-y-enviar'</span>, {
+  method: <span class="str">'POST'</span>,
+  headers: {
+    <span class="key">'X-API-Key'</span>: <span class="str">'yek_tu_api_key'</span>,
+    <span class="key">'Content-Type'</span>: <span class="str">'application/json'</span>
+  },
+  body: JSON.stringify({
+    <span class="key">emisor</span>: {
+      <span class="key">rut</span>: <span class="str">'76123456-7'</span>, <span class="key">razon_social</span>: <span class="str">'Mi Empresa SpA'</span>,
+      <span class="key">giro</span>: <span class="str">'Comercio'</span>, <span class="key">direccion</span>: <span class="str">'Av. Principal 123'</span>,
+      <span class="key">comuna</span>: <span class="str">'Santiago'</span>, <span class="key">ciudad</span>: <span class="str">'Santiago'</span>,
+      <span class="key">nro_resolucion</span>: <span class="str">'0'</span>, <span class="key">fch_resolucion</span>: <span class="str">'2000-01-01'</span>
+    },
+    <span class="key">pfx_base64</span>: <span class="str">'base64_del_certificado_p12'</span>,
+    <span class="key">pfx_password</span>: <span class="str">'clave_del_certificado'</span>,
+    <span class="key">caf_base64</span>: <span class="str">'base64_del_CAF_xml'</span>,
+    <span class="key">tipo</span>: <span class="val">33</span>,
+    <span class="key">receptor</span>: { <span class="key">rut</span>: <span class="str">'12345678-9'</span>, <span class="key">nombre</span>: <span class="str">'Cliente SA'</span> },
+    <span class="key">items</span>: [{ <span class="key">nombre</span>: <span class="str">'Servicio'</span>, <span class="key">cantidad</span>: <span class="val">1</span>, <span class="key">precio</span>: <span class="val">10000</span> }],
+    <span class="key">ambiente</span>: <span class="str">'produccion'</span>
+  })
+});
+const data = await res.json();
+console.log(data.track_id); <span class="cmt">// ID de seguimiento SII</span>
+        </div>
+    </div>
+
+    <!-- ENDPOINTS -->
+    <h3 class="section-h3">📡 Endpoints disponibles</h3>
+
+    <!-- firmar-y-enviar -->
+    <div class="endpoint-card">
+        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+            <span class="method method-POST">POST</span>
+            <span class="endpoint-path">/api/firmar-y-enviar</span>
+            <span class="endpoint-desc">Firma y envía un DTE al SII (stateless)</span>
+            <span style="margin-left:auto;color:var(--muted);">▼</span>
+        </div>
+        <div class="endpoint-body">
+            <p style="font-size:.84rem;color:var(--text2);margin-bottom:12px;line-height:1.6;">
+                Endpoint principal. Recibe el certificado (.p12) y CAF del emisor en base64,
+                construye el XML, lo firma y lo envía al SII. No guarda nada en base de datos.
             </p>
-            <div class="apikey-row">
-                <span class="apikey-text" id="apikey-text"></span>
-                <div class="apikey-actions">
-                    <button class="btn-sm btn-show" onclick="toggleKey()">👁 Ver</button>
-                    <button class="btn-sm btn-copy" onclick="copiarKey()">Copiar</button>
-                </div>
-            </div>
-            <div style="margin-top:12px;">
-                <span class="card-title">Software vinculado</span>
-                <div class="url-chip" id="url-chip">🔗 <span id="url-app-text"></span></div>
-            </div>
-        </div>
-
-        <!-- Fila 3: Suscripción + Por tipo -->
-        <div class="grid-2">
-            <div class="card">
-                <div class="card-title">Vigencia de suscripción</div>
-                <div class="sub-bar-wrap" id="sub-wrap">
-                    <div class="sub-bar-label">
-                        <span id="sub-label-desde">Inicio</span>
-                        <span id="sub-label-hasta">Fin</span>
-                    </div>
-                    <div class="sub-bar-track">
-                        <div class="sub-bar-fill" id="sub-bar" style="width:0%"></div>
-                    </div>
-                </div>
-                <div id="dias-badge-wrap" style="margin-top:10px;"></div>
-            </div>
-
-            <div class="card">
-                <div class="card-title">DTEs por tipo</div>
-                <div id="por-tipo-list">
-                    <div class="empty-state">Sin documentos aún</div>
-                </div>
+            <table class="param-table">
+                <thead><tr><th>Campo</th><th>Tipo</th><th>Requerido</th><th>Descripción</th></tr></thead>
+                <tbody>
+                    <tr><td><code>emisor</code></td><td>objeto</td><td class="param-req">✓</td><td>Datos del emisor (RUT, razón social, giro, dirección, resolución)</td></tr>
+                    <tr><td><code>pfx_base64</code></td><td>string</td><td class="param-req">✓</td><td>Certificado .p12 del emisor en base64</td></tr>
+                    <tr><td><code>pfx_password</code></td><td>string</td><td class="param-req">✓</td><td>Contraseña del certificado</td></tr>
+                    <tr><td><code>caf_base64</code></td><td>string</td><td class="param-req">✓</td><td>CAF XML del SII en base64</td></tr>
+                    <tr><td><code>tipo</code></td><td>int</td><td class="param-req">✓</td><td>33=Factura, 34=F.Exenta, 39=Boleta, 52=Guía, 56=ND, 61=NC</td></tr>
+                    <tr><td><code>receptor</code></td><td>objeto</td><td class="param-req">✓</td><td>RUT y nombre del receptor</td></tr>
+                    <tr><td><code>items</code></td><td>array</td><td class="param-req">✓</td><td>Lista de productos/servicios con nombre, cantidad y precio</td></tr>
+                    <tr><td><code>ambiente</code></td><td>string</td><td class="param-opt">opc</td><td>"certificacion" o "produccion" (default: certificacion)</td></tr>
+                    <tr><td><code>folio_actual</code></td><td>int</td><td class="param-opt">opc</td><td>Folio a usar. Si no viene, usa el primero del CAF</td></tr>
+                    <tr><td><code>auto_enviar</code></td><td>bool</td><td class="param-opt">opc</td><td>true = enviar al SII, false = solo firmar (default: true)</td></tr>
+                </tbody>
+            </table>
+            <div class="code-block">
+<span class="cmt">// Respuesta exitosa</span>
+{ <span class="key">"ok"</span>: <span class="val">true</span>, <span class="key">"tipo"</span>: <span class="str">"Factura Electrónica"</span>,
+  <span class="key">"folio"</span>: <span class="val">195</span>, <span class="key">"track_id"</span>: <span class="str">"0252066212"</span>,
+  <span class="key">"estado"</span>: <span class="str">"RECIBIDO"</span>, <span class="key">"xml_firmado"</span>: <span class="str">"..."</span> }
             </div>
         </div>
+    </div>
 
-        <!-- Fila 4: Recientes + Links -->
-        <div class="grid-2">
-            <div class="card">
-                <div class="card-title">Últimos documentos</div>
-                <div id="recientes-wrap">
-                    <div class="empty-state">Sin documentos aún</div>
-                </div>
-            </div>
+    <!-- estado -->
+    <div class="endpoint-card">
+        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+            <span class="method method-GET">GET</span>
+            <span class="endpoint-path">/api/estado/{track_id}</span>
+            <span class="endpoint-desc">Consulta estado de un envío en el SII</span>
+            <span style="margin-left:auto;color:var(--muted);">▼</span>
+        </div>
+        <div class="endpoint-body">
+            <p style="font-size:.84rem;color:var(--text2);margin-bottom:12px;line-height:1.6;">
+                Consulta al SII el estado de un envío usando su track_id.
+                El SII no notifica proactivamente — debes consultar tú.
+            </p>
+            <table class="param-table">
+                <thead><tr><th>Parámetro</th><th>Tipo</th><th>Descripción</th></tr></thead>
+                <tbody>
+                    <tr><td><code>track_id</code></td><td>path</td><td>ID de seguimiento devuelto por /firmar-y-enviar</td></tr>
+                    <tr><td><code>rut_emisor</code></td><td>query</td><td>RUT del emisor del documento</td></tr>
+                    <tr><td><code>tipo</code></td><td>query</td><td>Tipo DTE (39/41 usa ventanilla de boletas)</td></tr>
+                    <tr><td><code>ambiente</code></td><td>query</td><td>"certificacion" o "produccion"</td></tr>
+                </tbody>
+            </table>
+            <div class="code-block">
+<span class="cmt">// Ejemplo</span>
+GET /api/estado/0252066212?rut_emisor=76123456-7&tipo=33&ambiente=produccion
 
-            <div class="card">
-                <div class="card-title">Recursos útiles</div>
-                <div class="links-grid">
-                    <a href="/api/docs" target="_blank" class="link-card">
-                        <span class="link-icon">📖</span>
-                        <div class="link-info">
-                            <strong>Swagger UI</strong>
-                            <span>Documentación interactiva</span>
-                        </div>
-                    </a>
-                    <a href="/redoc" target="_blank" class="link-card">
-                        <span class="link-icon">📋</span>
-                        <div class="link-info">
-                            <strong>ReDoc</strong>
-                            <span>Documentación completa</span>
-                        </div>
-                    </a>
-                    <a href="mailto:soporte@yeparsolutions.com" class="link-card">
-                        <span class="link-icon">✉️</span>
-                        <div class="link-info">
-                            <strong>Soporte técnico</strong>
-                            <span>soporte@yeparsolutions.com</span>
-                        </div>
-                    </a>
-                    <a href="https://yeparsolutions.com" target="_blank" class="link-card">
-                        <span class="link-icon">🌐</span>
-                        <div class="link-info">
-                            <strong>Yepar Solutions</strong>
-                            <span>yeparsolutions.com</span>
-                        </div>
-                    </a>
-                </div>
-
-                <!-- Endpoint base -->
-                <div style="margin-top:20px;">
-                    <div class="card-title">Endpoint base</div>
-                    <div style="background:#f8fafc;border-radius:8px;padding:10px 12px;
-                                font-family:monospace;font-size:.78rem;color:#334155;
-                                margin-top:6px;word-break:break-all;">
-                        https://yepardtecore.cl/api
-                    </div>
-                </div>
+<span class="cmt">// Respuesta</span>
+{ <span class="key">"track_id"</span>: <span class="str">"0252066212"</span>, <span class="key">"estado"</span>: <span class="str">"ACEPTADO"</span>,
+  <span class="key">"codigo_sii"</span>: <span class="val">0</span>, <span class="key">"glosa"</span>: <span class="str">"Envío Recibido OK"</span>,
+  <span class="key">"aceptados"</span>: <span class="val">1</span>, <span class="key">"rechazados"</span>: <span class="val">0</span> }
             </div>
         </div>
+    </div>
 
-    </div><!-- /.container -->
+    <!-- generar-set -->
+    <div class="endpoint-card">
+        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+            <span class="method method-POST">POST</span>
+            <span class="endpoint-path">/api/generar-set</span>
+            <span class="endpoint-desc">Genera un set completo de certificación</span>
+            <span style="margin-left:auto;color:var(--muted);">▼</span>
+        </div>
+        <div class="endpoint-body">
+            <p style="font-size:.84rem;color:var(--text2);margin-bottom:12px;line-height:1.6;">
+                Genera el EnvioBOLETA/EnvioDTE completo con múltiples casos para certificación SII.
+                Devuelve el sobre firmado listo para subir.
+            </p>
+            <div class="alert-info">
+                💡 Usado principalmente durante el proceso de certificación SII.
+                Para emisión productiva usa <code>/api/firmar-y-enviar</code>.
+            </div>
+        </div>
+    </div>
+
+    <!-- folios -->
+    <div class="endpoint-card">
+        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+            <span class="method method-GET">GET</span>
+            <span class="endpoint-path">/api/folios</span>
+            <span class="endpoint-desc">Consulta folios disponibles del emisor</span>
+            <span style="margin-left:auto;color:var(--muted);">▼</span>
+        </div>
+        <div class="endpoint-body">
+            <div class="code-block">
+{ <span class="key">"folios"</span>: [
+    { <span class="key">"tipo"</span>: <span class="val">33</span>, <span class="key">"descripcion"</span>: <span class="str">"Factura"</span>,
+      <span class="key">"desde"</span>: <span class="val">1</span>, <span class="key">"hasta"</span>: <span class="val">100</span>,
+      <span class="key">"actual"</span>: <span class="val">45</span>, <span class="key">"disponibles"</span>: <span class="val">56</span> }
+  ] }
+            </div>
+        </div>
+    </div>
+
+    <!-- generar-libro -->
+    <div class="endpoint-card">
+        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+            <span class="method method-POST">POST</span>
+            <span class="endpoint-path">/api/generar-libro-desde-xml</span>
+            <span class="endpoint-desc">Genera libro de ventas, compras o guías</span>
+            <span style="margin-left:auto;color:var(--muted);">▼</span>
+        </div>
+        <div class="endpoint-body">
+            <p style="font-size:.84rem;color:var(--text2);margin-bottom:12px;line-height:1.6;">
+                Recibe los XML de EnvioDTE aprobados por el SII y genera el libro correspondiente firmado.
+            </p>
+            <table class="param-table">
+                <thead><tr><th>Campo (form-data)</th><th>Descripción</th></tr></thead>
+                <tbody>
+                    <tr><td><code>tipo_libro</code></td><td>ventas | compras | guias</td></tr>
+                    <tr><td><code>natencion</code></td><td>N° atención del libro</td></tr>
+                    <tr><td><code>periodo</code></td><td>AAAA-MM (ej: 2026-06)</td></tr>
+                    <tr><td><code>archivos</code></td><td>XML(s) de EnvioDTE aprobados</td></tr>
+                    <tr><td><code>auto_enviar</code></td><td>true = enviar al SII</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Tipos DTE -->
+    <h3 class="section-h3">📋 Tipos de DTE soportados</h3>
+    <div class="card" style="margin-bottom:18px;">
+        <table class="param-table">
+            <thead><tr><th>Código</th><th>Nombre</th><th>Descripción</th></tr></thead>
+            <tbody>
+                <tr><td><code>33</code></td><td>Factura Electrónica</td><td>Afecta a IVA</td></tr>
+                <tr><td><code>34</code></td><td>Factura No Afecta</td><td>Exenta de IVA</td></tr>
+                <tr><td><code>39</code></td><td>Boleta Electrónica</td><td>Con IVA incluido</td></tr>
+                <tr><td><code>41</code></td><td>Boleta No Afecta</td><td>Exenta de IVA</td></tr>
+                <tr><td><code>52</code></td><td>Guía de Despacho</td><td>Para traslado de mercadería</td></tr>
+                <tr><td><code>56</code></td><td>Nota de Débito</td><td>Aumenta el monto de una factura</td></tr>
+                <tr><td><code>61</code></td><td>Nota de Crédito</td><td>Disminuye o anula una factura</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Errores comunes -->
+    <h3 class="section-h3">⚠️ Errores comunes</h3>
+    <div class="card">
+        <table class="param-table">
+            <thead><tr><th>Código HTTP</th><th>Causa</th><th>Solución</th></tr></thead>
+            <tbody>
+                <tr><td><code>401</code></td><td>API key inválida o faltante</td><td>Verifica el header X-API-Key</td></tr>
+                <tr><td><code>403</code></td><td>API key vinculada a otro dominio</td><td>Contacta soporte para liberar</td></tr>
+                <tr><td><code>400</code></td><td>Folio fuera del rango del CAF</td><td>Verifica el folio_actual contra el CAF</td></tr>
+                <tr><td><code>400</code></td><td>pfx_base64 o caf_base64 inválido</td><td>Verifica que el base64 sea correcto</td></tr>
+                <tr><td><code>500</code></td><td>Error firmando o enviando al SII</td><td>Revisa el certificado y la contraseña</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ─── YEPARDTE ─── -->
+<div class="section" id="sec-yepardte">
+    <h1 class="section-title">¿Necesitas emitir sin programar?</h1>
+    <p class="section-sub">YeparDTEcore es para desarrolladores. Si buscas una solución lista para usar, tenemos YeparDTE.</p>
+
+    <div class="dte-banner">
+        <div>
+            <h2>YeparDTE</h2>
+            <p>
+                Plataforma completa de facturación electrónica para empresas chilenas.
+                Emite boletas, facturas, notas de crédito y guías de despacho desde el navegador,
+                sin necesidad de integrar nada. Ideal para negocios que quieren facturar
+                de inmediato.
+            </p>
+        </div>
+        <a href="https://app.yepardte.cl" target="_blank" class="btn-dte">Ir a YeparDTE →</a>
+    </div>
+
+    <div class="grid-2">
+        <div class="card">
+            <div class="card-title">YeparDTE — Para empresas</div>
+            <ul style="font-size:.86rem;line-height:2;color:var(--text2);list-style:none;">
+                <li>✅ Interfaz web lista para usar</li>
+                <li>✅ Boletas y facturas en segundos</li>
+                <li>✅ Historial y PDF de documentos</li>
+                <li>✅ Gestión de clientes</li>
+                <li>✅ Sin necesidad de programar</li>
+            </ul>
+            <a href="https://app.yepardte.cl" target="_blank"
+               style="display:inline-block;margin-top:14px;padding:9px 18px;
+                      background:var(--blue);color:#fff;border-radius:9px;
+                      text-decoration:none;font-size:.84rem;font-weight:600;">
+                Crear cuenta gratis →
+            </a>
+        </div>
+        <div class="card">
+            <div class="card-title">YeparDTEcore — Para desarrolladores</div>
+            <ul style="font-size:.86rem;line-height:2;color:var(--text2);list-style:none;">
+                <li>✅ API REST para integrar en tu software</li>
+                <li>✅ Stateless — tú manejas los datos</li>
+                <li>✅ Todos los tipos de DTE</li>
+                <li>✅ DTEs ilimitados</li>
+                <li>✅ Certificación SII incluida</li>
+            </ul>
+            <a href="/api/docs" target="_blank"
+               style="display:inline-block;margin-top:14px;padding:9px 18px;
+                      background:var(--surface2);color:var(--blue);border-radius:9px;
+                      text-decoration:none;font-size:.84rem;font-weight:600;
+                      border:1.5px solid var(--blue);">
+                Ver documentación →
+            </a>
+        </div>
+    </div>
+</div>
+
+</main>
+</div><!-- /.layout -->
 </div><!-- /#app -->
 
 <script>
 // ── Estado ────────────────────────────────────────────────────
-let emisorId  = null;
-let apiKeyVal = '';
+let apiKeyVal  = '';
 let keyVisible = false;
+let emisorId   = null;
 
-// ── Cargar dashboard ──────────────────────────────────────────
-async function cargarDashboard() {
-    // Recuperar emisorId del localStorage o URL
+// ── Tema ─────────────────────────────────────────────────────
+function toggleTheme() {
+    const html = document.documentElement;
+    const dark = html.getAttribute('data-theme') === 'dark';
+    html.setAttribute('data-theme', dark ? 'light' : 'dark');
+    document.getElementById('theme-btn').textContent = dark ? '🌙' : '☀️';
+    localStorage.setItem('yepar_theme', dark ? 'light' : 'dark');
+}
+(function() {
+    const t = localStorage.getItem('yepar_theme');
+    if (t === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        setTimeout(() => {
+            const b = document.getElementById('theme-btn');
+            if (b) b.textContent = '☀️';
+        }, 100);
+    }
+})();
+
+// ── Navegación ────────────────────────────────────────────────
+function irA(id) {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('sec-' + id)?.classList.add('active');
+    event?.currentTarget?.classList.add('active');
+}
+
+// ── Endpoints toggle ──────────────────────────────────────────
+function toggleEndpoint(header) {
+    const body = header.nextElementSibling;
+    body.classList.toggle('open');
+    const arr = header.querySelector('span:last-child');
+    arr.textContent = body.classList.contains('open') ? '▲' : '▼';
+}
+
+// ── Copiar código ─────────────────────────────────────────────
+function copiarCodigo(btn) {
+    const block = btn.parentElement;
+    const text = block.innerText.replace('Copiar\n', '').trim();
+    navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = '✓';
+        setTimeout(() => btn.textContent = 'Copiar', 2000);
+    });
+}
+
+// ── API Key ───────────────────────────────────────────────────
+function toggleKey() {
+    keyVisible = !keyVisible;
+    document.querySelectorAll('.apikey-text').forEach(el =>
+        el.classList.toggle('visible', keyVisible));
+    document.querySelectorAll('.btn-show').forEach(b =>
+        b.textContent = keyVisible ? '🙈 Ocultar' : '👁 Ver');
+}
+function copiarKey() {
+    navigator.clipboard.writeText(apiKeyVal).then(() => {
+        document.querySelectorAll('.btn-copy').forEach(b => b.textContent = '✓ Copiado');
+        setTimeout(() => document.querySelectorAll('.btn-copy')
+            .forEach(b => b.textContent = 'Copiar'), 2000);
+    });
+}
+
+// ── Dashboard data ────────────────────────────────────────────
+async function cargar() {
     const params = new URLSearchParams(window.location.search);
     emisorId = params.get('emisor') || localStorage.getItem('yepar_emisor_id');
 
     if (!emisorId) {
-        // Intentar por email
         const email = localStorage.getItem('yepar_email');
         if (email) {
             try {
@@ -411,150 +803,113 @@ async function cargarDashboard() {
         }
     }
 
-    if (!emisorId) {
-        window.location.href = '/onboarding';
-        return;
-    }
+    if (!emisorId) { window.location.href = '/onboarding'; return; }
 
     try {
         const res = await fetch(`/v1/pagos/dashboard/${emisorId}`);
-        if (res.status === 404) { window.location.href = '/onboarding'; return; }
-        const data = await res.json();
-        renderDashboard(data);
+        if (!res.ok) { window.location.href = '/onboarding'; return; }
+        render(await res.json());
     } catch(e) {
         document.getElementById('loader').innerHTML =
-            `<p style="color:#dc2626">Error cargando el panel. <a href="/onboarding">Volver</a></p>`;
+            `<p style="color:#dc2626">Error cargando. <a href="/onboarding">Volver</a></p>`;
     }
 }
 
-function renderDashboard(data) {
+function render(data) {
     const { cuenta, suscripcion, metricas } = data;
-
     apiKeyVal = cuenta.api_key || '';
 
     // Topbar
-    document.getElementById('nav-app-name').textContent = cuenta.nombre_app || '';
-    const envBadge = document.getElementById('nav-env-badge');
-    if (cuenta.ambiente === 'produccion') {
-        envBadge.textContent = 'Producción';
-        envBadge.className = 'badge-env badge-prod';
-    } else {
-        envBadge.textContent = 'Certificación';
-        envBadge.className = 'badge-env badge-cert';
-    }
+    document.getElementById('nav-app').textContent = cuenta.nombre_app || '';
+    const envEl = document.getElementById('nav-env');
+    envEl.textContent = cuenta.ambiente === 'produccion' ? 'Producción' : 'Certificación';
+    envEl.className = 'badge-env ' + (cuenta.ambiente === 'produccion' ? 'badge-prod' : 'badge-cert');
 
-    // Welcome
-    document.getElementById('welcome-sub').textContent =
+    // Overview subtitle
+    document.getElementById('sub-overview').textContent =
         `${cuenta.nombre_app} · ${cuenta.correo}`;
 
     // Banner no pagado
     if (cuenta.estado_pago !== 'pagado') {
-        document.getElementById('unpaid-banner').style.display = 'flex';
+        document.getElementById('unpaid-wrap').innerHTML = `
+            <div class="unpaid-banner">
+                <span style="font-size:1.3rem">⚠️</span>
+                <p>Suscripción <strong>pendiente de pago</strong>.
+                <a href="/onboarding" style="color:#991b1b;font-weight:600;">Ir a pagar →</a></p>
+            </div>`;
     }
 
     // Stats
-    document.getElementById('stat-total').textContent = metricas.total_dtes.toLocaleString('es-CL');
-    document.getElementById('stat-mes').textContent   = metricas.dtes_este_mes.toLocaleString('es-CL');
-    document.getElementById('stat-dias').textContent  = suscripcion.dias_restantes ?? '—';
+    document.getElementById('s-total').textContent = metricas.total_dtes.toLocaleString('es-CL');
+    document.getElementById('s-mes').textContent   = metricas.dtes_este_mes.toLocaleString('es-CL');
+    document.getElementById('s-dias').textContent  = suscripcion.dias_restantes ?? '—';
 
-    // API Key
-    document.getElementById('apikey-text').textContent = apiKeyVal;
-    document.getElementById('url-app-text').textContent = cuenta.url_app || 'No configurada';
-
-    // Suscripción
+    // Suscripción bar
     if (suscripcion.inicio) {
-        document.getElementById('sub-label-desde').textContent = suscripcion.inicio;
-        document.getElementById('sub-label-hasta').textContent = suscripcion.fin;
-        const pct = 100 - (suscripcion.porcentaje_tiempo || 0);
+        document.getElementById('sub-desde').textContent = suscripcion.inicio;
+        document.getElementById('sub-hasta').textContent = suscripcion.fin;
+        const pct = Math.max(0, 100 - (suscripcion.porcentaje_tiempo || 0));
         const bar = document.getElementById('sub-bar');
         bar.style.width = pct + '%';
         if (pct < 20) bar.classList.add('danger');
-
         const dias = suscripcion.dias_restantes;
-        const wrap = document.getElementById('dias-badge-wrap');
-        let cls = dias > 60 ? 'dias-ok' : dias > 15 ? 'dias-warn' : 'dias-pend';
-        wrap.innerHTML = `<span class="dias-badge ${cls}">${dias} días restantes</span>`;
+        const cls  = dias > 60 ? 'dias-ok' : dias > 15 ? 'dias-warn' : 'dias-bad';
+        document.getElementById('dias-badge').innerHTML =
+            `<span class="dias-badge ${cls}">${dias} días restantes</span>`;
     } else {
-        document.getElementById('dias-badge-wrap').innerHTML =
-            `<span class="dias-badge dias-pend">Sin suscripción activa</span>`;
+        document.getElementById('dias-badge').innerHTML =
+            `<span class="dias-badge dias-bad">Sin suscripción activa</span>`;
     }
 
     // Por tipo
     const tipos = metricas.por_tipo;
-    const maxVal = Math.max(...Object.values(tipos), 1);
-    const listEl = document.getElementById('por-tipo-list');
-    if (Object.keys(tipos).length > 0) {
-        listEl.innerHTML = Object.entries(tipos).map(([nombre, count]) => `
+    const maxV  = Math.max(...Object.values(tipos), 1);
+    const tipEl = document.getElementById('por-tipo');
+    if (Object.keys(tipos).length) {
+        tipEl.innerHTML = Object.entries(tipos).map(([n, c]) => `
             <div class="tipo-row">
-                <span class="tipo-name">${nombre}</span>
+                <span class="tipo-name">${n}</span>
                 <div class="tipo-bar-wrap">
                     <div class="tipo-bar">
-                        <div class="tipo-bar-fill" style="width:${Math.round(count/maxVal*100)}%"></div>
+                        <div class="tipo-bar-fill" style="width:${Math.round(c/maxV*100)}%"></div>
                     </div>
                 </div>
-                <span class="tipo-count">${count}</span>
-            </div>
-        `).join('');
+                <span class="tipo-count">${c}</span>
+            </div>`).join('');
     }
 
     // Recientes
-    const recEl = document.getElementById('recientes-wrap');
-    if (metricas.recientes.length > 0) {
-        recEl.innerHTML = `
-            <table class="recientes-table">
-                <thead>
-                    <tr>
-                        <th>Tipo</th>
-                        <th>Folio</th>
-                        <th>Monto</th>
-                        <th>Estado</th>
-                        <th>Fecha</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${metricas.recientes.map(r => `
-                        <tr>
-                            <td>${r.tipo}</td>
-                            <td>${r.folio}</td>
-                            <td>$${Number(r.monto).toLocaleString('es-CL')}</td>
-                            <td><span class="estado-badge estado-${r.estado}">${r.estado}</span></td>
-                            <td>${r.fecha}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>`;
+    const recEl = document.getElementById('recientes');
+    if (metricas.recientes.length) {
+        recEl.innerHTML = `<table class="tbl">
+            <thead><tr><th>Tipo</th><th>Folio</th><th>Monto</th><th>Estado</th><th>Fecha</th></tr></thead>
+            <tbody>${metricas.recientes.map(r => `
+                <tr>
+                    <td>${r.tipo}</td><td>${r.folio}</td>
+                    <td>$${Number(r.monto).toLocaleString('es-CL')}</td>
+                    <td><span class="estado-badge estado-${r.estado}">${r.estado}</span></td>
+                    <td>${r.fecha}</td>
+                </tr>`).join('')}
+            </tbody></table>`;
     }
 
-    // Mostrar app
+    // API Key
+    document.querySelectorAll('.apikey-text').forEach(el => el.textContent = apiKeyVal);
+    document.getElementById('key-text-2').textContent  = apiKeyVal;
+    document.getElementById('app-name-2').textContent  = cuenta.nombre_app || '';
+    document.getElementById('url-app-2').textContent   = cuenta.url_app || 'No configurada';
+
+    // Mostrar
     document.getElementById('loader').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
+    document.getElementById('app').style.display    = 'block';
 }
 
-// ── Acciones ──────────────────────────────────────────────────
-function toggleKey() {
-    keyVisible = !keyVisible;
-    const el = document.getElementById('apikey-text');
-    el.classList.toggle('visible', keyVisible);
-    document.querySelector('.btn-show').textContent = keyVisible ? '🙈 Ocultar' : '👁 Ver';
-}
-
-function copiarKey() {
-    navigator.clipboard.writeText(apiKeyVal).then(() => {
-        const btn = document.querySelector('.btn-copy');
-        btn.textContent = '✓ Copiado';
-        setTimeout(() => btn.textContent = 'Copiar', 2000);
-    });
-}
-
-function irLogin() {
-    localStorage.removeItem('yepar_emisor_id');
-    localStorage.removeItem('yepar_email');
-    localStorage.removeItem('yepar_dev_nombre');
+function logout() {
+    ['yepar_emisor_id','yepar_email','yepar_dev_nombre'].forEach(k => localStorage.removeItem(k));
     window.location.href = '/onboarding';
 }
 
-// ── Init ──────────────────────────────────────────────────────
-cargarDashboard();
+cargar();
 </script>
 </body>
 </html>
