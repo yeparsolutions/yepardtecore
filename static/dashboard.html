@@ -1,1173 +1,1018 @@
 <!DOCTYPE html>
-<html lang="es" data-theme="light">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YeparDTEcore — Panel de Desarrollador</title>
+    <title>YeparDTEcore — Acceso</title>
     <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
-        /* ══════════════════════════════════════════
-           VARIABLES — CLARO / OSCURO
-        ══════════════════════════════════════════ */
         :root {
-            --blue:      #0057ff;
-            --blue-dk:   #0046cc;
-            --blue-bg:   #f0f4ff;
-            --bg:        #f4f6fb;
-            --surface:   #ffffff;
-            --surface2:  #f8fafc;
-            --border:    #e2e8f0;
-            --text:      #1a1a1a;
-            --text2:     #374151;
-            --muted:     #64748b;
-            --success:   #16a34a;
-            --warning:   #d97706;
-            --error:     #dc2626;
-            --code-bg:   #f1f5f9;
-            --code-text: #334155;
-            --key-bg:    #0a0a0a;
-            --key-text:  #4cff91;
-            --topbar-bg: #ffffff;
-            --nav-active:#0057ff;
+            --blue:    #0057ff;
+            --blue-dk: #0046cc;
+            --grey:    #4a4a4a;
+            --bg:      #f8f9fa;
+            --surface: #ffffff;
+            --border:  #e0e0e0;
+            --text:    #1a1a1a;
+            --muted:   #6c757d;
+            --success: #28a745;
+            --warning: #e67e00;
+            --error:   #c0392b;
         }
-        [data-theme="dark"] {
-            --bg:        #0f1117;
-            --surface:   #1a1d27;
-            --surface2:  #232636;
-            --border:    #2d3148;
-            --text:      #f1f5f9;
-            --text2:     #cbd5e1;
-            --muted:     #94a3b8;
-            --blue-bg:   #1e2a4a;
-            --code-bg:   #232636;
-            --code-text: #93c5fd;
-            --topbar-bg: #1a1d27;
-        }
-
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: 'DM Sans', sans-serif;
             background: var(--bg); color: var(--text);
-            min-height: 100vh; transition: background .3s, color .3s;
+            display: flex; flex-direction: column;
+            align-items: center; padding: 40px 20px 60px;
+            min-height: 100vh;
         }
+        .brand { margin-bottom: 32px; text-align: center; }
+        .brand img { height: 80px; }
+        .brand p { color: var(--muted); font-size: 0.82rem; margin-top: 5px; }
 
-        /* ── Topbar ── */
-        .topbar {
-            background: var(--topbar-bg); border-bottom: 1px solid var(--border);
-            padding: 0 28px; height: 58px;
-            display: flex; align-items: center; justify-content: space-between;
-            position: sticky; top: 0; z-index: 200;
-            transition: background .3s, border-color .3s;
-        }
-        .topbar-left { display: flex; align-items: center; gap: 14px; }
-        .topbar-left img { height: 50px; }
-        .topbar-right { display: flex; align-items: center; gap: 10px; }
-        .badge-env {
-            padding: 3px 10px; border-radius: 20px; font-size: .7rem;
-            font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
-        }
-        .badge-prod { background: #dcfce7; color: #16a34a; }
-        .badge-cert { background: #fef9c3; color: #a16207; }
-        .btn-icon {
-            width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border);
-            background: var(--surface2); cursor: pointer; font-size: 1rem;
-            display: flex; align-items: center; justify-content: center;
-            transition: all .2s; color: var(--text);
-        }
-        .btn-icon:hover { background: var(--blue-bg); border-color: var(--blue); }
-        .btn-logout {
-            font-size: .8rem; color: var(--muted); cursor: pointer;
-            background: none; border: 1px solid var(--border); font-family: inherit;
-            padding: 5px 12px; border-radius: 8px; transition: all .2s; color: var(--text);
-        }
-        .btn-logout:hover { border-color: var(--blue); color: var(--blue); }
-
-        /* ── Nav lateral ── */
-        .layout { display: flex; min-height: calc(100vh - 58px); }
-        .sidebar {
-            width: 210px; flex-shrink: 0;
-            background: var(--surface); border-right: 1px solid var(--border);
-            padding: 20px 12px; position: sticky; top: 58px;
-            height: calc(100vh - 58px); overflow-y: auto;
-            transition: background .3s, border-color .3s;
-        }
-        .nav-section { margin-bottom: 24px; }
-        .nav-label {
-            font-size: .68rem; font-weight: 600; letter-spacing: .08em;
-            text-transform: uppercase; color: var(--muted);
-            padding: 0 10px; margin-bottom: 6px;
-        }
-        .nav-item {
-            display: flex; align-items: center; gap: 9px;
-            padding: 8px 10px; border-radius: 8px; cursor: pointer;
-            font-size: .86rem; color: var(--text2); transition: all .2s;
-            border: none; background: none; width: 100%; text-align: left;
-            font-family: inherit;
-        }
-        .nav-item:hover { background: var(--blue-bg); color: var(--blue); }
-        .nav-item.active { background: var(--blue-bg); color: var(--blue); font-weight: 600; }
-        .nav-item span { font-size: 1rem; }
-
-        /* ── Contenido principal ── */
-        .main { flex: 1; padding: 28px 32px; min-width: 0; }
-
-        /* ── Secciones ── */
-        .section { display: none; }
-        .section.active { display: block; animation: fadeIn .25s ease; }
-        @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
-
-        .section-title {
-            font-family: 'Instrument Serif', serif;
-            font-size: 1.6rem; font-weight: 400; margin-bottom: 6px;
-        }
-        .section-sub { color: var(--muted); font-size: .88rem; margin-bottom: 24px; }
-
-        /* ── Cards ── */
+        /* Card */
         .card {
             background: var(--surface); border: 1px solid var(--border);
-            border-radius: 14px; padding: 22px;
-            transition: background .3s, border-color .3s;
-        }
-        .card-title {
-            font-size: .7rem; font-weight: 600; letter-spacing: .07em;
-            text-transform: uppercase; color: var(--muted); margin-bottom: 12px;
-        }
-        .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin-bottom: 18px; }
-        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
-        @media(max-width:900px){ .grid-3,.grid-2{ grid-template-columns:1fr; } .sidebar{ display:none; } }
-
-        /* ── Stat cards ── */
-        .stat-icon { font-size: 1.5rem; margin-bottom: 8px; }
-        .stat-value { font-size: 2rem; font-weight: 700; line-height: 1; margin-bottom: 3px; }
-        .stat-label { font-size: .8rem; color: var(--muted); }
-
-        /* ── API Key ── */
-        .apikey-row {
-            display: flex; align-items: center; gap: 10px;
-            background: var(--key-bg); border-radius: 10px; padding: 13px 16px; margin-top: 8px;
-        }
-        .apikey-text {
-            font-family: 'Courier New', monospace; font-size: .8rem;
-            color: var(--key-text); flex: 1; word-break: break-all;
-            filter: blur(5px); transition: filter .3s; cursor: pointer;
-        }
-        .apikey-text.visible { filter: none; }
-        .btn-sm {
-            padding: 5px 11px; border-radius: 7px; border: none;
-            font-size: .73rem; font-weight: 600; cursor: pointer; font-family: inherit;
-        }
-        .btn-show { background: #1a1a1a; color: var(--key-text); }
-        .btn-copy { background: var(--blue); color: #fff; }
-
-        /* ── Suscripción ── */
-        .sub-bar-track { height: 7px; background: var(--border); border-radius: 10px; overflow: hidden; margin: 8px 0; }
-        .sub-bar-fill { height: 100%; background: linear-gradient(90deg,var(--blue),#4f8eff); border-radius: 10px; transition: width .6s; }
-        .sub-bar-fill.danger { background: linear-gradient(90deg,#ef4444,#f87171); }
-        .dias-badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:.73rem; font-weight:600; }
-        .dias-ok   { background:#dcfce7; color:#16a34a; }
-        .dias-warn { background:#fef9c3; color:#a16207; }
-        .dias-bad  { background:#fef2f2; color:#dc2626; }
-
-        /* ── Tipo DTE bars ── */
-        .tipo-row { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border); }
-        .tipo-row:last-child { border-bottom:none; }
-        .tipo-name { flex:1; font-size:.86rem; }
-        .tipo-bar-wrap { width:70px; }
-        .tipo-bar { height:5px; background:var(--border); border-radius:10px; overflow:hidden; }
-        .tipo-bar-fill { height:100%; background:var(--blue); border-radius:10px; }
-        .tipo-count { font-weight:700; font-size:.9rem; color:var(--blue); min-width:24px; text-align:right; }
-
-        /* ── Tabla recientes ── */
-        .tbl { width:100%; border-collapse:collapse; font-size:.83rem; }
-        .tbl th { text-align:left; padding:7px 10px; font-size:.68rem; font-weight:600;
-                  letter-spacing:.05em; text-transform:uppercase; color:var(--muted);
-                  border-bottom:1px solid var(--border); }
-        .tbl td { padding:9px 10px; border-bottom:1px solid var(--border); }
-        .tbl tr:last-child td { border-bottom:none; }
-        .estado-badge { padding:2px 7px; border-radius:20px; font-size:.68rem; font-weight:600; }
-        .estado-RECIBIDO { background:#dcfce7; color:#16a34a; }
-        .estado-ENVIADO  { background:#dbeafe; color:#1d4ed8; }
-        .estado-FIRMADO  { background:#f3f4f6; color:#374151; }
-        .estado-ERROR_ENVIO { background:#fef2f2; color:#dc2626; }
-
-        /* ── Documentación ── */
-        .endpoint-card {
-            border: 1px solid var(--border); border-radius: 12px;
-            overflow: hidden; margin-bottom: 14px;
-        }
-        .endpoint-header {
-            display: flex; align-items: center; gap: 12px;
-            padding: 14px 18px; cursor: pointer; background: var(--surface);
-            transition: background .2s;
-        }
-        .endpoint-header:hover { background: var(--surface2); }
-        .method {
-            padding: 3px 9px; border-radius: 6px; font-size: .72rem;
-            font-weight: 700; font-family: monospace; min-width: 46px; text-align: center;
-        }
-        .method-POST { background: #dcfce7; color: #166534; }
-        .method-GET  { background: #dbeafe; color: #1e40af; }
-        .endpoint-path { font-family: monospace; font-size: .86rem; color: var(--text); flex:1; }
-        .endpoint-desc { font-size: .8rem; color: var(--muted); }
-        .endpoint-body {
-            display: none; padding: 18px; border-top: 1px solid var(--border);
-            background: var(--surface2);
-        }
-        .endpoint-body.open { display: block; }
-        .code-block {
-            background: var(--key-bg); color: #e2e8f0; border-radius: 8px;
-            padding: 14px 16px; font-family: monospace; font-size: .78rem;
-            line-height: 1.6; overflow-x: auto; margin: 10px 0;
+            border-radius: 24px; width: 100%; max-width: 460px;
+            padding: 38px 40px; box-shadow: 0 10px 30px rgba(0,0,0,0.05);
             position: relative;
         }
-        .code-block .cmt { color: #6b7280; }
-        .code-block .key { color: #93c5fd; }
-        .code-block .val { color: #86efac; }
-        .code-block .str { color: #fde68a; }
-        .copy-code {
-            position: absolute; top: 8px; right: 8px;
-            background: #1a1a1a; color: #9ca3af; border: none;
-            border-radius: 5px; padding: 3px 8px; font-size: .68rem;
-            cursor: pointer; font-family: inherit;
+
+        /* Barra de pasos (solo onboarding) */
+        .steps { display: flex; gap: 8px; margin-bottom: 30px; }
+        .pill { height: 5px; flex: 1; border-radius: 10px; background: #eee; transition: background .3s; }
+        .pill.active { background: var(--blue); }
+        .pill.done   { background: #bbb; }
+
+        /* Tipografía */
+        .step-label { font-size: .73rem; font-weight: 600; letter-spacing: .07em;
+                      text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+        h2 { font-family: 'Instrument Serif', serif; font-size: 1.85rem;
+             font-weight: 400; margin-bottom: 7px; line-height: 1.2; }
+        p.desc { color: var(--muted); font-size: .88rem; margin-bottom: 24px; line-height: 1.55; }
+
+        /* Form */
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-size: .8rem; font-weight: 600;
+                margin-bottom: 5px; color: var(--grey); }
+        input[type=text], input[type=email],
+        input[type=password], input[type=url] {
+            width: 100%; padding: 11px 14px;
+            border: 1.5px solid var(--border); border-radius: 10px;
+            font-size: .93rem; font-family: inherit;
+            outline: none; background: #fff;
+            transition: border-color .2s, box-shadow .2s;
         }
-        .copy-code:hover { color: #fff; }
-        .param-table { width:100%; border-collapse:collapse; font-size:.82rem; margin:10px 0; }
-        .param-table th { text-align:left; padding:6px 10px; background:var(--surface);
-                          border-bottom:1px solid var(--border); font-size:.72rem;
-                          font-weight:600; color:var(--muted); }
-        .param-table td { padding:7px 10px; border-bottom:1px solid var(--border); }
-        .param-table tr:last-child td { border-bottom:none; }
-        .param-req { color:#dc2626; font-weight:600; font-size:.7rem; }
-        .param-opt { color:#94a3b8; font-size:.7rem; }
-        code { background:var(--code-bg); color:var(--code-text); padding:1px 5px;
-               border-radius:4px; font-size:.82em; font-family:monospace; }
-        .section-h3 { font-size:1rem; font-weight:600; margin:22px 0 10px; color:var(--text); }
-        .alert-info {
-            background:var(--blue-bg); border:1px solid #bfdbfe; border-radius:10px;
-            padding:12px 16px; font-size:.84rem; color:var(--text2); margin:14px 0;
-            line-height: 1.6;
+        input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0,87,255,.1); }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .hint { font-size: .75rem; color: var(--muted); margin-top: 4px; }
+        .hint.error { color: var(--error); }
+
+        /* OTP input */
+        .otp-wrap { display: flex; gap: 10px; justify-content: center; margin: 18px 0; }
+        .otp-wrap input {
+            width: 46px; height: 54px; text-align: center;
+            font-size: 1.5rem; font-weight: 700; padding: 0;
+            border-radius: 12px;
         }
 
-        /* ── Banner YeparDTE ── */
-        .dte-banner {
-            background: linear-gradient(135deg, #0057ff 0%, #003db8 100%);
-            border-radius: 16px; padding: 32px 36px; color: #fff;
-            display: flex; align-items: center; justify-content: space-between;
-            gap: 24px; margin-bottom: 24px;
+        /* Botones */
+        .btn {
+            width: 100%; padding: 13px; border: none; border-radius: 12px;
+            font-family: inherit; font-weight: 600; font-size: .93rem;
+            cursor: pointer; transition: background .2s, opacity .2s;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
         }
-        .dte-banner h2 { font-family:'Instrument Serif',serif; font-size:1.7rem; font-weight:400; margin-bottom:8px; }
-        .dte-banner p { font-size:.88rem; opacity:.85; line-height:1.6; max-width:500px; }
-        .btn-dte {
-            background:#fff; color:var(--blue); padding:11px 22px;
-            border-radius:10px; font-weight:700; font-size:.9rem;
-            text-decoration:none; white-space:nowrap; flex-shrink:0;
-            transition:transform .2s;
-        }
-        .btn-dte:hover { transform:scale(1.03); }
-
-        /* ── Links útiles ── */
-        .links-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-        .link-card {
-            display:flex; align-items:center; gap:10px; padding:13px 14px;
-            border-radius:10px; border:1.5px solid var(--border);
-            text-decoration:none; color:var(--text); transition:all .2s;
-        }
-        .link-card:hover { border-color:var(--blue); background:var(--blue-bg); color:var(--blue); }
-        .link-icon { font-size:1.3rem; }
-        .link-info strong { display:block; font-size:.85rem; font-weight:600; }
-        .link-info span { font-size:.73rem; color:var(--muted); }
-
-        /* ── URL chip ── */
-        .url-chip {
-            display:inline-flex; align-items:center; gap:6px;
-            background:var(--blue-bg); color:var(--blue);
-            padding:4px 12px; border-radius:20px; font-size:.78rem;
-            font-weight:500; margin-top:8px; word-break:break-all;
+        .btn-primary  { background: var(--blue); color: #fff; }
+        .btn-primary:hover { background: var(--blue-dk); }
+        .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+        .btn-ghost    { background: transparent; color: var(--muted);
+                        margin-top: 10px; font-weight: 400; }
+        .btn-ghost:hover { color: var(--text); }
+        .btn-link {
+            background: none; border: none; color: var(--blue);
+            font-size: .85rem; cursor: pointer; padding: 0;
+            font-family: inherit; font-weight: 500; text-decoration: underline;
         }
 
-        /* ── Loader ── */
-        #loader { position:fixed; inset:0; background:var(--bg); display:flex;
-                  flex-direction:column; align-items:center; justify-content:center;
-                  gap:14px; z-index:300; }
-        .spinner { width:38px; height:38px; border:4px solid var(--border);
-                   border-top-color:var(--blue); border-radius:50%;
-                   animation:spin 1s linear infinite; }
-        @keyframes spin { to{ transform:rotate(360deg); } }
-
-        .empty { text-align:center; padding:28px; color:var(--muted); font-size:.86rem; }
-        .unpaid-banner {
-            background:#fef2f2; border:1px solid #fecaca; border-radius:10px;
-            padding:13px 18px; margin-bottom:20px; display:flex; align-items:center; gap:10px;
+        /* Divider */
+        .divider { display: flex; align-items: center; gap: 10px; margin: 18px 0; }
+        .divider::before, .divider::after {
+            content: ''; flex: 1; height: 1px; background: var(--border);
         }
-        .unpaid-banner p { font-size:.84rem; color:#991b1b; }
+        .divider span { font-size: .78rem; color: var(--muted); white-space: nowrap; }
+
+        /* Screens */
+        .screen { display: none; }
+        .screen.active { display: block; animation: up .3s ease; }
+        @keyframes up { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+
+        /* Loader */
+        #loader {
+            display: none; position: absolute; inset: 0;
+            background: rgba(255,255,255,.92); z-index: 100;
+            border-radius: 24px; flex-direction: column;
+            align-items: center; justify-content: center; gap: 14px;
+        }
+        .spinner { width: 36px; height: 36px; border: 4px solid #eee;
+                   border-top-color: var(--blue); border-radius: 50%;
+                   animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #loader-text { font-weight: 500; color: var(--grey); font-size: .88rem; }
+
+        /* Plan card */
+        .plan-card { border: 2px solid var(--blue); border-radius: 14px;
+                     padding: 20px; margin-bottom: 20px; text-align: center; }
+        .plan-card .price { font-family: 'Instrument Serif', serif;
+                            font-size: 2.4rem; color: var(--blue); margin: 5px 0; }
+        .plan-card .price span { font-size: .95rem; color: var(--muted); }
+        .plan-card ul { list-style: none; margin-top: 10px; text-align: left; }
+        .plan-card ul li { padding: 3px 0; font-size: .85rem; color: var(--grey); }
+        .plan-card ul li::before { content: "✓ "; color: var(--success); font-weight: 700; }
+        .plan-notice { background: #fff8e1; border: 1px solid #ffe082;
+                       border-radius: 10px; padding: 11px 14px;
+                       font-size: .8rem; color: var(--warning); margin-bottom: 18px; }
+
+        /* Summary */
+        .summary-box { background: #f0f4ff; border-radius: 12px;
+                       padding: 16px 18px; font-size: .86rem;
+                       line-height: 1.8; margin-bottom: 20px; }
+
+        /* Success screen */
+        .success-icon { font-size: 2.8rem; margin-bottom: 6px; text-align: center; }
+        .api-key-box {
+            background: #0a0a0a; color: #4cff91; border-radius: 10px;
+            padding: 14px 16px; font-family: 'Courier New', monospace;
+            font-size: .8rem; word-break: break-all; margin: 14px 0;
+            position: relative; cursor: pointer; user-select: all;
+        }
+        .api-key-box .copy-tip { position: absolute; top: 7px; right: 10px;
+                                  font-size: .68rem; color: #888;
+                                  font-family: 'DM Sans', sans-serif; }
+        .docs-link {
+            display: block; text-align: center; color: var(--blue);
+            font-weight: 600; text-decoration: none; padding: 12px;
+            border: 2px solid var(--blue); border-radius: 12px;
+            margin-top: 10px; transition: background .2s;
+        }
+        .docs-link:hover { background: #f0f4ff; }
+        .warning-key { font-size: .76rem; color: var(--muted);
+                       text-align: center; margin-top: 9px; line-height: 1.5; }
+
+        /* Error global */
+        .error-box {
+            background: #fdecea; border: 1px solid #f5c6cb; border-radius: 10px;
+            padding: 10px 14px; font-size: .82rem; color: var(--error);
+            margin-bottom: 14px; display: none;
+        }
     </style>
 </head>
 <body>
 
-<div id="loader"><div class="spinner"></div><p>Cargando tu panel...</p></div>
-
-<div id="app" style="display:none;">
-
-<!-- ══ TOPBAR ══ -->
-<nav class="topbar">
-    <div class="topbar-left">
-        <img src="/static/logo-horizontal.svg" alt="YeparDTEcore">
-        <span id="nav-app" style="font-size:.82rem;color:var(--muted);"></span>
-    </div>
-    <div class="topbar-right">
-        <span class="badge-env" id="nav-env"></span>
-        <button class="btn-icon" onclick="toggleTheme()" title="Cambiar tema" id="theme-btn">🌙</button>
-        <button class="btn-logout" onclick="logout()">Cerrar sesión</button>
-    </div>
-</nav>
-
-<div class="layout">
-
-<!-- ══ SIDEBAR ══ -->
-<aside class="sidebar">
-    <div class="nav-section">
-        <div class="nav-label">Panel</div>
-        <button class="nav-item active" onclick="irA('overview')">
-            <span>📊</span> Resumen
-        </button>
-        <button class="nav-item" onclick="irA('apikey')">
-            <span>🔑</span> API Key
-        </button>
-        <button class="nav-item" onclick="irA('docs')">
-            <span>📖</span> Documentación
-        </button>
-    </div>
-    <div class="nav-section">
-        <div class="nav-label">Recursos</div>
-        <button class="nav-item" onclick="irA('yepardte')">
-            <span>🧾</span> YeparDTE
-        </button>
-        <button class="nav-item" onclick="irA('manual')">
-            <span>📘</span> Manual
-        </button>
-        <a href="mailto:soporte@yeparsolutions.com" class="nav-item">
-            <span>✉️</span> Soporte
-        </a>
-    </div>
-</aside>
-
-<!-- ══ MAIN ══ -->
-<main class="main">
-
-<!-- ─── OVERVIEW ─── -->
-<div class="section active" id="sec-overview">
-    <h1 class="section-title">Resumen</h1>
-    <p class="section-sub" id="sub-overview">Bienvenido a tu panel de desarrollador</p>
-
-    <div id="unpaid-wrap"></div>
-
-    <div class="grid-3">
-        <div class="card">
-            <div class="stat-icon">📄</div>
-            <div class="card-title">Total DTEs</div>
-            <div class="stat-value" id="s-total">—</div>
-            <div class="stat-label">documentos emitidos</div>
-        </div>
-        <div class="card">
-            <div class="stat-icon">📅</div>
-            <div class="card-title">Este mes</div>
-            <div class="stat-value" id="s-mes">—</div>
-            <div class="stat-label">en el mes actual</div>
-        </div>
-        <div class="card">
-            <div class="stat-icon">⏳</div>
-            <div class="card-title">Días restantes</div>
-            <div class="stat-value" id="s-dias">—</div>
-            <div class="stat-label" id="s-dias-label">de suscripción</div>
-        </div>
-    </div>
-
-    <div class="grid-2">
-        <div class="card">
-            <div class="card-title">Vigencia de suscripción</div>
-            <div style="display:flex;justify-content:space-between;font-size:.78rem;color:var(--muted);margin-top:4px;">
-                <span id="sub-desde">—</span><span id="sub-hasta">—</span>
-            </div>
-            <div class="sub-bar-track"><div class="sub-bar-fill" id="sub-bar" style="width:0%"></div></div>
-            <div id="dias-badge"></div>
-        </div>
-        <div class="card">
-            <div class="card-title">DTEs por tipo</div>
-            <div id="por-tipo"><div class="empty">Sin documentos aún</div></div>
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-title">Últimos documentos</div>
-        <div id="recientes"><div class="empty">Sin documentos aún</div></div>
-    </div>
+<div class="brand">
+    <img src="/static/logo-horizontal.svg" alt="YeparDTEcore">
+    <p>API de facturación electrónica para desarrolladores</p>
 </div>
 
-<!-- ─── API KEY ─── -->
-<div class="section" id="sec-apikey">
-    <h1 class="section-title">Tu API Key</h1>
-    <p class="section-sub">Credencial para autenticar tus llamadas a la API</p>
+<div class="card">
+    <div id="loader">
+        <div class="spinner"></div>
+        <p id="loader-text">Procesando...</p>
+    </div>
 
-    <div class="card" style="margin-bottom:18px;">
-        <div class="card-title">API Key de producción</div>
-        <p style="font-size:.84rem;color:var(--muted);margin-bottom:4px;">
-            Inclúyela en el header <code>X-API-Key</code> en cada request.
-            Mantenla secreta — no la expongas en el frontend o código público.
+    <!-- ══════════════════════════════════════════
+         PANTALLA: LOGIN
+    ══════════════════════════════════════════ -->
+    <div class="screen active" id="s-login">
+        <h2>Bienvenido</h2>
+        <p class="desc">Ingresa a tu cuenta de desarrollador.</p>
+        <div class="error-box" id="login-error"></div>
+        <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="login-email" placeholder="tu@empresa.cl" autocomplete="email">
+        </div>
+        <div class="form-group">
+            <label>Contraseña</label>
+            <input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password"
+                   onkeydown="if(event.key==='Enter') doLogin()">
+        </div>
+        <div style="text-align:right; margin-bottom:16px;">
+            <button class="btn-link" onclick="ir('s-forgot-email')">¿Olvidaste tu contraseña?</button>
+        </div>
+        <button class="btn btn-primary" onclick="doLogin()">Iniciar sesión</button>
+        <div class="divider"><span>¿Eres desarrollador nuevo?</span></div>
+        <button class="btn btn-ghost" style="border:1.5px solid var(--border); margin-top:0;"
+                onclick="ir('s-reg1')">Crear cuenta gratuita →</button>
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         PANTALLA: VERIFICACIÓN EMAIL (post-login si no verificado)
+    ══════════════════════════════════════════ -->
+    <div class="screen" id="s-verify">
+        <h2>Verifica tu email</h2>
+        <p class="desc">Te enviamos un código de 6 dígitos a <strong id="verify-email-label"></strong>. Ingrésalo aquí para activar tu cuenta.</p>
+        <div class="error-box" id="verify-error"></div>
+        <div class="otp-wrap" id="otp-verify-inputs"></div>
+        <button class="btn btn-primary" onclick="doVerify()">Verificar</button>
+        <p style="text-align:center; margin-top:14px; font-size:.82rem; color:var(--muted);">
+            ¿No llegó el código?
+            <button class="btn-link" onclick="doReenviar()">Reenviar</button>
         </p>
-        <div class="apikey-row">
-            <span class="apikey-text" id="key-text-2"></span>
-            <button class="btn-sm btn-show" onclick="toggleKey()">👁 Ver</button>
-            <button class="btn-sm btn-copy" onclick="copiarKey()">Copiar</button>
-        </div>
     </div>
 
-    <div class="card" style="margin-bottom:18px;">
-        <div class="card-title">Software vinculado</div>
-        <p style="font-size:.84rem;color:var(--muted);margin-bottom:6px;">
-            Tu API key está vinculada a este software. Si cambias de servidor, contacta soporte.
+    <!-- ══════════════════════════════════════════
+         PANTALLA: OLVIDÉ CONTRASEÑA — paso 1: email
+    ══════════════════════════════════════════ -->
+    <div class="screen" id="s-forgot-email">
+        <h2>Recuperar acceso</h2>
+        <p class="desc">Ingresa tu email y te enviaremos un código para crear una nueva contraseña.</p>
+        <div class="error-box" id="forgot-error"></div>
+        <div class="form-group">
+            <label>Email de tu cuenta</label>
+            <input type="email" id="forgot-email" placeholder="tu@empresa.cl">
+        </div>
+        <button class="btn btn-primary" onclick="doSolicitarRecuperacion()">Enviar código</button>
+        <button class="btn btn-ghost" onclick="ir('s-login')">← Volver al login</button>
+    </div>
+
+    <!-- PANTALLA: OLVIDÉ CONTRASEÑA — paso 2: código + nueva contraseña -->
+    <div class="screen" id="s-forgot-code">
+        <h2>Nueva contraseña</h2>
+        <p class="desc">Ingresa el código que enviamos a <strong id="forgot-email-label"></strong> y tu nueva contraseña.</p>
+        <div class="error-box" id="forgot-code-error"></div>
+        <div class="otp-wrap" id="otp-forgot-inputs"></div>
+        <div class="form-group" style="margin-top:6px;">
+            <label>Nueva contraseña</label>
+            <input type="password" id="new-pass" placeholder="Mínimo 8 caracteres">
+        </div>
+        <div class="form-group">
+            <label>Confirmar contraseña</label>
+            <input type="password" id="new-pass-confirm" placeholder="Repite la contraseña">
+        </div>
+        <button class="btn btn-primary" onclick="doResetear()">Cambiar contraseña</button>
+        <p style="text-align:center; margin-top:12px; font-size:.82rem; color:var(--muted);">
+            ¿No llegó?
+            <button class="btn-link" onclick="doSolicitarRecuperacion(true)">Reenviar código</button>
         </p>
-        <div><strong style="font-size:.95rem;" id="app-name-2"></strong></div>
-        <div class="url-chip">🔗 <span id="url-app-2"></span></div>
     </div>
 
-    <div class="card">
-        <div class="card-title">Ejemplo de uso</div>
-        <div class="code-block">
-            <button class="copy-code" onclick="copiarCodigo(this)">Copiar</button>
-<span class="cmt"># Ejemplo con curl</span>
-curl -X POST https://yepardtecore.cl/api/firmar-y-enviar \
-  -H <span class="str">"X-API-Key: yek_tu_api_key_aqui"</span> \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d '{<span class="key">"emisor"</span>: {...}, <span class="key">"tipo"</span>: 33, <span class="key">"items"</span>: [...]}'
+    <!-- PANTALLA: CONTRASEÑA CAMBIADA -->
+    <div class="screen" id="s-pass-ok">
+        <div style="text-align:center; padding: 20px 0;">
+            <div style="font-size:2.5rem; margin-bottom:10px;">✅</div>
+            <h2>¡Listo!</h2>
+            <p class="desc">Tu contraseña fue actualizada. Ya puedes iniciar sesión.</p>
         </div>
-    </div>
-</div>
-
-<!-- ─── DOCUMENTACIÓN ─── -->
-<div class="section" id="sec-docs">
-    <h1 class="section-title">Documentación</h1>
-    <p class="section-sub">Manual de integración para desarrolladores</p>
-
-    <div class="alert-info">
-        🔑 <strong>Autenticación:</strong> todas las llamadas requieren el header
-        <code>X-API-Key: yek_tu_key</code>. El endpoint base es
-        <code>https://yepardtecore.cl/api</code>
+        <button class="btn btn-primary" onclick="ir('s-login')">Ir al login</button>
     </div>
 
-    <!-- INICIO RÁPIDO -->
-    <h3 class="section-h3">🚀 Inicio rápido</h3>
-    <div class="card" style="margin-bottom:18px;">
-        <p style="font-size:.86rem;color:var(--text2);line-height:1.7;margin-bottom:12px;">
-            Integrar YeparDTEcore tiene 3 pasos: autenticarte, mandar el certificado del emisor y los datos del documento.
-            Core firma, construye el XML y lo envía al SII por ti.
-        </p>
-        <div class="code-block">
-            <button class="copy-code" onclick="copiarCodigo(this)">Copiar</button>
-<span class="cmt">// Node.js / fetch</span>
-const res = await fetch(<span class="str">'https://yepardtecore.cl/api/firmar-y-enviar'</span>, {
-  method: <span class="str">'POST'</span>,
-  headers: {
-    <span class="key">'X-API-Key'</span>: <span class="str">'yek_tu_api_key'</span>,
-    <span class="key">'Content-Type'</span>: <span class="str">'application/json'</span>
-  },
-  body: JSON.stringify({
-    <span class="key">emisor</span>: {
-      <span class="key">rut</span>: <span class="str">'76123456-7'</span>, <span class="key">razon_social</span>: <span class="str">'Mi Empresa SpA'</span>,
-      <span class="key">giro</span>: <span class="str">'Comercio'</span>, <span class="key">direccion</span>: <span class="str">'Av. Principal 123'</span>,
-      <span class="key">comuna</span>: <span class="str">'Santiago'</span>, <span class="key">ciudad</span>: <span class="str">'Santiago'</span>,
-      <span class="key">nro_resolucion</span>: <span class="str">'0'</span>, <span class="key">fch_resolucion</span>: <span class="str">'2000-01-01'</span>
-    },
-    <span class="key">pfx_base64</span>: <span class="str">'base64_del_certificado_p12'</span>,
-    <span class="key">pfx_password</span>: <span class="str">'clave_del_certificado'</span>,
-    <span class="key">caf_base64</span>: <span class="str">'base64_del_CAF_xml'</span>,
-    <span class="key">tipo</span>: <span class="val">33</span>,
-    <span class="key">receptor</span>: { <span class="key">rut</span>: <span class="str">'12345678-9'</span>, <span class="key">nombre</span>: <span class="str">'Cliente SA'</span> },
-    <span class="key">items</span>: [{ <span class="key">nombre</span>: <span class="str">'Servicio'</span>, <span class="key">cantidad</span>: <span class="val">1</span>, <span class="key">precio</span>: <span class="val">10000</span> }],
-    <span class="key">ambiente</span>: <span class="str">'produccion'</span>
-  })
-});
-const data = await res.json();
-console.log(data.track_id); <span class="cmt">// ID de seguimiento SII</span>
+    <!-- ══════════════════════════════════════════
+         ONBOARDING: PASO 1 — Datos del desarrollador
+    ══════════════════════════════════════════ -->
+    <div class="screen" id="s-reg1">
+        <div class="steps" id="steps1">
+            <div class="pill active"></div><div class="pill"></div>
+            <div class="pill"></div><div class="pill"></div>
         </div>
-    </div>
-
-    <!-- ENDPOINTS -->
-    <h3 class="section-h3">📡 Endpoints disponibles</h3>
-
-    <!-- firmar-y-enviar -->
-    <div class="endpoint-card">
-        <div class="endpoint-header" onclick="toggleEndpoint(this)">
-            <span class="method method-POST">POST</span>
-            <span class="endpoint-path">/api/firmar-y-enviar</span>
-            <span class="endpoint-desc">Firma y envía un DTE al SII (stateless)</span>
-            <span style="margin-left:auto;color:var(--muted);">▼</span>
-        </div>
-        <div class="endpoint-body">
-            <p style="font-size:.84rem;color:var(--text2);margin-bottom:12px;line-height:1.6;">
-                Endpoint principal. Recibe el certificado (.p12) y CAF del emisor en base64,
-                construye el XML, lo firma y lo envía al SII. No guarda nada en base de datos.
-            </p>
-            <table class="param-table">
-                <thead><tr><th>Campo</th><th>Tipo</th><th>Requerido</th><th>Descripción</th></tr></thead>
-                <tbody>
-                    <tr><td><code>emisor</code></td><td>objeto</td><td class="param-req">✓</td><td>Datos del emisor (RUT, razón social, giro, dirección, resolución)</td></tr>
-                    <tr><td><code>pfx_base64</code></td><td>string</td><td class="param-req">✓</td><td>Certificado .p12 del emisor en base64</td></tr>
-                    <tr><td><code>pfx_password</code></td><td>string</td><td class="param-req">✓</td><td>Contraseña del certificado</td></tr>
-                    <tr><td><code>caf_base64</code></td><td>string</td><td class="param-req">✓</td><td>CAF XML del SII en base64</td></tr>
-                    <tr><td><code>tipo</code></td><td>int</td><td class="param-req">✓</td><td>33=Factura, 34=F.Exenta, 39=Boleta, 52=Guía, 56=ND, 61=NC</td></tr>
-                    <tr><td><code>receptor</code></td><td>objeto</td><td class="param-req">✓</td><td>RUT y nombre del receptor</td></tr>
-                    <tr><td><code>items</code></td><td>array</td><td class="param-req">✓</td><td>Lista de productos/servicios con nombre, cantidad y precio</td></tr>
-                    <tr><td><code>ambiente</code></td><td>string</td><td class="param-opt">opc</td><td>"certificacion" o "produccion" (default: certificacion)</td></tr>
-                    <tr><td><code>folio_actual</code></td><td>int</td><td class="param-opt">opc</td><td>Folio a usar. Si no viene, usa el primero del CAF</td></tr>
-                    <tr><td><code>auto_enviar</code></td><td>bool</td><td class="param-opt">opc</td><td>true = enviar al SII, false = solo firmar (default: true)</td></tr>
-                </tbody>
-            </table>
-            <div class="code-block">
-<span class="cmt">// Respuesta exitosa</span>
-{ <span class="key">"ok"</span>: <span class="val">true</span>, <span class="key">"tipo"</span>: <span class="str">"Factura Electrónica"</span>,
-  <span class="key">"folio"</span>: <span class="val">195</span>, <span class="key">"track_id"</span>: <span class="str">"0252066212"</span>,
-  <span class="key">"estado"</span>: <span class="str">"RECIBIDO"</span>, <span class="key">"xml_firmado"</span>: <span class="str">"..."</span> }
+        <p class="step-label">Paso 1 de 4</p>
+        <h2>Crea tu cuenta</h2>
+        <p class="desc">Tus datos de acceso al portal de desarrollador.</p>
+        <div class="error-box" id="reg1-error"></div>
+        <div class="row">
+            <div class="form-group">
+                <label>Nombre</label>
+                <input type="text" id="u_nombre" placeholder="Ej: Alberto" autocomplete="given-name">
+            </div>
+            <div class="form-group">
+                <label>Apellido</label>
+                <input type="text" id="u_apellido" placeholder="Ej: González" autocomplete="family-name">
             </div>
         </div>
+        <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="u_email" placeholder="tu@empresa.cl" autocomplete="email">
+        </div>
+        <div class="form-group">
+            <label>Contraseña</label>
+            <input type="password" id="u_pass" placeholder="Mínimo 8 caracteres" autocomplete="new-password">
+            <p class="hint">Mínimo 8 caracteres.</p>
+        </div>
+        <button class="btn btn-primary" onclick="irReg(2)">Continuar →</button>
+        <button class="btn btn-ghost" onclick="ir('s-login')">← Ya tengo cuenta</button>
     </div>
 
-    <!-- estado -->
-    <div class="endpoint-card">
-        <div class="endpoint-header" onclick="toggleEndpoint(this)">
-            <span class="method method-GET">GET</span>
-            <span class="endpoint-path">/api/estado/{track_id}</span>
-            <span class="endpoint-desc">Consulta estado de un envío en el SII</span>
-            <span style="margin-left:auto;color:var(--muted);">▼</span>
+    <!-- ONBOARDING: PASO 2 — Tu software -->
+    <div class="screen" id="s-reg2">
+        <div class="steps" id="steps2">
+            <div class="pill done"></div><div class="pill active"></div>
+            <div class="pill"></div><div class="pill"></div>
         </div>
-        <div class="endpoint-body">
-            <p style="font-size:.84rem;color:var(--text2);margin-bottom:12px;line-height:1.6;">
-                Consulta al SII el estado de un envío usando su track_id.
-                El SII no notifica proactivamente — debes consultar tú.
-            </p>
-            <table class="param-table">
-                <thead><tr><th>Parámetro</th><th>Tipo</th><th>Descripción</th></tr></thead>
-                <tbody>
-                    <tr><td><code>track_id</code></td><td>path</td><td>ID de seguimiento devuelto por /firmar-y-enviar</td></tr>
-                    <tr><td><code>rut_emisor</code></td><td>query</td><td>RUT del emisor del documento</td></tr>
-                    <tr><td><code>tipo</code></td><td>query</td><td>Tipo DTE (39/41 usa ventanilla de boletas)</td></tr>
-                    <tr><td><code>ambiente</code></td><td>query</td><td>"certificacion" o "produccion"</td></tr>
-                </tbody>
-            </table>
-            <div class="code-block">
-<span class="cmt">// Ejemplo</span>
-GET /api/estado/0252066212?rut_emisor=76123456-7&tipo=33&ambiente=produccion
-
-<span class="cmt">// Respuesta</span>
-{ <span class="key">"track_id"</span>: <span class="str">"0252066212"</span>, <span class="key">"estado"</span>: <span class="str">"ACEPTADO"</span>,
-  <span class="key">"codigo_sii"</span>: <span class="val">0</span>, <span class="key">"glosa"</span>: <span class="str">"Envío Recibido OK"</span>,
-  <span class="key">"aceptados"</span>: <span class="val">1</span>, <span class="key">"rechazados"</span>: <span class="val">0</span> }
-            </div>
+        <p class="step-label">Paso 2 de 4</p>
+        <h2>Tu software</h2>
+        <p class="desc">¿Cómo se llama el software donde vas a integrar YeparDTEcore? La API key quedará vinculada a él.</p>
+        <div class="form-group">
+            <label>Nombre del software</label>
+            <input type="text" id="app_nombre" placeholder="Ej: Mi ERP, POS Central, MiApp Ventas">
         </div>
+        <div class="form-group">
+            <label>URL del servidor backend</label>
+            <input type="url" id="app_url" placeholder="https://api.miapp.cl">
+            <p class="hint">URL de tu backend — desde donde llamarás a la API. Una key = un software.</p>
+        </div>
+        <button class="btn btn-primary" onclick="irReg(3)">Continuar →</button>
+        <button class="btn btn-ghost" onclick="irReg(1)">← Volver</button>
     </div>
 
-    <!-- generar-set -->
-    <div class="endpoint-card">
-        <div class="endpoint-header" onclick="toggleEndpoint(this)">
-            <span class="method method-POST">POST</span>
-            <span class="endpoint-path">/api/generar-set</span>
-            <span class="endpoint-desc">Genera un set completo de certificación</span>
-            <span style="margin-left:auto;color:var(--muted);">▼</span>
+    <!-- ONBOARDING: PASO 3 — Plan -->
+    <div class="screen" id="s-reg3">
+        <div class="steps" id="steps3">
+            <div class="pill done"></div><div class="pill done"></div>
+            <div class="pill active"></div><div class="pill"></div>
         </div>
-        <div class="endpoint-body">
-            <p style="font-size:.84rem;color:var(--text2);margin-bottom:12px;line-height:1.6;">
-                Genera el EnvioBOLETA/EnvioDTE completo con múltiples casos para certificación SII.
-                Devuelve el sobre firmado listo para subir.
-            </p>
-            <div class="alert-info">
-                💡 Usado principalmente durante el proceso de certificación SII.
-                Para emisión productiva usa <code>/api/firmar-y-enviar</code>.
-            </div>
-        </div>
-    </div>
-
-    <!-- folios -->
-    <div class="endpoint-card">
-        <div class="endpoint-header" onclick="toggleEndpoint(this)">
-            <span class="method method-GET">GET</span>
-            <span class="endpoint-path">/api/folios</span>
-            <span class="endpoint-desc">Consulta folios disponibles del emisor</span>
-            <span style="margin-left:auto;color:var(--muted);">▼</span>
-        </div>
-        <div class="endpoint-body">
-            <div class="code-block">
-{ <span class="key">"folios"</span>: [
-    { <span class="key">"tipo"</span>: <span class="val">33</span>, <span class="key">"descripcion"</span>: <span class="str">"Factura"</span>,
-      <span class="key">"desde"</span>: <span class="val">1</span>, <span class="key">"hasta"</span>: <span class="val">100</span>,
-      <span class="key">"actual"</span>: <span class="val">45</span>, <span class="key">"disponibles"</span>: <span class="val">56</span> }
-  ] }
-            </div>
-        </div>
-    </div>
-
-    <!-- generar-libro -->
-    <div class="endpoint-card">
-        <div class="endpoint-header" onclick="toggleEndpoint(this)">
-            <span class="method method-POST">POST</span>
-            <span class="endpoint-path">/api/generar-libro-desde-xml</span>
-            <span class="endpoint-desc">Genera libro de ventas, compras o guías</span>
-            <span style="margin-left:auto;color:var(--muted);">▼</span>
-        </div>
-        <div class="endpoint-body">
-            <p style="font-size:.84rem;color:var(--text2);margin-bottom:12px;line-height:1.6;">
-                Recibe los XML de EnvioDTE aprobados por el SII y genera el libro correspondiente firmado.
-            </p>
-            <table class="param-table">
-                <thead><tr><th>Campo (form-data)</th><th>Descripción</th></tr></thead>
-                <tbody>
-                    <tr><td><code>tipo_libro</code></td><td>ventas | compras | guias</td></tr>
-                    <tr><td><code>natencion</code></td><td>N° atención del libro</td></tr>
-                    <tr><td><code>periodo</code></td><td>AAAA-MM (ej: 2026-06)</td></tr>
-                    <tr><td><code>archivos</code></td><td>XML(s) de EnvioDTE aprobados</td></tr>
-                    <tr><td><code>auto_enviar</code></td><td>true = enviar al SII</td></tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- Tipos DTE -->
-    <h3 class="section-h3">📋 Tipos de DTE soportados</h3>
-    <div class="card" style="margin-bottom:18px;">
-        <table class="param-table">
-            <thead><tr><th>Código</th><th>Nombre</th><th>Descripción</th></tr></thead>
-            <tbody>
-                <tr><td><code>33</code></td><td>Factura Electrónica</td><td>Afecta a IVA</td></tr>
-                <tr><td><code>34</code></td><td>Factura No Afecta</td><td>Exenta de IVA</td></tr>
-                <tr><td><code>39</code></td><td>Boleta Electrónica</td><td>Con IVA incluido</td></tr>
-                <tr><td><code>41</code></td><td>Boleta No Afecta</td><td>Exenta de IVA</td></tr>
-                <tr><td><code>52</code></td><td>Guía de Despacho</td><td>Para traslado de mercadería</td></tr>
-                <tr><td><code>56</code></td><td>Nota de Débito</td><td>Aumenta el monto de una factura</td></tr>
-                <tr><td><code>61</code></td><td>Nota de Crédito</td><td>Disminuye o anula una factura</td></tr>
-            </tbody>
-        </table>
-    </div>
-
-    <!-- Errores comunes -->
-    <h3 class="section-h3">⚠️ Errores comunes</h3>
-    <div class="card">
-        <table class="param-table">
-            <thead><tr><th>Código HTTP</th><th>Causa</th><th>Solución</th></tr></thead>
-            <tbody>
-                <tr><td><code>401</code></td><td>API key inválida o faltante</td><td>Verifica el header X-API-Key</td></tr>
-                <tr><td><code>403</code></td><td>API key vinculada a otro dominio</td><td>Contacta soporte para liberar</td></tr>
-                <tr><td><code>400</code></td><td>Folio fuera del rango del CAF</td><td>Verifica el folio_actual contra el CAF</td></tr>
-                <tr><td><code>400</code></td><td>pfx_base64 o caf_base64 inválido</td><td>Verifica que el base64 sea correcto</td></tr>
-                <tr><td><code>500</code></td><td>Error firmando o enviando al SII</td><td>Revisa el certificado y la contraseña</td></tr>
-            </tbody>
-        </table>
-    </div>
-</div>
-
-<!-- ─── YEPARDTE ─── -->
-<div class="section" id="sec-yepardte">
-    <h1 class="section-title">¿Necesitas emitir sin programar?</h1>
-    <p class="section-sub">YeparDTEcore es para desarrolladores. Si buscas una solución lista para usar, tenemos YeparDTE.</p>
-
-    <div class="dte-banner">
-        <div>
-            <h2>YeparDTE</h2>
-            <p>
-                Plataforma completa de facturación electrónica para empresas chilenas.
-                Emite boletas, facturas, notas de crédito y guías de despacho desde el navegador,
-                sin necesidad de integrar nada. Ideal para negocios que quieren facturar
-                de inmediato.
-            </p>
-        </div>
-        <a href="https://app.yepardte.cl" target="_blank" class="btn-dte">Ir a YeparDTE →</a>
-    </div>
-
-    <div class="grid-2">
-        <div class="card">
-            <div class="card-title">YeparDTE — Para empresas</div>
-            <ul style="font-size:.86rem;line-height:2;color:var(--text2);list-style:none;">
-                <li>✅ Interfaz web lista para usar</li>
-                <li>✅ Boletas y facturas en segundos</li>
-                <li>✅ Historial y PDF de documentos</li>
-                <li>✅ Gestión de clientes</li>
-                <li>✅ Sin necesidad de programar</li>
+        <p class="step-label">Paso 3 de 4</p>
+        <h2>Plan de acceso</h2>
+        <p class="desc">Un solo precio. Sin límite de documentos.</p>
+        <div class="plan-card">
+            <strong>Plan Anual</strong>
+            <div class="price">$100.000 <span>CLP / año</span></div>
+            <ul>
+                <li>DTE ilimitados (boletas, facturas, NC, ND, guías)</li>
+                <li>Una API key por software</li>
+                <li>Documentación técnica completa</li>
+                <li>Soporte técnico por email</li>
             </ul>
-            <a href="https://app.yepardte.cl" target="_blank"
-               style="display:inline-block;margin-top:14px;padding:9px 18px;
-                      background:var(--blue);color:#fff;border-radius:9px;
-                      text-decoration:none;font-size:.84rem;font-weight:600;">
-                Crear cuenta gratis →
-            </a>
         </div>
-        <div class="card">
-            <div class="card-title">YeparDTEcore — Para desarrolladores</div>
-            <ul style="font-size:.86rem;line-height:2;color:var(--text2);list-style:none;">
-                <li>✅ API REST para integrar en tu software</li>
-                <li>✅ Stateless — tú manejas los datos</li>
-                <li>✅ Todos los tipos de DTE</li>
-                <li>✅ DTEs ilimitados</li>
-                <li>✅ Certificación SII incluida</li>
-            </ul>
-            <a href="/api/docs" target="_blank"
-               style="display:inline-block;margin-top:14px;padding:9px 18px;
-                      background:var(--surface2);color:var(--blue);border-radius:9px;
-                      text-decoration:none;font-size:.84rem;font-weight:600;
-                      border:1.5px solid var(--blue);">
-                Ver documentación →
-            </a>
+        <div class="plan-notice">
+            💳 El pago se coordina con Yepar Solutions. Al registrarte recibes tu API key y tienes <strong>7 días de prueba gratuitos</strong>.
         </div>
-    </div>
-</div>
-
-
-<!-- ─── MANUAL ─── -->
-<div class="section" id="sec-manual">
-    <h1 class="section-title">Manual de integración</h1>
-    <p class="section-sub">Guía paso a paso para integrar YeparDTEcore en tu software</p>
-
-    <!-- PASO 1 -->
-    <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:24px;">
-        <div style="background:var(--blue);color:#fff;border-radius:50%;width:36px;height:36px;
-                    display:flex;align-items:center;justify-content:center;font-weight:700;
-                    font-size:1rem;flex-shrink:0;">1</div>
-        <div style="flex:1;">
-            <h3 style="font-size:1.05rem;font-weight:600;margin-bottom:6px;">Obtén tu API Key</h3>
-            <p style="font-size:.85rem;color:var(--text2);line-height:1.7;margin-bottom:10px;">
-                Tu API key se generó al registrarte y pagar la suscripción. La encuentras en
-                la sección <strong>API Key</strong> de este panel. Es única para tu software
-                y debes mantenerla secreta — nunca la expongas en el frontend o en código público.
-            </p>
-            <div class="alert-info">
-                🔐 Guárdala como variable de entorno en tu servidor:<br>
-                <code>DTECORE_API_KEY=yek_tu_key_aqui</code>
-            </div>
-        </div>
+        <button class="btn btn-primary" onclick="irReg(4)">Acepto y continuar →</button>
+        <button class="btn btn-ghost" onclick="irReg(2)">← Volver</button>
     </div>
 
-    <!-- PASO 2 -->
-    <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:24px;">
-        <div style="background:var(--blue);color:#fff;border-radius:50%;width:36px;height:36px;
-                    display:flex;align-items:center;justify-content:center;font-weight:700;
-                    font-size:1rem;flex-shrink:0;">2</div>
-        <div style="flex:1;">
-            <h3 style="font-size:1.05rem;font-weight:600;margin-bottom:6px;">Prepara los datos del emisor</h3>
-            <p style="font-size:.85rem;color:var(--text2);line-height:1.7;margin-bottom:10px;">
-                Cada llamada a la API es <strong>stateless</strong> — debes enviar los datos del emisor
-                en cada request. Esto significa que tu software guarda los datos de sus clientes
-                (certificado, CAF, RUT) y los manda a Core en cada emisión. Core no los almacena.
-            </p>
-            <p style="font-size:.85rem;color:var(--text2);margin-bottom:10px;">
-                Los datos que necesitas tener en tu BD por cada emisor de tu sistema:
-            </p>
-            <table class="param-table">
-                <thead><tr><th>Dato</th><th>Cómo obtenerlo</th></tr></thead>
-                <tbody>
-                    <tr><td><code>rut</code>, <code>razon_social</code>, <code>giro</code></td><td>Datos del SII del emisor</td></tr>
-                    <tr><td><code>direccion</code>, <code>comuna</code>, <code>ciudad</code></td><td>Dirección registrada en el SII</td></tr>
-                    <tr><td><code>certificado_p12</code></td><td>Archivo .p12 o .pfx del SII (firma electrónica)</td></tr>
-                    <tr><td><code>certificado_password</code></td><td>Contraseña del certificado</td></tr>
-                    <tr><td><code>caf_xml</code> por tipo</td><td>CAF descargado desde sii.cl → Mi SII → Folios</td></tr>
-                    <tr><td><code>nro_resolucion</code></td><td>Número de resolución del SII (generalmente "0")</td></tr>
-                    <tr><td><code>fch_resolucion</code></td><td>Fecha de resolución (generalmente "2000-01-01")</td></tr>
-                </tbody>
-            </table>
+    <!-- ONBOARDING: TÉRMINOS Y CONDICIONES -->
+    <div class="screen" id="s-tyc">
+        <div class="steps">
+            <div class="pill done"></div><div class="pill done"></div>
+            <div class="pill done"></div><div class="pill active"></div>
         </div>
-    </div>
+        <p class="step-label">Paso 3.5 de 4</p>
+        <h2>Términos y condiciones</h2>
+        <p class="desc">Lee y acepta antes de continuar.</p>
 
-    <!-- PASO 3 -->
-    <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:24px;">
-        <div style="background:var(--blue);color:#fff;border-radius:50%;width:36px;height:36px;
-                    display:flex;align-items:center;justify-content:center;font-weight:700;
-                    font-size:1rem;flex-shrink:0;">3</div>
-        <div style="flex:1;">
-            <h3 style="font-size:1.05rem;font-weight:600;margin-bottom:6px;">Convierte el certificado y CAF a base64</h3>
-            <p style="font-size:.85rem;color:var(--text2);line-height:1.7;margin-bottom:10px;">
-                La API recibe el certificado y el CAF como strings base64. Debes convertirlos
-                antes de enviarlos. Ejemplo en Node.js y Python:
-            </p>
-            <div class="code-block">
-                <button class="copy-code" onclick="copiarCodigo(this)">Copiar</button>
-<span class="cmt">// Node.js</span>
-const fs = require(<span class="str">'fs'</span>);
-const pfxBase64 = fs.readFileSync(<span class="str">'certificado.p12'</span>).toString(<span class="str">'base64'</span>);
-const cafBase64 = fs.readFileSync(<span class="str">'caf_33.xml'</span>).toString(<span class="str">'base64'</span>);
-            </div>
-            <div class="code-block">
-                <button class="copy-code" onclick="copiarCodigo(this)">Copiar</button>
-<span class="cmt"># Python</span>
-import base64
-pfx_b64 = base64.b64encode(open(<span class="str">'certificado.p12'</span>, <span class="str">'rb'</span>).read()).decode()
-caf_b64 = base64.b64encode(open(<span class="str">'caf_33.xml'</span>, <span class="str">'rb'</span>).read()).decode()
-            </div>
+        <div style="height:320px;overflow-y:auto;border:1.5px solid var(--border);
+                    border-radius:12px;padding:18px;font-size:.78rem;
+                    line-height:1.8;color:var(--grey);margin-bottom:16px;
+                    background:var(--bg);" id="tyc-scroll">
+
+            <strong style="font-size:.88rem;color:var(--text);">
+                TÉRMINOS Y CONDICIONES DE USO — YeparDTEcore API<br>
+                Yepar Solutions SpA · Versión 1.0 · Vigente desde junio 2026
+            </strong>
+
+            <br><br><strong>1. PARTES Y OBJETO</strong><br>
+            El presente contrato regula el acceso y uso de la API YeparDTEcore
+            (en adelante "el Servicio"), desarrollada y operada por
+            <strong>Yepar Solutions SpA</strong>, RUT 78.377.021-0, con domicilio
+            en Santiago, Chile (en adelante "Yepar"). El usuario que acepta estos
+            términos (en adelante "el Desarrollador") accede al Servicio para
+            integrar capacidades de facturación electrónica en su propio software.
+
+            <br><br><strong>2. RESPONSABILIDAD POR LOS DOCUMENTOS EMITIDOS</strong><br>
+            <strong style="color:var(--error);">El Desarrollador es el único y exclusivo
+            responsable de la exactitud, veracidad y legalidad de la información
+            contenida en los Documentos Tributarios Electrónicos (DTE) emitidos
+            a través del Servicio.</strong> Yepar actúa como un motor técnico de
+            firma y envío — no valida, verifica ni es responsable por el contenido
+            de los documentos, incluyendo pero no limitado a: montos, RUTs de
+            receptores, descripciones de productos o servicios, fechas, ni ningún
+            otro dato tributario.
+
+            <br><br>El Desarrollador comprende que la emisión de DTEs con
+            información falsa, incorrecta o maliciosa puede constituir un delito
+            tributario conforme a la legislación chilena, siendo de su exclusiva
+            responsabilidad las consecuencias legales, tributarias y civiles
+            que de ello se deriven.
+
+            <br><br><strong>3. RESPONSABILIDAD POR CERTIFICADOS Y CAF</strong><br>
+            Los certificados digitales (.p12/.pfx) y los Códigos de Autorización
+            de Folios (CAF) proporcionados a través de la API son de propiedad
+            y responsabilidad exclusiva del emisor final. Yepar no almacena,
+            retiene ni copia estos datos en ningún momento — son transmitidos
+            de forma stateless en cada llamada. El Desarrollador es responsable
+            de su custodia, confidencialidad y correcto uso.
+
+            <br><br><strong>4. DISPONIBILIDAD DEL SERVICIO</strong><br>
+            Yepar hará sus mejores esfuerzos para mantener el Servicio disponible
+            de forma continua, pero no garantiza una disponibilidad del 100%.
+            El Servicio puede interrumpirse por mantenimiento, fallas técnicas,
+            problemas de conectividad con el SII u otras causas fuera del control
+            de Yepar. Yepar no será responsable por perjuicios derivados de
+            interrupciones del Servicio.
+
+            <br><br><strong>5. USO PERMITIDO Y PROHIBIDO</strong><br>
+            El Desarrollador se compromete a usar el Servicio exclusivamente para
+            la emisión de DTE conforme a la normativa del SII chileno. Queda
+            prohibido: (a) compartir la API key con terceros no autorizados;
+            (b) usar el Servicio para emitir documentos con información falsa;
+            (c) intentar vulnerar la seguridad del Servicio; (d) realizar un
+            número de llamadas que exceda un uso razonable o constituya un
+            ataque de denegación de servicio.
+
+            <br><br><strong>6. API KEY Y LICENCIA</strong><br>
+            La API key otorgada es personal, intransferible y válida para un
+            único software registrado. La licencia es anual y debe renovarse
+            para continuar usando el Servicio. Yepar se reserva el derecho de
+            revocar la API key en caso de uso indebido, sin derecho a reembolso.
+
+            <br><br><strong>7. PROPIEDAD INTELECTUAL</strong><br>
+            El Servicio, incluyendo su código fuente, algoritmos de firma,
+            documentación y marca, son propiedad exclusiva de Yepar Solutions SpA.
+            El acceso al Servicio no otorga al Desarrollador ningún derecho de
+            propiedad intelectual sobre los mismos.
+
+            <br><br><strong>8. DATOS PERSONALES</strong><br>
+            Yepar recopila el nombre, email y datos de la aplicación del
+            Desarrollador con el único fin de gestionar la cuenta y enviar
+            comunicaciones relacionadas con el Servicio. Estos datos no serán
+            cedidos a terceros salvo obligación legal. El Desarrollador puede
+            solicitar la eliminación de sus datos escribiendo a
+            soporte@yeparsolutions.com.
+
+            <br><br><strong>9. LIMITACIÓN DE RESPONSABILIDAD</strong><br>
+            En ningún caso Yepar será responsable por daños indirectos, lucro
+            cesante, pérdida de datos, multas del SII u otros perjuicios
+            derivados del uso o imposibilidad de uso del Servicio, incluso
+            habiendo sido advertida de la posibilidad de dichos daños.
+            La responsabilidad máxima de Yepar se limita al monto pagado
+            por el Desarrollador en la suscripción vigente.
+
+            <br><br><strong>10. MODIFICACIONES</strong><br>
+            Yepar se reserva el derecho de modificar estos Términos con
+            30 días de aviso previo al Desarrollador. El uso continuado del
+            Servicio tras la notificación constituye aceptación de los nuevos
+            términos.
+
+            <br><br><strong>11. LEY APLICABLE Y JURISDICCIÓN</strong><br>
+            El presente contrato se rige por las leyes de la República de Chile.
+            Cualquier disputa será sometida a la jurisdicción de los tribunales
+            ordinarios de la ciudad de Santiago, Chile.
+
+            <br><br><strong>12. CONTACTO</strong><br>
+            Para consultas sobre estos Términos: soporte@yeparsolutions.com<br>
+            Yepar Solutions SpA · RUT 78.377.021-0 · Santiago, Chile
+            <br><br>
         </div>
-    </div>
 
-    <!-- PASO 4 -->
-    <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:24px;">
-        <div style="background:var(--blue);color:#fff;border-radius:50%;width:36px;height:36px;
-                    display:flex;align-items:center;justify-content:center;font-weight:700;
-                    font-size:1rem;flex-shrink:0;">4</div>
-        <div style="flex:1;">
-            <h3 style="font-size:1.05rem;font-weight:600;margin-bottom:6px;">Lleva el contador de folios</h3>
-            <p style="font-size:.85rem;color:var(--text2);line-height:1.7;margin-bottom:10px;">
-                Core no guarda el contador de folios — eso lo maneja tu sistema. Debes guardar
-                el <strong>próximo folio a usar</strong> por cada emisor y tipo de DTE, e incrementarlo
-                después de cada emisión exitosa.
-            </p>
-            <div class="code-block">
-                <button class="copy-code" onclick="copiarCodigo(this)">Copiar</button>
-<span class="cmt">// Ejemplo de tabla en tu BD</span>
-folios_emisor (
-  emisor_id     INT,
-  tipo_dte      INT,      <span class="cmt">-- 33, 39, 61, etc.</span>
-  folio_actual  INT,      <span class="cmt">-- próximo folio a usar</span>
-  folio_hasta   INT,      <span class="cmt">-- último folio del CAF actual</span>
-  caf_xml       TEXT      <span class="cmt">-- CAF en base64</span>
-)
-
-<span class="cmt">// Flujo:</span>
-<span class="val">1.</span> Leer folio_actual del emisor para tipo_dte
-<span class="val">2.</span> Enviar a Core con folio_actual
-<span class="val">3.</span> Si la respuesta es ok → incrementar folio_actual en tu BD
-<span class="val">4.</span> Si folio_actual > folio_hasta → solicitar nuevo CAF al SII
-            </div>
+        <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:18px;">
+            <input type="checkbox" id="chk-tyc" style="margin-top:3px;width:17px;height:17px;cursor:pointer;accent-color:var(--blue);">
+            <label for="chk-tyc" style="font-size:.84rem;color:var(--grey);line-height:1.5;cursor:pointer;">
+                He leído y acepto los <strong>Términos y Condiciones</strong> de uso de
+                YeparDTEcore API. Entiendo que soy el único responsable de la veracidad
+                de los DTE que emita a través del Servicio.
+            </label>
         </div>
+
+        <button class="btn btn-primary" id="btn-aceptar-tyc" onclick="aceptarTyc()" disabled>
+            Acepto los términos y condiciones →
+        </button>
+        <button class="btn btn-ghost" onclick="irReg(3)">← Volver</button>
     </div>
 
-    <!-- PASO 5 -->
-    <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:24px;">
-        <div style="background:var(--blue);color:#fff;border-radius:50%;width:36px;height:36px;
-                    display:flex;align-items:center;justify-content:center;font-weight:700;
-                    font-size:1rem;flex-shrink:0;">5</div>
-        <div style="flex:1;">
-            <h3 style="font-size:1.05rem;font-weight:600;margin-bottom:6px;">Emite tu primer DTE</h3>
-            <p style="font-size:.85rem;color:var(--text2);line-height:1.7;margin-bottom:10px;">
-                Con todo listo, llama a <code>POST /api/firmar-y-enviar</code>. Aquí un ejemplo
-                completo en Node.js:
-            </p>
-            <div class="code-block">
-                <button class="copy-code" onclick="copiarCodigo(this)">Copiar</button>
-<span class="cmt">// Emitir una factura electrónica (tipo 33)</span>
-const resultado = await fetch(<span class="str">'https://yepardtecore.cl/api/firmar-y-enviar'</span>, {
-  method: <span class="str">'POST'</span>,
-  headers: {
-    <span class="str">'X-API-Key'</span>: process.env.DTECORE_API_KEY,
-    <span class="str">'Content-Type'</span>: <span class="str">'application/json'</span>
-  },
-  body: JSON.stringify({
-    emisor: {
-      rut: emisor.rut,
-      razon_social: emisor.razon_social,
-      giro: emisor.giro,
-      direccion: emisor.direccion,
-      comuna: emisor.comuna,
-      ciudad: emisor.ciudad,
-      nro_resolucion: emisor.nro_resolucion,
-      fch_resolucion: emisor.fch_resolucion
-    },
-    pfx_base64: emisor.certificado_p12_base64,
-    pfx_password: emisor.certificado_password,
-    caf_base64: emisor.caf_33_base64,
-    folio_actual: emisor.folio_actual_33,
-    tipo: <span class="val">33</span>,
-    receptor: {
-      rut: receptor.rut,
-      nombre: receptor.razon_social,
-      giro: receptor.giro,
-      direccion: receptor.direccion,
-      comuna: receptor.comuna,
-      ciudad: receptor.ciudad
-    },
-    items: [{
-      nombre: <span class="str">'Servicio de consultoría'</span>,
-      cantidad: <span class="val">1</span>,
-      precio: <span class="val">100000</span>,
-      exento: <span class="val">false</span>
-    }],
-    ambiente: <span class="str">'produccion'</span>,
-    auto_enviar: <span class="val">true</span>
-  })
-});
-
-const data = await resultado.json();
-
-if (data.ok) {
-  <span class="cmt">// Guardar el track_id para consultar estado después</span>
-  await db.query(<span class="str">'UPDATE folios SET folio_actual = folio_actual + 1 WHERE ...'</span>);
-  console.log(<span class="str">'Track ID SII:'</span>, data.track_id);
-}
-            </div>
+    <!-- ONBOARDING: PASO 4 — Confirmar y activar -->
+    <div class="screen" id="s-reg4">
+        <div class="steps" id="steps4">
+            <div class="pill done"></div><div class="pill done"></div>
+            <div class="pill done"></div><div class="pill active"></div>
         </div>
+        <p class="step-label">Paso 4 de 4</p>
+        <h2>Confirma tus datos</h2>
+        <p class="desc">Revisa que todo sea correcto antes de activar tu cuenta.</p>
+        <div class="summary-box" id="reg-resumen"></div>
+        <div class="error-box" id="reg4-error"></div>
+        <button class="btn btn-primary" id="btn-activar" onclick="doRegistrar()">🚀 Activar y obtener API key</button>
+        <button class="btn btn-ghost" onclick="irReg(3)">← Cambiar algo</button>
     </div>
 
-    <!-- PASO 6 -->
-    <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:24px;">
-        <div style="background:var(--blue);color:#fff;border-radius:50%;width:36px;height:36px;
-                    display:flex;align-items:center;justify-content:center;font-weight:700;
-                    font-size:1rem;flex-shrink:0;">6</div>
-        <div style="flex:1;">
-            <h3 style="font-size:1.05rem;font-weight:600;margin-bottom:6px;">Consulta el estado en el SII</h3>
-            <p style="font-size:.85rem;color:var(--text2);line-height:1.7;margin-bottom:10px;">
-                El SII no notifica — debes consultar el estado del envío usando el <code>track_id</code>
-                que devolvió el paso anterior. Recomendamos consultar después de 30-60 segundos.
-            </p>
-            <div class="code-block">
-                <button class="copy-code" onclick="copiarCodigo(this)">Copiar</button>
-<span class="cmt">// Consultar estado</span>
-const estado = await fetch(
-  <span class="str">`https://yepardtecore.cl/api/estado/${trackId}?rut_emisor=${rut}&tipo=33&ambiente=produccion`</span>,
-  { headers: { <span class="str">'X-API-Key'</span>: process.env.DTECORE_API_KEY } }
-);
-const s = await estado.json();
-<span class="cmt">// s.estado → "ACEPTADO" | "RECHAZADO" | "REPARO" | "PENDIENTE"</span>
-            </div>
-            <div class="alert-info">
-                📋 <strong>Estados posibles:</strong><br>
-                <code>ACEPTADO</code> — El SII aceptó el documento correctamente.<br>
-                <code>RECHAZADO</code> — El SII rechazó el documento. Revisa el campo <code>glosa</code>.<br>
-                <code>REPARO</code> — Aceptado con observaciones menores.<br>
-                <code>PENDIENTE</code> — El SII aún está procesando. Consulta en 5 minutos.
-            </div>
-        </div>
-    </div>
-
-    <!-- Ambientes -->
-    <div class="card" style="margin-bottom:18px;">
-        <div class="card-title">🌍 Ambientes</div>
-        <table class="param-table">
-            <thead><tr><th>Ambiente</th><th>SII</th><th>Uso</th></tr></thead>
-            <tbody>
-                <tr>
-                    <td><code>certificacion</code></td>
-                    <td>maullin.sii.cl</td>
-                    <td>Pruebas y certificación. Los documentos no tienen validez fiscal.</td>
-                </tr>
-                <tr>
-                    <td><code>produccion</code></td>
-                    <td>palena.sii.cl</td>
-                    <td>Documentos reales con validez fiscal. Requiere resolución SII.</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-
-    <!-- Soporte -->
-    <div class="card">
-        <div class="card-title">🆘 ¿Necesitas ayuda?</div>
-        <p style="font-size:.86rem;color:var(--text2);line-height:1.7;">
-            Si tienes dudas o problemas integrando, escríbenos a
-            <a href="mailto:soporte@yeparsolutions.com" style="color:var(--blue);font-weight:600;">
-                soporte@yeparsolutions.com
-            </a>
-            — respondemos en menos de 24 horas hábiles.
+    <!-- ONBOARDING: VERIFICACIÓN OTP post-registro -->
+    <div class="screen" id="s-reg-verify">
+        <h2>Verifica tu email</h2>
+        <p class="desc">Te enviamos un código a <strong id="reg-verify-email"></strong>. Ingrésalo para activar tu cuenta.</p>
+        <div class="error-box" id="reg-verify-error"></div>
+        <div class="otp-wrap" id="otp-reg-inputs"></div>
+        <button class="btn btn-primary" onclick="doVerifyReg()">Verificar email</button>
+        <p style="text-align:center; margin-top:12px; font-size:.82rem; color:var(--muted);">
+            ¿No llegó?
+            <button class="btn-link" onclick="doReenviarReg()">Reenviar código</button>
         </p>
     </div>
-</div>
 
-</main>
-</div><!-- /.layout -->
-</div><!-- /#app -->
+    <!-- PANTALLA: PAGO con Mercado Pago -->
+    <div class="screen" id="s-pago">
+        <div style="text-align:center; margin-bottom:20px;">
+            <div style="font-size:2.4rem; margin-bottom:8px;">💳</div>
+            <h2>Activa tu suscripción</h2>
+            <p class="desc" style="margin-bottom:0;">Tu email fue verificado. Completa el pago para recibir tu API key.</p>
+        </div>
+        <div class="plan-card" style="margin-bottom:18px;">
+            <strong>Plan Anual</strong>
+            <div class="price">$100.000 <span>CLP / año</span></div>
+            <ul>
+                <li>DTE ilimitados</li>
+                <li>Una API key por software</li>
+                <li>Soporte técnico por email</li>
+            </ul>
+        </div>
+        <div class="error-box" id="pago-error"></div>
+        <button class="btn btn-primary" id="btn-pagar" onclick="doPagar()">
+            Pagar con Mercado Pago →
+        </button>
+        <p style="text-align:center; margin-top:12px; font-size:.78rem; color:var(--muted);">
+            Serás redirigido a Mercado Pago de forma segura.
+        </p>
+    </div>
+
+    <!-- PANTALLA: ESPERANDO CONFIRMACIÓN DE PAGO -->
+    <div class="screen" id="s-esperando">
+        <div style="text-align:center; padding:20px 0;">
+            <div class="spinner" style="margin:0 auto 16px;"></div>
+            <h2>Verificando pago...</h2>
+            <p class="desc">Estamos confirmando tu pago con Mercado Pago. Esto puede tomar unos segundos.</p>
+        </div>
+        <div class="error-box" id="espera-error"></div>
+    </div>
+
+    <!-- PANTALLA: ÉXITO — API key entregada -->
+    <div class="screen" id="s-success">
+        <div class="success-icon">🎉</div>
+        <div style="text-align:center; margin-bottom:16px;">
+            <h2>¡Listo, <span id="dev-nombre"></span>!</h2>
+            <p class="desc" style="margin-bottom:0;">Tu API key está activa. Cópiala ahora — no se mostrará de nuevo.</p>
+        </div>
+        <div class="api-key-box" id="api-key-display" onclick="copiarKey()">
+            <span class="copy-tip">clic para copiar</span>
+            <span id="api-key-text"></span>
+        </div>
+        <p class="warning-key">⚠️ Guarda esta key en un lugar seguro. Si la pierdes, tendrás que generar una nueva desde el panel.</p>
+        <a href="/api/docs" class="docs-link">📖 Ir a la documentación →</a>
+    </div>
+
+</div><!-- /.card -->
 
 <script>
-// ── Estado ────────────────────────────────────────────────────
-let apiKeyVal  = '';
-let keyVisible = false;
-let emisorId   = null;
+// ── Estado global ─────────────────────────────────────────────
+const state = {
+    email:       '',   // email activo (login o registro)
+    apiKey:      '',   // API key obtenida tras registro
+    devNombre:   '',   // nombre del dev para pantalla de éxito
+    accessToken: '',   // JWT tras login (para reenviar verificación)
+    emisorId:    null, // ID del emisor creado al registrarse
+};
 
-// ── Tema ─────────────────────────────────────────────────────
-function toggleTheme() {
-    const html = document.documentElement;
-    const dark = html.getAttribute('data-theme') === 'dark';
-    html.setAttribute('data-theme', dark ? 'light' : 'dark');
-    document.getElementById('theme-btn').textContent = dark ? '🌙' : '☀️';
-    localStorage.setItem('yepar_theme', dark ? 'light' : 'dark');
+// ── Navegación entre pantallas ────────────────────────────────
+function ir(screenId) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(screenId).classList.add('active');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
-(function() {
-    const t = localStorage.getItem('yepar_theme');
-    if (t === 'dark') {
-        document.documentElement.setAttribute('data-theme', 'dark');
-        setTimeout(() => {
-            const b = document.getElementById('theme-btn');
-            if (b) b.textContent = '☀️';
-        }, 100);
+
+// ── OTP helpers ───────────────────────────────────────────────
+function crearOtpInputs(containerId, onComplete) {
+    const wrap = document.getElementById(containerId);
+    wrap.innerHTML = '';
+    for (let i = 0; i < 6; i++) {
+        const inp = document.createElement('input');
+        inp.type = 'text'; inp.maxLength = 1; inp.inputMode = 'numeric';
+        inp.addEventListener('input', e => {
+            e.target.value = e.target.value.replace(/\D/g, '');
+            if (e.target.value && inp.nextSibling) inp.nextSibling.focus();
+            const code = getOtp(containerId);
+            if (code.length === 6 && onComplete) onComplete(code);
+        });
+        inp.addEventListener('keydown', e => {
+            if (e.key === 'Backspace' && !e.target.value && inp.previousSibling)
+                inp.previousSibling.focus();
+        });
+        inp.addEventListener('paste', e => {
+            e.preventDefault();
+            const txt = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '').slice(0, 6);
+            [...wrap.querySelectorAll('input')].forEach((el, i) => el.value = txt[i] || '');
+            if (txt.length === 6 && onComplete) onComplete(txt);
+        });
+        wrap.appendChild(inp);
     }
-})();
-
-// ── Navegación ────────────────────────────────────────────────
-function irA(id) {
-    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-    document.getElementById('sec-' + id)?.classList.add('active');
-    event?.currentTarget?.classList.add('active');
+    wrap.querySelector('input').focus();
 }
 
-// ── Endpoints toggle ──────────────────────────────────────────
-function toggleEndpoint(header) {
-    const body = header.nextElementSibling;
-    body.classList.toggle('open');
-    const arr = header.querySelector('span:last-child');
-    arr.textContent = body.classList.contains('open') ? '▲' : '▼';
+function getOtp(containerId) {
+    return [...document.getElementById(containerId).querySelectorAll('input')]
+        .map(i => i.value).join('');
 }
 
-// ── Copiar código ─────────────────────────────────────────────
-function copiarCodigo(btn) {
-    const block = btn.parentElement;
-    const text = block.innerText.replace('Copiar\n', '').trim();
-    navigator.clipboard.writeText(text).then(() => {
-        btn.textContent = '✓';
-        setTimeout(() => btn.textContent = 'Copiar', 2000);
+// ── Loader ────────────────────────────────────────────────────
+function showLoader(msg) {
+    document.getElementById('loader-text').textContent = msg || 'Procesando...';
+    document.getElementById('loader').style.display = 'flex';
+}
+function hideLoader() { document.getElementById('loader').style.display = 'none'; }
+
+// ── Error boxes ───────────────────────────────────────────────
+function showError(id, msg) {
+    const el = document.getElementById(id);
+    el.textContent = msg; el.style.display = 'block';
+}
+function hideError(id) { document.getElementById(id).style.display = 'none'; }
+
+// ── API helper ────────────────────────────────────────────────
+async function api(path, body) {
+    const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
     });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Error inesperado');
+    return data;
 }
 
-// ── API Key ───────────────────────────────────────────────────
-function toggleKey() {
-    keyVisible = !keyVisible;
-    document.querySelectorAll('.apikey-text').forEach(el =>
-        el.classList.toggle('visible', keyVisible));
-    document.querySelectorAll('.btn-show').forEach(b =>
-        b.textContent = keyVisible ? '🙈 Ocultar' : '👁 Ver');
+// ════════════════════════════════════════════════════════════
+// LOGIN
+// ════════════════════════════════════════════════════════════
+async function doLogin() {
+    hideError('login-error');
+    const email = document.getElementById('login-email').value.trim().toLowerCase();
+    const pass  = document.getElementById('login-pass').value;
+    if (!email || !pass) return showError('login-error', 'Completa todos los campos.');
+
+    showLoader('Iniciando sesión...');
+    try {
+        const data = await api('/v1/auth/login', { email, password: pass });
+        state.email       = email;
+        state.accessToken = data.access_token;
+        hideLoader();
+
+        if (!data.verificado) {
+            // Necesita verificar email
+            document.getElementById('verify-email-label').textContent = email;
+            crearOtpInputs('otp-verify-inputs');
+            ir('s-verify');
+        } else {
+            // Ir a docs directamente
+            window.location.href = `/dashboard?emisor=${data.usuario.emisor_id || ''}`;
+        }
+    } catch (e) {
+        hideLoader();
+        showError('login-error', e.message);
+    }
 }
+
+// ════════════════════════════════════════════════════════════
+// VERIFICACIÓN EMAIL (post-login)
+// ════════════════════════════════════════════════════════════
+async function doVerify() {
+    hideError('verify-error');
+    const codigo = getOtp('otp-verify-inputs');
+    if (codigo.length < 6) return showError('verify-error', 'Ingresa los 6 dígitos.');
+
+    showLoader('Verificando...');
+    try {
+        await api('/v1/auth/verificar-email', { email: state.email, codigo });
+        hideLoader();
+        window.location.href = `/dashboard?emisor=${state.emisorId || ''}`;
+    } catch (e) {
+        hideLoader();
+        showError('verify-error', e.message);
+    }
+}
+
+async function doReenviar() {
+    showLoader('Reenviando código...');
+    try {
+        await api('/v1/auth/reenviar-verificacion', { email: state.email });
+        hideLoader();
+        alert('✉️ Código reenviado. Revisa tu bandeja de entrada.');
+    } catch (e) {
+        hideLoader();
+        alert('Error: ' + e.message);
+    }
+}
+
+// ════════════════════════════════════════════════════════════
+// RECUPERAR CONTRASEÑA
+// ════════════════════════════════════════════════════════════
+async function doSolicitarRecuperacion(esReenvio = false) {
+    hideError('forgot-error');
+    const email = (esReenvio
+        ? state.email
+        : document.getElementById('forgot-email').value.trim().toLowerCase());
+
+    if (!email) return showError('forgot-error', 'Ingresa tu email.');
+    state.email = email;
+
+    showLoader('Enviando código...');
+    try {
+        await api('/v1/auth/recuperar-password', { email });
+        hideLoader();
+        document.getElementById('forgot-email-label').textContent = email;
+        crearOtpInputs('otp-forgot-inputs');
+        ir('s-forgot-code');
+    } catch (e) {
+        hideLoader();
+        showError('forgot-error', e.message);
+    }
+}
+
+async function doResetear() {
+    hideError('forgot-code-error');
+    const codigo   = getOtp('otp-forgot-inputs');
+    const pass     = document.getElementById('new-pass').value;
+    const confirm  = document.getElementById('new-pass-confirm').value;
+
+    if (codigo.length < 6) return showError('forgot-code-error', 'Ingresa los 6 dígitos.');
+    if (pass.length < 8)   return showError('forgot-code-error', 'La contraseña debe tener al menos 8 caracteres.');
+    if (pass !== confirm)  return showError('forgot-code-error', 'Las contraseñas no coinciden.');
+
+    showLoader('Actualizando contraseña...');
+    try {
+        await api('/v1/auth/resetear-password', {
+            email: state.email, codigo, password: pass,
+        });
+        hideLoader();
+        ir('s-pass-ok');
+    } catch (e) {
+        hideLoader();
+        showError('forgot-code-error', e.message);
+    }
+}
+
+// ════════════════════════════════════════════════════════════
+// ONBOARDING: REGISTRO DESARROLLADOR
+// ════════════════════════════════════════════════════════════
+function irReg(paso) {
+    if (paso === 2) {
+        hideError('reg1-error');
+        const nombre   = v('u_nombre').trim();
+        const apellido = v('u_apellido').trim();
+        const email    = v('u_email').trim();
+        const pass     = v('u_pass');
+        if (!nombre || !apellido) return showError('reg1-error', 'Ingresa tu nombre y apellido.');
+        if (!email || !email.includes('@')) return showError('reg1-error', 'Ingresa un email válido.');
+        if (pass.length < 8) return showError('reg1-error', 'La contraseña debe tener al menos 8 caracteres.');
+    }
+    if (paso === 3) {
+        const nombre = v('app_nombre').trim();
+        const url    = v('app_url').trim();
+        if (!nombre) return alert('Ingresa el nombre de tu software.');
+        if (!url || !url.startsWith('http')) return alert('Ingresa una URL válida (debe comenzar con https://).');
+        // Ir a T&C antes del paso 4
+        ir('s-tyc');
+        return;
+    }
+    if (paso === 4) mostrarResumen();
+    ir('s-reg' + paso);
+}
+
+function mostrarResumen() {
+    document.getElementById('reg-resumen').innerHTML = `
+        <strong>👤 Desarrollador</strong><br>
+        ${esc(v('u_nombre'))} ${esc(v('u_apellido'))}<br>
+        ${esc(v('u_email'))}<br><br>
+        <strong>💻 Software</strong><br>
+        ${esc(v('app_nombre'))}<br>
+        ${esc(v('app_url'))}<br><br>
+        <strong>📋 Plan:</strong> Anual — $100.000 CLP/año (7 días de prueba)
+    `;
+}
+
+async function doRegistrar() {
+    hideError('reg4-error');
+    document.getElementById('btn-activar').disabled = true;
+    showLoader('Creando tu cuenta...');
+    try {
+        const data = await api('/v1/emisores/registro-desarrollador', {
+            nombre:     v('u_nombre').trim(),
+            apellido:   v('u_apellido').trim(),
+            email:      v('u_email').trim().toLowerCase(),
+            password:   v('u_pass'),
+            nombre_app: v('app_nombre').trim(),
+            url_app:    v('app_url').trim(),
+            tyc_aceptado: true,
+        });
+
+        state.apiKey    = data.api_key;
+        state.emisorId  = data.emisor_id;
+        state.email     = v('u_email').trim().toLowerCase();
+        state.devNombre = v('u_nombre').trim();
+        // Guardar en localStorage INMEDIATAMENTE por si MP redirige
+        localStorage.setItem('yepar_emisor_id', data.emisor_id);
+        localStorage.setItem('yepar_dev_nombre', v('u_nombre').trim());
+        localStorage.setItem('yepar_email', v('u_email').trim().toLowerCase());
+
+        hideLoader();
+
+        // Ir a verificar email antes de mostrar la key
+        document.getElementById('reg-verify-email').textContent = state.email;
+        crearOtpInputs('otp-reg-inputs');
+        ir('s-reg-verify');
+
+    } catch (e) {
+        hideLoader();
+        document.getElementById('btn-activar').disabled = false;
+        showError('reg4-error', e.message);
+    }
+}
+
+async function doVerifyReg() {
+    hideError('reg-verify-error');
+    const codigo = getOtp('otp-reg-inputs');
+    if (codigo.length < 6) return showError('reg-verify-error', 'Ingresa los 6 dígitos.');
+
+    showLoader('Verificando...');
+    try {
+        await api('/v1/auth/verificar-email', { email: state.email, codigo });
+        hideLoader();
+
+        // Email verificado → ir a pago
+        ir('s-pago');
+    } catch (e) {
+        hideLoader();
+        showError('reg-verify-error', e.message);
+    }
+}
+
+async function doReenviarReg() {
+    showLoader('Reenviando...');
+    try {
+        await api('/v1/auth/reenviar-verificacion', { email: state.email });
+        hideLoader();
+        alert('✉️ Código reenviado. Revisa tu bandeja de entrada.');
+    } catch (e) {
+        hideLoader();
+        alert('Error: ' + e.message);
+    }
+}
+
+// ── API key: copiar al portapapeles ───────────────────────────
 function copiarKey() {
-    navigator.clipboard.writeText(apiKeyVal).then(() => {
-        document.querySelectorAll('.btn-copy').forEach(b => b.textContent = '✓ Copiado');
-        setTimeout(() => document.querySelectorAll('.btn-copy')
-            .forEach(b => b.textContent = 'Copiar'), 2000);
+    const key = document.getElementById('api-key-text').textContent;
+    navigator.clipboard.writeText(key).then(() => {
+        const tip = document.querySelector('#api-key-display .copy-tip');
+        tip.textContent = '¡copiado!';
+        setTimeout(() => tip.textContent = 'clic para copiar', 2000);
     });
 }
 
-// ── Dashboard data ────────────────────────────────────────────
-async function cargar() {
-    const params = new URLSearchParams(window.location.search);
-    emisorId = params.get('emisor') || localStorage.getItem('yepar_emisor_id');
+// ── Términos y condiciones ────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    const chk  = document.getElementById('chk-tyc');
+    const btn  = document.getElementById('btn-aceptar-tyc');
+    if (chk && btn) {
+        chk.addEventListener('change', () => btn.disabled = !chk.checked);
+    }
+});
 
+function aceptarTyc() {
+    if (!document.getElementById('chk-tyc').checked) return;
+    irReg(4);
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+function v(id)  { return document.getElementById(id).value; }
+function esc(s) { return String(s).replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ════════════════════════════════════════════════════════════
+// PAGO CON MERCADO PAGO
+// ════════════════════════════════════════════════════════════
+async function doPagar() {
+    hideError('pago-error');
+    document.getElementById('btn-pagar').disabled = true;
+    showLoader('Preparando el pago...');
+
+    try {
+        const res = await api('/v1/pagos/crear-preferencia', {
+            emisor_id: state.emisorId,
+            email:     state.email,
+        });
+
+        hideLoader();
+
+        if (res.pagado) {
+            // Ya estaba pagado (raro, pero defensivo)
+            mostrarApiKey();
+            return;
+        }
+
+        // Guardar emisorId en localStorage para recuperarlo al volver de MP
+        localStorage.setItem('yepar_emisor_id', state.emisorId);
+        localStorage.setItem('yepar_dev_nombre', state.devNombre);
+        localStorage.setItem('yepar_email', state.email);
+
+        // Redirigir a Mercado Pago
+        window.location.href = res.init_point;
+
+    } catch (e) {
+        hideLoader();
+        document.getElementById('btn-pagar').disabled = false;
+        showError('pago-error', e.message);
+    }
+}
+
+// Verificar si el usuario volvió de MP (URL con ?pago=exitoso)
+async function verificarRetornoMP() {
+    const params     = new URLSearchParams(window.location.search);
+    const estadoPago = params.get('pago');
+
+    // Recuperar emisorId: primero de la URL, luego localStorage
+    let emisorId = params.get('emisor') || localStorage.getItem('yepar_emisor_id');
+
+    if (!estadoPago) return;  // no venimos de MP
+
+    state.devNombre = localStorage.getItem('yepar_dev_nombre') || '';
+
+    // Si no tenemos emisorId, intentar recuperarlo por email
     if (!emisorId) {
-        const email = localStorage.getItem('yepar_email');
-        if (email) {
+        const emailGuardado = localStorage.getItem('yepar_email');
+        if (emailGuardado) {
             try {
-                const r = await fetch(`/v1/pagos/buscar-por-email?email=${encodeURIComponent(email)}`);
-                if (r.ok) { const d = await r.json(); emisorId = d.emisor_id; }
-            } catch(e) {}
+                const res = await fetch(`/v1/pagos/buscar-por-email?email=${encodeURIComponent(emailGuardado)}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    emisorId = data.emisor_id;
+                }
+            } catch(e) { /* ignorar */ }
         }
     }
 
-    if (!emisorId) { window.location.href = '/onboarding'; return; }
-
-    try {
-        const res = await fetch(`/v1/pagos/dashboard/${emisorId}`);
-        if (!res.ok) { window.location.href = '/onboarding'; return; }
-        render(await res.json());
-    } catch(e) {
-        document.getElementById('loader').innerHTML =
-            `<p style="color:#dc2626">Error cargando. <a href="/onboarding">Volver</a></p>`;
-    }
-}
-
-function render(data) {
-    const { cuenta, suscripcion, metricas } = data;
-    apiKeyVal = cuenta.api_key || '';
-
-    // Topbar
-    document.getElementById('nav-app').textContent = cuenta.nombre_app || '';
-    const envEl = document.getElementById('nav-env');
-    envEl.textContent = cuenta.ambiente === 'produccion' ? 'Producción' : 'Certificación';
-    envEl.className = 'badge-env ' + (cuenta.ambiente === 'produccion' ? 'badge-prod' : 'badge-cert');
-
-    // Overview subtitle
-    document.getElementById('sub-overview').textContent =
-        `${cuenta.nombre_app} · ${cuenta.correo}`;
-
-    // Banner no pagado
-    if (cuenta.estado_pago !== 'pagado') {
-        document.getElementById('unpaid-wrap').innerHTML = `
-            <div class="unpaid-banner">
-                <span style="font-size:1.3rem">⚠️</span>
-                <p>Suscripción <strong>pendiente de pago</strong>.
-                <a href="/onboarding" style="color:#991b1b;font-weight:600;">Ir a pagar →</a></p>
-            </div>`;
+    if (!emisorId) {
+        // No pudimos recuperar el emisorId — mostrar mensaje de ayuda
+        ir('s-pago');
+        showError('pago-error', 'No pudimos identificar tu cuenta. Si completaste el pago, escríbenos a soporte@yeparsolutions.com con tu email.');
+        return;
     }
 
-    // Stats
-    document.getElementById('s-total').textContent = metricas.total_dtes.toLocaleString('es-CL');
-    document.getElementById('s-mes').textContent   = metricas.dtes_este_mes.toLocaleString('es-CL');
-    document.getElementById('s-dias').textContent  = suscripcion.dias_restantes ?? '—';
+    state.emisorId = parseInt(emisorId);
 
-    // Suscripción bar
-    if (suscripcion.inicio) {
-        document.getElementById('sub-desde').textContent = suscripcion.inicio;
-        document.getElementById('sub-hasta').textContent = suscripcion.fin;
-        const pct = Math.max(0, 100 - (suscripcion.porcentaje_tiempo || 0));
-        const bar = document.getElementById('sub-bar');
-        bar.style.width = pct + '%';
-        if (pct < 20) bar.classList.add('danger');
-        const dias = suscripcion.dias_restantes;
-        const cls  = dias > 60 ? 'dias-ok' : dias > 15 ? 'dias-warn' : 'dias-bad';
-        document.getElementById('dias-badge').innerHTML =
-            `<span class="dias-badge ${cls}">${dias} días restantes</span>`;
+    // Limpiar URL y localStorage
+    window.history.replaceState({}, '', '/onboarding');
+    localStorage.removeItem('yepar_emisor_id');
+    localStorage.removeItem('yepar_dev_nombre');
+    localStorage.removeItem('yepar_email');
+
+    if (estadoPago === 'exitoso') {
+        ir('s-esperando');
+        await esperarConfirmacion(state.emisorId);
+    } else if (estadoPago === 'pendiente') {
+        ir('s-esperando');
+        showError('espera-error', 'Tu pago está pendiente de confirmación. Puede tardar unos minutos.');
+        await esperarConfirmacion(state.emisorId, 10);
     } else {
-        document.getElementById('dias-badge').innerHTML =
-            `<span class="dias-badge dias-bad">Sin suscripción activa</span>`;
+        ir('s-pago');
+        showError('pago-error', 'El pago no fue completado. Puedes intentarlo de nuevo.');
     }
-
-    // Por tipo
-    const tipos = metricas.por_tipo;
-    const maxV  = Math.max(...Object.values(tipos), 1);
-    const tipEl = document.getElementById('por-tipo');
-    if (Object.keys(tipos).length) {
-        tipEl.innerHTML = Object.entries(tipos).map(([n, c]) => `
-            <div class="tipo-row">
-                <span class="tipo-name">${n}</span>
-                <div class="tipo-bar-wrap">
-                    <div class="tipo-bar">
-                        <div class="tipo-bar-fill" style="width:${Math.round(c/maxV*100)}%"></div>
-                    </div>
-                </div>
-                <span class="tipo-count">${c}</span>
-            </div>`).join('');
-    }
-
-    // Recientes
-    const recEl = document.getElementById('recientes');
-    if (metricas.recientes.length) {
-        recEl.innerHTML = `<table class="tbl">
-            <thead><tr><th>Tipo</th><th>Folio</th><th>Monto</th><th>Estado</th><th>Fecha</th></tr></thead>
-            <tbody>${metricas.recientes.map(r => `
-                <tr>
-                    <td>${r.tipo}</td><td>${r.folio}</td>
-                    <td>$${Number(r.monto).toLocaleString('es-CL')}</td>
-                    <td><span class="estado-badge estado-${r.estado}">${r.estado}</span></td>
-                    <td>${r.fecha}</td>
-                </tr>`).join('')}
-            </tbody></table>`;
-    }
-
-    // API Key
-    document.querySelectorAll('.apikey-text').forEach(el => el.textContent = apiKeyVal);
-    document.getElementById('key-text-2').textContent  = apiKeyVal;
-    document.getElementById('app-name-2').textContent  = cuenta.nombre_app || '';
-    document.getElementById('url-app-2').textContent   = cuenta.url_app || 'No configurada';
-
-    // Mostrar
-    document.getElementById('loader').style.display = 'none';
-    document.getElementById('app').style.display    = 'block';
 }
 
-function logout() {
-    ['yepar_emisor_id','yepar_email','yepar_dev_nombre'].forEach(k => localStorage.removeItem(k));
-    window.location.href = '/onboarding';
+async function esperarConfirmacion(emisorId, maxIntentos = 6) {
+    // Polling cada 3 segundos, máx 6 veces (18 seg)
+    // El webhook de MP suele llegar en <5 seg
+    for (let i = 0; i < maxIntentos; i++) {
+        await new Promise(r => setTimeout(r, 3000));
+        try {
+            const res = await fetch(`/v1/pagos/estado/${emisorId}`);
+            const data = await res.json();
+            if (data.pagado) {
+                state.apiKey = data.api_key;
+                mostrarApiKey();
+                return;
+            }
+        } catch (e) {
+            // Ignorar errores de red en el polling
+        }
+    }
+    // Si llegamos acá, el webhook aún no llegó
+    showError('espera-error',
+        'La confirmación está tardando. Si completaste el pago, ' +
+        'tu API key llegará por email en los próximos minutos. ' +
+        'También puedes consultar a soporte@yeparsolutions.com.');
 }
 
-cargar();
+function mostrarApiKey() {
+    document.getElementById('dev-nombre').textContent   = state.devNombre;
+    document.getElementById('api-key-text').textContent = state.apiKey;
+    ir('s-success');
+}
+
+// Ejecutar al cargar la página
+window.addEventListener('DOMContentLoaded', verificarRetornoMP);
 </script>
 
-<footer style="text-align:center;padding:28px 20px 20px;
-               border-top:1px solid var(--border);background:var(--surface);
-               color:var(--muted);font-size:.75rem;line-height:1.9;
-               transition:background .3s,border-color .3s;">
-    <img src="/static/LogoYS.png" alt="Yepar Solutions"
-         style="height:42px;opacity:.7;display:block;margin:0 auto 8px;">
-    <strong style="color:var(--text);font-size:.8rem;">Yepar Solutions SpA</strong><br>
-    RUT 78.377.021-0 · Santiago, Chile<br>
-    <a href="mailto:soporte@yeparsolutions.com" style="color:var(--muted);">soporte@yeparsolutions.com</a>
-    · <a href="https://yeparsolutions.com" target="_blank" style="color:var(--muted);">yeparsolutions.com</a><br>
-    © 2026 Yepar Solutions SpA. Todos los derechos reservados.
-</footer>
+
+    <footer style="text-align:center; padding: 32px 20px 24px; color: var(--muted); font-size: .75rem; line-height: 1.8;">
+        <img src="/static/LogoYS.png" alt="Yepar Solutions" style="height:40px; opacity:.7; margin-bottom:8px; display:block; margin-left:auto; margin-right:auto;">
+        <strong style="color:var(--text); font-size:.8rem;">Yepar Solutions SpA</strong><br>
+        RUT 78.377.021-0 · Santiago, Chile<br>
+        <a href="mailto:soporte@yeparsolutions.com" style="color:var(--muted);">soporte@yeparsolutions.com</a>
+        · <a href="https://yeparsolutions.com" target="_blank" style="color:var(--muted);">yeparsolutions.com</a><br>
+        <span style="margin-top:6px; display:block;">© 2026 Yepar Solutions SpA. Todos los derechos reservados.</span>
+    </footer>
 </body>
 </html>
