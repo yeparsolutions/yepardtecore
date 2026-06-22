@@ -733,11 +733,11 @@ GET /api/estado/0252066212?rut_emisor=76123456-7&tipo=33&ambiente=produccion
                 <li>✅ DTEs ilimitados</li>
                 <li>✅ Certificación SII incluida</li>
             </ul>
-            <a href="/api/docs" target="_blank"
+            <a onclick="irA('docs')" href="#" target="_blank"
                style="display:inline-block;margin-top:14px;padding:9px 18px;
                       background:var(--surface2);color:var(--blue);border-radius:9px;
                       text-decoration:none;font-size:.84rem;font-weight:600;
-                      border:1.5px solid var(--blue);">
+                      border:1.5px solid var(--blue);" onclick="irA('docs')">
                 Ver documentación →
             </a>
         </div>
@@ -1289,10 +1289,7 @@ function render(data) {
     apiKeyVal = cuenta.api_key || '';
 
     // Topbar
-    document.getElementById('nav-app').textContent = cuenta.nombre_app || '';
-    const envEl = document.getElementById('nav-env');
-    envEl.textContent = cuenta.ambiente === 'produccion' ? 'Producción' : 'Certificación';
-    envEl.className = 'badge-env ' + (cuenta.ambiente === 'produccion' ? 'badge-prod' : 'badge-cert');
+    document.getElementById('nav-app').textContent = 'YeparDTEcore';
 
 
 
