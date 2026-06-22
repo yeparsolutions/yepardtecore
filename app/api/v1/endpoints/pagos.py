@@ -572,3 +572,213 @@ async def notificar_renovaciones(
         "detalle":     notificados,
         "ejecutado":   ahora.isoformat(),
     }
+
+
+# ══════════════════════════════════════════════════════════════
+# CAMBIAR AMBIENTE DEL EMISOR
+# El desarrollador puede cambiar entre certificacion/produccion
+# desde su dashboard. El ambiente guardado se usa como default
+# cuando no viene en el request.
+# ══════════════════════════════════════════════════════════════
+
+@router.put("/ambiente/{emisor_id}")
+async def cambiar_ambiente(
+    emisor_id: int,
+    db: AsyncSession = Depends(get_db),
+    ambiente: str = "certificacion",
+):
+    """
+    Cambia el ambiente default del emisor.
+    El desarrollador lo controla desde su dashboard.
+    Puede ser sobreescrito por request incluyendo el campo ambiente.
+    """
+    if ambiente not in ("certificacion", "produccion"):
+        raise HTTPException(422, "Ambiente debe ser 'certificacion' o 'produccion'")
+
+    emisor = await db.get(Emisor, emisor_id)
+    if not emisor:
+        raise HTTPException(404, "Emisor no encontrado")
+
+    ambiente_anterior = emisor.ambiente
+    emisor.ambiente   = ambiente
+    await db.commit()
+
+    logger.info(
+        f"[AMBIENTE] Emisor {emisor_id} ({emisor.nombre_app}): "
+        f"{ambiente_anterior} → {ambiente}"
+    )
+
+    return {
+        "ok":       True,
+        "emisor_id": emisor_id,
+        "ambiente":  ambiente,
+        "mensaje":  f"Ambiente cambiado a {ambiente}. "
+                    f"Las llamadas sin campo 'ambiente' usarán {ambiente} por defecto.",
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+# PANEL DE ADMIN — Datos para el panel de administración
+# Protegido por X-Admin-Secret en Railway
+# ══════════════════════════════════════════════════════════════
+
+@router.get("/admin/resumen")
+async def admin_resumen(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Resumen general para el panel de admin."""
+    secret = request.headers.get("X-Admin-Secret", "")
+    if secret != settings.MP_WEBHOOK_SECRET:
+        raise HTTPException(403, "No autorizado")
+
+    from sqlalchemy import func
+    from app.models.usuario import Usuario
+
+    ahora = datetime.now(timezone.utc)
+
+    # Totales
+    res_total = await db.execute(select(func.count(Emisor.id)).where(Emisor.nombre_app.isnot(None)))
+    total_devs = res_total.scalar() or 0
+
+    res_pagados = await db.execute(select(func.count(Emisor.id)).where(
+        Emisor.nombre_app.isnot(None), Emisor.estado_pago == "pagado"))
+    total_pagados = res_pagados.scalar() or 0
+
+    res_pendientes = await db.execute(select(func.count(Emisor.id)).where(
+        Emisor.nombre_app.isnot(None), Emisor.estado_pago == "pendiente"))
+    total_pendientes = res_pendientes.scalar() or 0
+
+    # Ingresos estimados
+    ingresos_estimados = total_pagados * 100000
+
+    # Vencen en 30 días
+    en_30 = ahora + timedelta(days=30)
+    res_vencen = await db.execute(select(func.count(Emisor.id)).where(
+        Emisor.estado_pago == "pagado",
+        Emisor.suscripcion_fin <= en_30,
+        Emisor.suscripcion_fin >= ahora,
+    ))
+    vencen_30 = res_vencen.scalar() or 0
+
+    # Ya vencidos
+    res_vencidos = await db.execute(select(func.count(Emisor.id)).where(
+        Emisor.estado_pago == "pagado",
+        Emisor.suscripcion_fin < ahora,
+    ))
+    ya_vencidos = res_vencidos.scalar() or 0
+
+    # Lista de desarrolladores
+    res_devs = await db.execute(
+        select(Emisor).where(Emisor.nombre_app.isnot(None)).order_by(Emisor.id.desc())
+    )
+    devs = res_devs.scalars().all()
+
+    lista = []
+    for d in devs:
+        dias_restantes = None
+        if d.suscripcion_fin:
+            fin = d.suscripcion_fin
+            if hasattr(fin, 'tzinfo') and fin.tzinfo is None:
+                fin = fin.replace(tzinfo=timezone.utc)
+            dias_restantes = (fin - ahora).days
+
+        lista.append({
+            "id":            d.id,
+            "nombre_app":    d.nombre_app,
+            "url_app":       d.url_app,
+            "correo":        d.correo,
+            "estado_pago":   d.estado_pago,
+            "activo":        d.activo,
+            "ambiente":      d.ambiente,
+            "plan":          d.plan,
+            "suscripcion_inicio": d.suscripcion_inicio.strftime("%d/%m/%Y") if d.suscripcion_inicio else None,
+            "suscripcion_fin":    d.suscripcion_fin.strftime("%d/%m/%Y") if d.suscripcion_fin else None,
+            "dias_restantes": dias_restantes,
+            "api_key_prefix": d.api_key[:16] + "..." if d.api_key else None,
+            "created_at":    d.created_at.strftime("%d/%m/%Y") if d.created_at else None,
+        })
+
+    return {
+        "ok": True,
+        "resumen": {
+            "total_desarrolladores": total_devs,
+            "pagados":               total_pagados,
+            "pendientes":            total_pendientes,
+            "ingresos_estimados_clp": ingresos_estimados,
+            "vencen_en_30_dias":     vencen_30,
+            "ya_vencidos":           ya_vencidos,
+            "consultado_en":         ahora.strftime("%d/%m/%Y %H:%M"),
+        },
+        "desarrolladores": lista,
+    }
+
+
+@router.put("/admin/emisor/{emisor_id}/toggle")
+async def admin_toggle_emisor(
+    emisor_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Activa o desactiva un emisor desde el panel de admin."""
+    secret = request.headers.get("X-Admin-Secret", "")
+    if secret != settings.MP_WEBHOOK_SECRET:
+        raise HTTPException(403, "No autorizado")
+
+    emisor = await db.get(Emisor, emisor_id)
+    if not emisor:
+        raise HTTPException(404, "Emisor no encontrado")
+
+    emisor.activo = not emisor.activo
+    await db.commit()
+
+    logger.info(f"[ADMIN] Emisor {emisor_id} ({emisor.nombre_app}): activo={emisor.activo}")
+
+    return {
+        "ok":       True,
+        "emisor_id": emisor_id,
+        "nombre_app": emisor.nombre_app,
+        "activo":   emisor.activo,
+    }
+
+
+@router.put("/admin/emisor/{emisor_id}/activar-pago")
+async def admin_activar_pago(
+    emisor_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Activa manualmente el pago de un emisor (ej: transferencia bancaria)."""
+    secret = request.headers.get("X-Admin-Secret", "")
+    if secret != settings.MP_WEBHOOK_SECRET:
+        raise HTTPException(403, "No autorizado")
+
+    emisor = await db.get(Emisor, emisor_id)
+    if not emisor:
+        raise HTTPException(404, "Emisor no encontrado")
+
+    ahora = datetime.now(timezone.utc)
+
+    # Si ya tiene suscripción activa, extender desde el fin actual
+    if emisor.suscripcion_fin and emisor.suscripcion_fin > ahora:
+        fin = emisor.suscripcion_fin
+        if hasattr(fin, 'tzinfo') and fin.tzinfo is None:
+            fin = fin.replace(tzinfo=timezone.utc)
+        nuevo_fin = fin + timedelta(days=365)
+    else:
+        nuevo_fin = ahora + timedelta(days=365)
+
+    emisor.estado_pago        = "pagado"
+    emisor.suscripcion_inicio = ahora
+    emisor.suscripcion_fin    = nuevo_fin
+    await db.commit()
+
+    logger.info(f"[ADMIN] Pago activado manualmente para emisor {emisor_id} ({emisor.nombre_app})")
+
+    return {
+        "ok":              True,
+        "emisor_id":       emisor_id,
+        "nombre_app":      emisor.nombre_app,
+        "estado_pago":     emisor.estado_pago,
+        "suscripcion_fin": nuevo_fin.strftime("%d/%m/%Y"),
+    }
