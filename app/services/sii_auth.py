@@ -383,12 +383,8 @@ class SIIAuthBoleta(SIIAuth):
 # a vecinos del barrio; apicert es la sucursal con atención nacional.
 SII_BOLETA_REST_SEMILLA_CERT = "https://apicert.sii.cl/recursos/v1/boleta.electronica.semilla"
 SII_BOLETA_REST_TOKEN_CERT   = "https://apicert.sii.cl/recursos/v1/boleta.electronica.token"
-# En producción las URLs apuntan al proxy en Chile (LightNode Santiago)
-# que reenvía al SII sin bloqueo. El proxy corre en port 8080.
-import os as _os
-_PROXY_BASE = _os.environ.get("SII_BOLETA_PROXY_URL", "").rstrip("/")
-SII_BOLETA_REST_SEMILLA_PROD = (_PROXY_BASE + "/boleta/semilla") if _PROXY_BASE else "https://api.sii.cl/recursos/v1/boleta.electronica.semilla"
-SII_BOLETA_REST_TOKEN_PROD   = (_PROXY_BASE + "/boleta/token")   if _PROXY_BASE else "https://api.sii.cl/recursos/v1/boleta.electronica.token"
+SII_BOLETA_REST_SEMILLA_PROD = "https://api.sii.cl/recursos/v1/boleta.electronica.semilla"
+SII_BOLETA_REST_TOKEN_PROD   = "https://api.sii.cl/recursos/v1/boleta.electronica.token"
 
 _REST_HEADERS_BASE = {
     "User-Agent": "Mozilla/4.0 (compatible; PROG 1.0; YeparDTEcore)",
