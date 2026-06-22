@@ -60,7 +60,7 @@
             transition: background .3s, border-color .3s;
         }
         .topbar-left { display: flex; align-items: center; gap: 14px; }
-        .topbar-left img { height: 30px; }
+        .topbar-left img { height: 40px; }
         .topbar-right { display: flex; align-items: center; gap: 10px; }
         .badge-env {
             padding: 3px 10px; border-radius: 20px; font-size: .7rem;
@@ -342,9 +342,9 @@
         <button class="nav-item" onclick="irA('yepardte')">
             <span>🧾</span> YeparDTE
         </button>
-        <a href="/api/docs" target="_blank" class="nav-item">
-            <span>⚡</span> Swagger UI
-        </a>
+        <button class="nav-item" onclick="irA('manual')">
+            <span>📘</span> Manual
+        </button>
         <a href="mailto:soporte@yeparsolutions.com" class="nav-item">
             <span>✉️</span> Soporte
         </a>
@@ -717,6 +717,251 @@ GET /api/estado/0252066212?rut_emisor=76123456-7&tipo=33&ambiente=produccion
     </div>
 </div>
 
+
+<!-- ─── MANUAL ─── -->
+<div class="section" id="sec-manual">
+    <h1 class="section-title">Manual de integración</h1>
+    <p class="section-sub">Guía paso a paso para integrar YeparDTEcore en tu software</p>
+
+    <!-- PASO 1 -->
+    <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:24px;">
+        <div style="background:var(--blue);color:#fff;border-radius:50%;width:36px;height:36px;
+                    display:flex;align-items:center;justify-content:center;font-weight:700;
+                    font-size:1rem;flex-shrink:0;">1</div>
+        <div style="flex:1;">
+            <h3 style="font-size:1.05rem;font-weight:600;margin-bottom:6px;">Obtén tu API Key</h3>
+            <p style="font-size:.85rem;color:var(--text2);line-height:1.7;margin-bottom:10px;">
+                Tu API key se generó al registrarte y pagar la suscripción. La encuentras en
+                la sección <strong>API Key</strong> de este panel. Es única para tu software
+                y debes mantenerla secreta — nunca la expongas en el frontend o en código público.
+            </p>
+            <div class="alert-info">
+                🔐 Guárdala como variable de entorno en tu servidor:<br>
+                <code>DTECORE_API_KEY=yek_tu_key_aqui</code>
+            </div>
+        </div>
+    </div>
+
+    <!-- PASO 2 -->
+    <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:24px;">
+        <div style="background:var(--blue);color:#fff;border-radius:50%;width:36px;height:36px;
+                    display:flex;align-items:center;justify-content:center;font-weight:700;
+                    font-size:1rem;flex-shrink:0;">2</div>
+        <div style="flex:1;">
+            <h3 style="font-size:1.05rem;font-weight:600;margin-bottom:6px;">Prepara los datos del emisor</h3>
+            <p style="font-size:.85rem;color:var(--text2);line-height:1.7;margin-bottom:10px;">
+                Cada llamada a la API es <strong>stateless</strong> — debes enviar los datos del emisor
+                en cada request. Esto significa que tu software guarda los datos de sus clientes
+                (certificado, CAF, RUT) y los manda a Core en cada emisión. Core no los almacena.
+            </p>
+            <p style="font-size:.85rem;color:var(--text2);margin-bottom:10px;">
+                Los datos que necesitas tener en tu BD por cada emisor de tu sistema:
+            </p>
+            <table class="param-table">
+                <thead><tr><th>Dato</th><th>Cómo obtenerlo</th></tr></thead>
+                <tbody>
+                    <tr><td><code>rut</code>, <code>razon_social</code>, <code>giro</code></td><td>Datos del SII del emisor</td></tr>
+                    <tr><td><code>direccion</code>, <code>comuna</code>, <code>ciudad</code></td><td>Dirección registrada en el SII</td></tr>
+                    <tr><td><code>certificado_p12</code></td><td>Archivo .p12 o .pfx del SII (firma electrónica)</td></tr>
+                    <tr><td><code>certificado_password</code></td><td>Contraseña del certificado</td></tr>
+                    <tr><td><code>caf_xml</code> por tipo</td><td>CAF descargado desde sii.cl → Mi SII → Folios</td></tr>
+                    <tr><td><code>nro_resolucion</code></td><td>Número de resolución del SII (generalmente "0")</td></tr>
+                    <tr><td><code>fch_resolucion</code></td><td>Fecha de resolución (generalmente "2000-01-01")</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- PASO 3 -->
+    <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:24px;">
+        <div style="background:var(--blue);color:#fff;border-radius:50%;width:36px;height:36px;
+                    display:flex;align-items:center;justify-content:center;font-weight:700;
+                    font-size:1rem;flex-shrink:0;">3</div>
+        <div style="flex:1;">
+            <h3 style="font-size:1.05rem;font-weight:600;margin-bottom:6px;">Convierte el certificado y CAF a base64</h3>
+            <p style="font-size:.85rem;color:var(--text2);line-height:1.7;margin-bottom:10px;">
+                La API recibe el certificado y el CAF como strings base64. Debes convertirlos
+                antes de enviarlos. Ejemplo en Node.js y Python:
+            </p>
+            <div class="code-block">
+                <button class="copy-code" onclick="copiarCodigo(this)">Copiar</button>
+<span class="cmt">// Node.js</span>
+const fs = require(<span class="str">'fs'</span>);
+const pfxBase64 = fs.readFileSync(<span class="str">'certificado.p12'</span>).toString(<span class="str">'base64'</span>);
+const cafBase64 = fs.readFileSync(<span class="str">'caf_33.xml'</span>).toString(<span class="str">'base64'</span>);
+            </div>
+            <div class="code-block">
+                <button class="copy-code" onclick="copiarCodigo(this)">Copiar</button>
+<span class="cmt"># Python</span>
+import base64
+pfx_b64 = base64.b64encode(open(<span class="str">'certificado.p12'</span>, <span class="str">'rb'</span>).read()).decode()
+caf_b64 = base64.b64encode(open(<span class="str">'caf_33.xml'</span>, <span class="str">'rb'</span>).read()).decode()
+            </div>
+        </div>
+    </div>
+
+    <!-- PASO 4 -->
+    <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:24px;">
+        <div style="background:var(--blue);color:#fff;border-radius:50%;width:36px;height:36px;
+                    display:flex;align-items:center;justify-content:center;font-weight:700;
+                    font-size:1rem;flex-shrink:0;">4</div>
+        <div style="flex:1;">
+            <h3 style="font-size:1.05rem;font-weight:600;margin-bottom:6px;">Lleva el contador de folios</h3>
+            <p style="font-size:.85rem;color:var(--text2);line-height:1.7;margin-bottom:10px;">
+                Core no guarda el contador de folios — eso lo maneja tu sistema. Debes guardar
+                el <strong>próximo folio a usar</strong> por cada emisor y tipo de DTE, e incrementarlo
+                después de cada emisión exitosa.
+            </p>
+            <div class="code-block">
+                <button class="copy-code" onclick="copiarCodigo(this)">Copiar</button>
+<span class="cmt">// Ejemplo de tabla en tu BD</span>
+folios_emisor (
+  emisor_id     INT,
+  tipo_dte      INT,      <span class="cmt">-- 33, 39, 61, etc.</span>
+  folio_actual  INT,      <span class="cmt">-- próximo folio a usar</span>
+  folio_hasta   INT,      <span class="cmt">-- último folio del CAF actual</span>
+  caf_xml       TEXT      <span class="cmt">-- CAF en base64</span>
+)
+
+<span class="cmt">// Flujo:</span>
+<span class="val">1.</span> Leer folio_actual del emisor para tipo_dte
+<span class="val">2.</span> Enviar a Core con folio_actual
+<span class="val">3.</span> Si la respuesta es ok → incrementar folio_actual en tu BD
+<span class="val">4.</span> Si folio_actual > folio_hasta → solicitar nuevo CAF al SII
+            </div>
+        </div>
+    </div>
+
+    <!-- PASO 5 -->
+    <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:24px;">
+        <div style="background:var(--blue);color:#fff;border-radius:50%;width:36px;height:36px;
+                    display:flex;align-items:center;justify-content:center;font-weight:700;
+                    font-size:1rem;flex-shrink:0;">5</div>
+        <div style="flex:1;">
+            <h3 style="font-size:1.05rem;font-weight:600;margin-bottom:6px;">Emite tu primer DTE</h3>
+            <p style="font-size:.85rem;color:var(--text2);line-height:1.7;margin-bottom:10px;">
+                Con todo listo, llama a <code>POST /api/firmar-y-enviar</code>. Aquí un ejemplo
+                completo en Node.js:
+            </p>
+            <div class="code-block">
+                <button class="copy-code" onclick="copiarCodigo(this)">Copiar</button>
+<span class="cmt">// Emitir una factura electrónica (tipo 33)</span>
+const resultado = await fetch(<span class="str">'https://yepardtecore.cl/api/firmar-y-enviar'</span>, {
+  method: <span class="str">'POST'</span>,
+  headers: {
+    <span class="str">'X-API-Key'</span>: process.env.DTECORE_API_KEY,
+    <span class="str">'Content-Type'</span>: <span class="str">'application/json'</span>
+  },
+  body: JSON.stringify({
+    emisor: {
+      rut: emisor.rut,
+      razon_social: emisor.razon_social,
+      giro: emisor.giro,
+      direccion: emisor.direccion,
+      comuna: emisor.comuna,
+      ciudad: emisor.ciudad,
+      nro_resolucion: emisor.nro_resolucion,
+      fch_resolucion: emisor.fch_resolucion
+    },
+    pfx_base64: emisor.certificado_p12_base64,
+    pfx_password: emisor.certificado_password,
+    caf_base64: emisor.caf_33_base64,
+    folio_actual: emisor.folio_actual_33,
+    tipo: <span class="val">33</span>,
+    receptor: {
+      rut: receptor.rut,
+      nombre: receptor.razon_social,
+      giro: receptor.giro,
+      direccion: receptor.direccion,
+      comuna: receptor.comuna,
+      ciudad: receptor.ciudad
+    },
+    items: [{
+      nombre: <span class="str">'Servicio de consultoría'</span>,
+      cantidad: <span class="val">1</span>,
+      precio: <span class="val">100000</span>,
+      exento: <span class="val">false</span>
+    }],
+    ambiente: <span class="str">'produccion'</span>,
+    auto_enviar: <span class="val">true</span>
+  })
+});
+
+const data = await resultado.json();
+
+if (data.ok) {
+  <span class="cmt">// Guardar el track_id para consultar estado después</span>
+  await db.query(<span class="str">'UPDATE folios SET folio_actual = folio_actual + 1 WHERE ...'</span>);
+  console.log(<span class="str">'Track ID SII:'</span>, data.track_id);
+}
+            </div>
+        </div>
+    </div>
+
+    <!-- PASO 6 -->
+    <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:24px;">
+        <div style="background:var(--blue);color:#fff;border-radius:50%;width:36px;height:36px;
+                    display:flex;align-items:center;justify-content:center;font-weight:700;
+                    font-size:1rem;flex-shrink:0;">6</div>
+        <div style="flex:1;">
+            <h3 style="font-size:1.05rem;font-weight:600;margin-bottom:6px;">Consulta el estado en el SII</h3>
+            <p style="font-size:.85rem;color:var(--text2);line-height:1.7;margin-bottom:10px;">
+                El SII no notifica — debes consultar el estado del envío usando el <code>track_id</code>
+                que devolvió el paso anterior. Recomendamos consultar después de 30-60 segundos.
+            </p>
+            <div class="code-block">
+                <button class="copy-code" onclick="copiarCodigo(this)">Copiar</button>
+<span class="cmt">// Consultar estado</span>
+const estado = await fetch(
+  <span class="str">`https://yepardtecore.cl/api/estado/${trackId}?rut_emisor=${rut}&tipo=33&ambiente=produccion`</span>,
+  { headers: { <span class="str">'X-API-Key'</span>: process.env.DTECORE_API_KEY } }
+);
+const s = await estado.json();
+<span class="cmt">// s.estado → "ACEPTADO" | "RECHAZADO" | "REPARO" | "PENDIENTE"</span>
+            </div>
+            <div class="alert-info">
+                📋 <strong>Estados posibles:</strong><br>
+                <code>ACEPTADO</code> — El SII aceptó el documento correctamente.<br>
+                <code>RECHAZADO</code> — El SII rechazó el documento. Revisa el campo <code>glosa</code>.<br>
+                <code>REPARO</code> — Aceptado con observaciones menores.<br>
+                <code>PENDIENTE</code> — El SII aún está procesando. Consulta en 5 minutos.
+            </div>
+        </div>
+    </div>
+
+    <!-- Ambientes -->
+    <div class="card" style="margin-bottom:18px;">
+        <div class="card-title">🌍 Ambientes</div>
+        <table class="param-table">
+            <thead><tr><th>Ambiente</th><th>SII</th><th>Uso</th></tr></thead>
+            <tbody>
+                <tr>
+                    <td><code>certificacion</code></td>
+                    <td>maullin.sii.cl</td>
+                    <td>Pruebas y certificación. Los documentos no tienen validez fiscal.</td>
+                </tr>
+                <tr>
+                    <td><code>produccion</code></td>
+                    <td>palena.sii.cl</td>
+                    <td>Documentos reales con validez fiscal. Requiere resolución SII.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Soporte -->
+    <div class="card">
+        <div class="card-title">🆘 ¿Necesitas ayuda?</div>
+        <p style="font-size:.86rem;color:var(--text2);line-height:1.7;">
+            Si tienes dudas o problemas integrando, escríbenos a
+            <a href="mailto:soporte@yeparsolutions.com" style="color:var(--blue);font-weight:600;">
+                soporte@yeparsolutions.com
+            </a>
+            — respondemos en menos de 24 horas hábiles.
+        </p>
+    </div>
+</div>
+
 </main>
 </div><!-- /.layout -->
 </div><!-- /#app -->
@@ -911,5 +1156,18 @@ function logout() {
 
 cargar();
 </script>
+
+<footer style="text-align:center;padding:28px 20px 20px;
+               border-top:1px solid var(--border);background:var(--surface);
+               color:var(--muted);font-size:.75rem;line-height:1.9;
+               transition:background .3s,border-color .3s;">
+    <img src="/static/logo-horizontal.svg" alt="Yepar Solutions"
+         style="height:26px;opacity:.45;display:block;margin:0 auto 8px;">
+    <strong style="color:var(--text);font-size:.8rem;">Yepar Solutions SpA</strong><br>
+    RUT 78.377.021-0 · Santiago, Chile<br>
+    <a href="mailto:soporte@yeparsolutions.com" style="color:var(--muted);">soporte@yeparsolutions.com</a>
+    · <a href="https://yeparsolutions.com" target="_blank" style="color:var(--muted);">yeparsolutions.com</a><br>
+    © 2026 Yepar Solutions SpA. Todos los derechos reservados.
+</footer>
 </body>
 </html>
