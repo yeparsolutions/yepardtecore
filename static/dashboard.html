@@ -345,6 +345,9 @@
         <button class="nav-item" onclick="irA('manual')">
             <span>📘</span> Manual
         </button>
+        <button class="nav-item" onclick="irA('renovar')">
+            <span>🔄</span> Renovar
+        </button>
         <button class="nav-item" onclick="irA('legal')">
             <span>⚖️</span> Legal / T&C
         </button>
@@ -393,6 +396,18 @@
             </div>
             <div class="sub-bar-track"><div class="sub-bar-fill" id="sub-bar" style="width:0%"></div></div>
             <div id="dias-badge"></div>
+            <div id="renovar-wrap" style="margin-top:14px;display:none;">
+                <button onclick="renovar()"
+                    style="background:var(--blue);color:#fff;border:none;
+                           border-radius:10px;padding:10px 20px;font-size:.85rem;
+                           font-weight:600;cursor:pointer;font-family:inherit;
+                           width:100%;transition:background .2s;">
+                    🔄 Renovar suscripción — $100.000 CLP
+                </button>
+                <p style="font-size:.73rem;color:var(--muted);text-align:center;margin-top:6px;">
+                    Al renovar se extiende 1 año desde tu fecha de vencimiento actual.
+                </p>
+            </div>
         </div>
         <div class="card">
             <div class="card-title">DTEs por tipo</div>
@@ -966,6 +981,73 @@ const s = await estado.json();
 </div>
 
 
+
+<!-- ─── RENOVAR ─── -->
+<div class="section" id="sec-renovar">
+    <h1 class="section-title">Renovar suscripción</h1>
+    <p class="section-sub">Extiende tu acceso a la API por otro año</p>
+
+    <div id="renovar-estado-wrap"></div>
+
+    <div class="card" style="margin-bottom:16px;">
+        <div class="card-title">Estado actual</div>
+        <table class="param-table">
+            <tbody>
+                <tr><td>Plan</td><td><strong>Anual — $100.000 CLP</strong></td></tr>
+                <tr><td>Inicio</td><td id="ren-inicio">—</td></tr>
+                <tr><td>Vencimiento</td><td id="ren-fin">—</td></tr>
+                <tr><td>Días restantes</td><td id="ren-dias">—</td></tr>
+                <tr><td>Estado</td><td id="ren-estado">—</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+        <div class="card-title">Renovar por otro año</div>
+        <p style="font-size:.85rem;color:var(--text2);line-height:1.7;margin-bottom:16px;">
+            Al renovar, tu suscripción se extiende 365 días adicionales desde tu fecha
+            de vencimiento actual. Tu API key sigue siendo la misma — no necesitas
+            cambiar nada en tu software.
+        </p>
+        <div style="background:var(--blue-bg);border-radius:12px;padding:18px;
+                    margin-bottom:16px;display:flex;align-items:center;
+                    justify-content:space-between;gap:16px;">
+            <div>
+                <strong style="font-size:1.1rem;">Plan Anual</strong><br>
+                <span style="font-size:.83rem;color:var(--muted);">
+                    DTE ilimitados · Una API key · Soporte técnico
+                </span>
+            </div>
+            <div style="font-family:'Instrument Serif',serif;font-size:1.8rem;
+                        color:var(--blue);white-space:nowrap;">
+                $100.000 <span style="font-size:.9rem;color:var(--muted);">CLP</span>
+            </div>
+        </div>
+        <div id="renovar-error" class="error-box" style="display:none;background:#fef2f2;
+             border:1px solid #fecaca;border-radius:10px;padding:10px 14px;
+             font-size:.82rem;color:#dc2626;margin-bottom:12px;"></div>
+        <button id="btn-renovar-mp" onclick="renovar()"
+            style="width:100%;background:var(--blue);color:#fff;border:none;
+                   border-radius:12px;padding:13px;font-size:.93rem;font-weight:600;
+                   cursor:pointer;font-family:inherit;transition:background .2s;">
+            Pagar con Mercado Pago →
+        </button>
+        <p style="font-size:.75rem;color:var(--muted);text-align:center;margin-top:8px;">
+            Serás redirigido a Mercado Pago de forma segura.
+        </p>
+    </div>
+
+    <div class="card">
+        <div class="card-title">¿Cuándo renovar?</div>
+        <div style="font-size:.84rem;color:var(--text2);line-height:1.8;">
+            Puedes renovar en cualquier momento antes o después del vencimiento.
+            Si renuevas antes de que expire, los días restantes se suman al nuevo año.
+            Si ya venció, la suscripción se activa desde el momento del pago.<br><br>
+            Te enviaremos un email de recordatorio <strong>30 días antes</strong> del vencimiento.
+        </div>
+    </div>
+</div>
+
 <!-- ─── LEGAL ─── -->
 <div class="section" id="sec-legal">
     <h1 class="section-title">Legal y Términos de Uso</h1>
@@ -1234,6 +1316,10 @@ function render(data) {
         const cls  = dias > 60 ? 'dias-ok' : dias > 15 ? 'dias-warn' : 'dias-bad';
         document.getElementById('dias-badge').innerHTML =
             `<span class="dias-badge ${cls}">${dias} días restantes</span>`;
+        // Mostrar botón renovar si faltan menos de 60 días o ya venció
+        if (dias !== null && dias < 60) {
+            document.getElementById('renovar-wrap').style.display = 'block';
+        }
     } else {
         document.getElementById('dias-badge').innerHTML =
             `<span class="dias-badge dias-bad">Sin suscripción activa</span>`;
@@ -1277,9 +1363,55 @@ function render(data) {
     document.getElementById('app-name-2').textContent  = cuenta.nombre_app || '';
     document.getElementById('url-app-2').textContent   = cuenta.url_app || 'No configurada';
 
+    // Poblar sección renovar
+    document.getElementById('ren-inicio').textContent  = suscripcion.inicio || '—';
+    document.getElementById('ren-fin').textContent     = suscripcion.fin    || '—';
+    document.getElementById('ren-dias').textContent    = suscripcion.dias_restantes !== null
+        ? suscripcion.dias_restantes + ' días' : '—';
+    const estadoEl = document.getElementById('ren-estado');
+    if (cuenta.estado_pago === 'pagado') {
+        estadoEl.innerHTML = '<span class="dias-badge dias-ok">Activa</span>';
+    } else {
+        estadoEl.innerHTML = '<span class="dias-badge dias-bad">Pendiente de pago</span>';
+        // Mostrar alerta en sección renovar
+        document.getElementById('renovar-estado-wrap').innerHTML = `
+            <div class="unpaid-banner" style="margin-bottom:18px;">
+                <span style="font-size:1.3rem">⚠️</span>
+                <p>Tu suscripción está <strong>pendiente de pago</strong>.
+                Renueva para activar tu API key.</p>
+            </div>`;
+    }
+
     // Mostrar
     document.getElementById('loader').style.display = 'none';
     document.getElementById('app').style.display    = 'block';
+}
+
+async function renovar() {
+    const btn = document.getElementById('btn-renovar-mp');
+    const errEl = document.getElementById('renovar-error');
+    if (btn) btn.disabled = true;
+    if (errEl) errEl.style.display = 'none';
+
+    try {
+        const email = localStorage.getItem('yepar_email') || '';
+        const res = await fetch('/v1/pagos/crear-preferencia', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ emisor_id: parseInt(emisorId), email })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Error al crear el pago');
+
+        localStorage.setItem('yepar_emisor_id', emisorId);
+        localStorage.setItem('yepar_email', email);
+
+        window.location.href = data.init_point;
+    } catch(e) {
+        if (btn) btn.disabled = false;
+        if (errEl) { errEl.textContent = e.message; errEl.style.display = 'block'; }
+        else alert('Error: ' + e.message);
+    }
 }
 
 function logout() {
