@@ -335,3 +335,116 @@ async def estado_pago(
         "pagado": False,
         "estado": emisor.estado_pago,
     }
+
+
+# ── Dashboard del desarrollador ───────────────────────────────
+
+@router.get("/dashboard/{emisor_id}")
+async def dashboard(
+    emisor_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Datos completos para el dashboard del desarrollador.
+    Incluye: info de la cuenta, suscripción, métricas de uso y API key.
+    """
+    from app.models.dte import DTE
+    from sqlalchemy import func, case
+    from datetime import datetime, timezone
+
+    emisor = await db.get(Emisor, emisor_id)
+    if not emisor:
+        raise HTTPException(404, "Cuenta no encontrada")
+
+    ahora = datetime.now(timezone.utc)
+
+    # Días restantes de suscripción
+    dias_restantes = None
+    porcentaje_tiempo = None
+    if emisor.suscripcion_fin:
+        fin = emisor.suscripcion_fin
+        if hasattr(fin, 'tzinfo') and fin.tzinfo is None:
+            fin = fin.replace(tzinfo=timezone.utc)
+        delta = fin - ahora
+        dias_restantes = max(0, delta.days)
+        if emisor.suscripcion_inicio:
+            inicio = emisor.suscripcion_inicio
+            if hasattr(inicio, 'tzinfo') and inicio.tzinfo is None:
+                inicio = inicio.replace(tzinfo=timezone.utc)
+            total_dias = (fin - inicio).days or 365
+            transcurridos = (ahora - inicio).days
+            porcentaje_tiempo = min(100, round(transcurridos / total_dias * 100))
+
+    # Métricas de DTE (solo si tiene documentos en BD)
+    try:
+        res_total = await db.execute(
+            select(func.count(DTE.id)).where(DTE.emisor_id == emisor_id)
+        )
+        total_dtes = res_total.scalar() or 0
+
+        res_por_tipo = await db.execute(
+            select(DTE.tipo_dte, func.count(DTE.id))
+            .where(DTE.emisor_id == emisor_id)
+            .group_by(DTE.tipo_dte)
+        )
+        por_tipo = {
+            {33:"Facturas",34:"F.Exentas",39:"Boletas",41:"B.Exentas",
+             52:"Guías",56:"N.Débito",61:"N.Crédito"}.get(t, str(t)): c
+            for t, c in res_por_tipo.fetchall()
+        }
+
+        res_mes = await db.execute(
+            select(func.count(DTE.id)).where(
+                DTE.emisor_id == emisor_id,
+                DTE.created_at >= ahora.replace(day=1, hour=0, minute=0, second=0)
+            )
+        )
+        dtes_este_mes = res_mes.scalar() or 0
+
+        res_recientes = await db.execute(
+            select(DTE.tipo_dte, DTE.folio, DTE.monto_total, DTE.estado, DTE.created_at)
+            .where(DTE.emisor_id == emisor_id)
+            .order_by(DTE.created_at.desc())
+            .limit(5)
+        )
+        recientes = [
+            {
+                "tipo": {33:"Factura",34:"F.Exenta",39:"Boleta",41:"B.Exenta",
+                         52:"Guía",56:"N.Débito",61:"N.Crédito"}.get(r[0], str(r[0])),
+                "folio": r[1],
+                "monto": r[2],
+                "estado": r[3],
+                "fecha": r[4].strftime("%d/%m/%Y %H:%M") if r[4] else "",
+            }
+            for r in res_recientes.fetchall()
+        ]
+    except Exception:
+        total_dtes = dtes_este_mes = 0
+        por_tipo = {}
+        recientes = []
+
+    return {
+        "ok": True,
+        "cuenta": {
+            "id":         emisor.id,
+            "nombre_app": emisor.nombre_app,
+            "url_app":    emisor.url_app,
+            "correo":     emisor.correo,
+            "api_key":    emisor.api_key,
+            "estado_pago": emisor.estado_pago,
+            "ambiente":   emisor.ambiente,
+        },
+        "suscripcion": {
+            "estado":           emisor.estado_pago,
+            "inicio":           emisor.suscripcion_inicio.strftime("%d/%m/%Y") if emisor.suscripcion_inicio else None,
+            "fin":              emisor.suscripcion_fin.strftime("%d/%m/%Y") if emisor.suscripcion_fin else None,
+            "dias_restantes":   dias_restantes,
+            "porcentaje_tiempo": porcentaje_tiempo,
+        },
+        "metricas": {
+            "total_dtes":     total_dtes,
+            "dtes_este_mes":  dtes_este_mes,
+            "por_tipo":       por_tipo,
+            "recientes":      recientes,
+        },
+    }
