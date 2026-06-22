@@ -115,16 +115,22 @@ class SIISender:
         set_str = f'<SetDTE ID="SetDoc">{caratula}{"".join(dtes_str)}</SetDTE>'
 
         if es_boleta:
-            schema_loc = f'xsi:schemaLocation="{NS} EnvioBOLETA_v11.xsd"'
+            # EnvioBOLETA: sin xsi:schemaLocation — el SII producción
+            # no encuentra EnvioBOLETA_v11.xsd y rechaza con ENV-3-0.
+            sobre_sin_firmas = (
+                f'<?xml version="1.0" encoding="ISO-8859-1"?>\n'
+                f'<{tag} xmlns="{NS}" version="1.0">'
+                f'{set_str}'
+                f'</{tag}>'
+            )
         else:
             schema_loc = f'xsi:schemaLocation="{NS} EnvioDTE_v10.xsd"'
-
-        sobre_sin_firmas = (
-            f'<?xml version="1.0" encoding="ISO-8859-1"?>\n'
-            f'<{tag} xmlns="{NS}" xmlns:xsi="{XSI_NS}" version="1.0" {schema_loc}>'
-            f'{set_str}'
-            f'</{tag}>'
-        )
+            sobre_sin_firmas = (
+                f'<?xml version="1.0" encoding="ISO-8859-1"?>\n'
+                f'<{tag} xmlns="{NS}" xmlns:xsi="{XSI_NS}" version="1.0" {schema_loc}>'
+                f'{set_str}'
+                f'</{tag}>'
+            )
 
         return await firma_service.firmar_sobre(sobre_sin_firmas)
 
@@ -161,8 +167,12 @@ class SIISender:
         # BOLETAS: usan su propio token (rahue/maullin2, persistido en BD). Si
         # se usara el token DTE → STATUS 7. Por eso ramificamos según es_boleta.
         async def _pedir_token():
-            # Token DTE estándar para todos los tipos incluyendo boletas.
-            # maullin (cert) y palena (prod) aceptan EnvioBOLETA con su propio token.
+            if es_boleta:
+                from app.services.sii_auth import obtener_token_boleta_cached
+                return await obtener_token_boleta_cached(
+                    token_p12, token_pwd, self.ambiente,
+                    db=db, emisor_id=emisor_id,
+                )
             return await self._obtener_token(token_p12, token_pwd)
 
         try:
@@ -183,14 +193,12 @@ class SIISender:
             return {"track_id": None, "estado": "ERROR",
                     "mensaje": f"[etapa TOKEN] {e}"}
 
-        # Boletas en producción: usar proxy Chile que reenvía a api.sii.cl
-        # Facturas y certificación: DTEUpload directo (maullin/palena)
-        import os as _os
-        _proxy = _os.environ.get("SII_BOLETA_PROXY_URL", "").rstrip("/")
-        if es_boleta and self.ambiente == "produccion" and _proxy:
-            url_envio = _proxy + "/boleta/envio"
-        else:
-            url_envio = self.url_upload
+        # Todos los documentos —incluidas las boletas— se envían al DTEUpload
+        # de maullin (cert) / palena (prod). Este es el endpoint que el SII
+        # aceptó históricamente para EnvioBOLETA (dio TrackID en certificación).
+        # El endpoint REST api.sii.cl/boleta.electronica.envio devolvía
+        # "Acceso Denegado (from client)", así que NO se usa.
+        url_envio   = self.url_upload
         rut_limpio  = self.limpiar_rut(rut_emisor)
         env_limpio  = self.limpiar_rut(rut_enviador)
         timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -255,11 +263,8 @@ class SIISender:
                     "raw":      cuerpo_plano[:800],
                 }
 
-            # Proxy de boletas puede devolver JSON; DTEUpload devuelve XML
-            import os as _os
-            _proxy = _os.environ.get("SII_BOLETA_PROXY_URL", "")
-            if es_boleta and _proxy and _proxy in url_envio:
-                return self._parsear_respuesta_boleta_rest(response.text)
+            # Maullin/palena responden XML con <TRACKID> para todos los tipos
+            # (DTE y boletas). Se parsea igual para ambos.
             return self._parsear_respuesta_upload(response.text)
 
         except httpx.TimeoutException:
