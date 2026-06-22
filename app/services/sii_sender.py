@@ -161,12 +161,10 @@ class SIISender:
         # BOLETAS: usan su propio token (rahue/maullin2, persistido en BD). Si
         # se usara el token DTE → STATUS 7. Por eso ramificamos según es_boleta.
         async def _pedir_token():
-            if es_boleta:
-                from app.services.sii_auth import obtener_token_boleta_cached
-                return await obtener_token_boleta_cached(
-                    token_p12, token_pwd, self.ambiente,
-                    db=db, emisor_id=emisor_id,
-                )
+            # Boletas en producción: usar token DTE estándar (palena).
+            # El token REST de api.sii.cl no sirve para DTEUpload de palena,
+            # y el endpoint REST bloquea conexiones via proxy.
+            # En certificación el token de maullin sirve para EnvioBOLETA.
             return await self._obtener_token(token_p12, token_pwd)
 
         try:
@@ -187,12 +185,10 @@ class SIISender:
             return {"track_id": None, "estado": "ERROR",
                     "mensaje": f"[etapa TOKEN] {e}"}
 
-        # URL de envío: boletas usan endpoint REST propio, facturas usan DTEUpload
-        # Con el proxy en Chile, el endpoint REST de boletas ya es accesible.
-        if es_boleta:
-            url_envio = SII_BOLETA_ENVIO_PROD if self.ambiente == "produccion" else SII_BOLETA_ENVIO_CERT
-        else:
-            url_envio = self.url_upload
+        # Todos los documentos usan DTEUpload (maullin/palena).
+        # El endpoint REST de boletas (api.sii.cl) bloquea conexiones via proxy.
+        # El token de boletas (REST) sí funciona con DTEUpload.
+        url_envio = self.url_upload
         rut_limpio  = self.limpiar_rut(rut_emisor)
         env_limpio  = self.limpiar_rut(rut_enviador)
         timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -257,9 +253,7 @@ class SIISender:
                     "raw":      cuerpo_plano[:800],
                 }
 
-            # Boletas via REST devuelven JSON; facturas via DTEUpload devuelven XML
-            if es_boleta and (SII_BOLETA_ENVIO_PROD in url_envio or SII_BOLETA_ENVIO_CERT in url_envio):
-                return self._parsear_respuesta_boleta_rest(response.text)
+            # DTEUpload siempre devuelve XML (tanto facturas como boletas)
             return self._parsear_respuesta_upload(response.text)
 
         except httpx.TimeoutException:
