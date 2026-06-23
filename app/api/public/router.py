@@ -1751,3 +1751,131 @@ async def _generar_libro_compras_impl(
         "estado":        (resultado_envio or {}).get("estado"),
         "mensaje":       (resultado_envio or {}).get("mensaje"),
     }
+
+
+# ── Reporte de Consumo de Folios (boletas electrónicas) ───────────────────────
+
+class RangoFoliosIn(BaseModel):
+    desde: int
+    hasta: int
+
+class ConsumoFoliosIn(BaseModel):
+    tipo_documento:    int = 39
+    fch_inicio:        str
+    fch_final:         str
+    sec_envio:         int = 1
+    mnt_neto:          int = 0
+    mnt_iva:           int = 0
+    tasa_iva:          str = "19.00"
+    mnt_exento:        int = 0
+    mnt_total:         int
+    cant_emitidos:     int
+    cant_anulados:     int = 0
+    cant_utilizados:   int
+    rangos_utilizados: list[RangoFoliosIn]
+    rangos_anulados:   list[RangoFoliosIn] = []
+    pfx_base64:        str
+    pfx_password:      str
+    rut_emisor:        str
+    fch_resol:         str = "2026-06-23"
+    nro_resol:         str = "0"
+    ambiente:          str = "certificacion"
+    auto_enviar:       bool = False
+
+
+@router.post("/api/generar-consumo-folios")
+async def generar_consumo_folios(
+    datos:  ConsumoFoliosIn,
+    emisor: Emisor = Depends(get_emisor_by_api_key),
+    db:     AsyncSession = Depends(get_db),
+):
+    """Genera y opcionalmente envía el Reporte de Consumo de Folios al SII."""
+    from lxml import etree
+    import base64 as _b64cf
+    from app.services.firma_digital import FirmaDigital
+    from app.services.sii_sender import SIISender
+    from datetime import datetime as _dt
+
+    _limpiar = lambda r: r.replace(".", "").strip() if r else r
+    rut_em    = _limpiar(datos.rut_emisor)
+    p12_bytes = _b64cf.b64decode(datos.pfx_base64)
+    firma     = FirmaDigital(p12_bytes, datos.pfx_password)
+    rut_env   = _limpiar(getattr(firma, "rut_certificado", None) or datos.rut_emisor)
+    tmst      = _dt.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+    NS_CF  = "http://www.sii.cl/SiiDte"
+    XSI_CF = "http://www.w3.org/2001/XMLSchema-instance"
+
+    root = etree.Element(
+        f"{{{NS_CF}}}ConsumoFolios",
+        nsmap={None: NS_CF, "xsi": XSI_CF},
+        attrib={"version": "1.0",
+                f"{{{XSI_CF}}}schemaLocation": f"{NS_CF} ConsumoFolios_v10.xsd"}
+    )
+    doc = etree.SubElement(root, f"{{{NS_CF}}}DocumentoConsumoFolios")
+    doc.set("ID", "ConsumoFolios")
+
+    car = etree.SubElement(doc, f"{{{NS_CF}}}Caratula")
+    etree.SubElement(car, f"{{{NS_CF}}}RutEmisorLibro").text = rut_em
+    etree.SubElement(car, f"{{{NS_CF}}}RutEnvia").text       = rut_env
+    etree.SubElement(car, f"{{{NS_CF}}}FchResol").text       = datos.fch_resol
+    etree.SubElement(car, f"{{{NS_CF}}}NroResol").text       = datos.nro_resol
+    etree.SubElement(car, f"{{{NS_CF}}}FchInicio").text      = datos.fch_inicio
+    etree.SubElement(car, f"{{{NS_CF}}}FchFinal").text       = datos.fch_final
+    etree.SubElement(car, f"{{{NS_CF}}}SecEnvio").text       = str(datos.sec_envio)
+    etree.SubElement(car, f"{{{NS_CF}}}TmstFirmaEnv").text   = tmst
+
+    res = etree.SubElement(doc, f"{{{NS_CF}}}Resumen")
+    etree.SubElement(res, f"{{{NS_CF}}}TipoDocumento").text  = str(datos.tipo_documento)
+    etree.SubElement(res, f"{{{NS_CF}}}MntNeto").text        = str(datos.mnt_neto)
+    etree.SubElement(res, f"{{{NS_CF}}}MntIVA").text         = str(datos.mnt_iva)
+    etree.SubElement(res, f"{{{NS_CF}}}TasaIVA").text        = datos.tasa_iva
+    etree.SubElement(res, f"{{{NS_CF}}}MntExento").text      = str(datos.mnt_exento)
+    etree.SubElement(res, f"{{{NS_CF}}}MntTotal").text       = str(datos.mnt_total)
+    etree.SubElement(res, f"{{{NS_CF}}}CantEmitidos").text   = str(datos.cant_emitidos)
+    etree.SubElement(res, f"{{{NS_CF}}}CantAnulados").text   = str(datos.cant_anulados)
+    etree.SubElement(res, f"{{{NS_CF}}}CantUtilizados").text = str(datos.cant_utilizados)
+
+    for r in datos.rangos_utilizados:
+        rango = etree.SubElement(res, f"{{{NS_CF}}}RangoUtilizados")
+        etree.SubElement(rango, f"{{{NS_CF}}}Inicial").text = str(r.desde)
+        etree.SubElement(rango, f"{{{NS_CF}}}Final").text   = str(r.hasta)
+
+    for r in datos.rangos_anulados:
+        rango = etree.SubElement(res, f"{{{NS_CF}}}RangoAnulados")
+        etree.SubElement(rango, f"{{{NS_CF}}}Inicial").text = str(r.desde)
+        etree.SubElement(rango, f"{{{NS_CF}}}Final").text   = str(r.hasta)
+
+    xml_str = etree.tostring(root, encoding="ISO-8859-1", xml_declaration=True).decode("ISO-8859-1")
+
+    try:
+        xml_firmado = await firma.firmar_libro(xml_str)
+    except Exception as e:
+        raise HTTPException(500, f"Error firmando consumo de folios: {e}")
+
+    xml_b64 = _b64cf.b64encode(xml_firmado.encode("ISO-8859-1")).decode()
+
+    resultado_envio = None
+    if datos.auto_enviar:
+        sender = SIISender(ambiente=datos.ambiente, fch_resol=datos.fch_resol, nro_resol=datos.nro_resol)
+        try:
+            resultado_envio = await sender.enviar_sobre(
+                sobre_xml      = xml_firmado,
+                rut_emisor     = rut_em,
+                rut_enviador   = rut_env,
+                p12_bytes      = p12_bytes,
+                password       = datos.pfx_password,
+                auth_p12_bytes = None,
+                auth_password  = None,
+            )
+        except Exception as e:
+            raise HTTPException(500, f"Consumo generado pero falló el envío: {e}")
+
+    return {
+        "ok":      True,
+        "xml":     xml_firmado,
+        "xml_b64": xml_b64,
+        "track_id": (resultado_envio or {}).get("track_id"),
+        "estado":   (resultado_envio or {}).get("estado"),
+        "mensaje":  (resultado_envio or {}).get("mensaje"),
+    }
