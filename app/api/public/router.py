@@ -1528,15 +1528,16 @@ async def generar_libro_desde_xml_publico(
         f"archivos={len(archivos)} dtes={len(todos_dtes)}"
     )
 
-    # Usar el RUT real del cliente (viene en pfx si es stateless)
+    # Extraer RUT empresa y RUT firmante del certificado
     from app.services.firma_digital import FirmaDigital as _FD2
     if pfx_base64:
         _firma_tmp = _FD2(_p12_bytes, _p12_pwd)
-        _rut_real = rut_firmante or getattr(_firma_tmp, "rut_certificado", None) or emisor.rut
-        emisor.rut = _rut_real  # temporal para que _construir_libro_xml use el RUT correcto
+        _rut_firmante_cert = getattr(_firma_tmp, "rut_certificado", None) or _rut_env
+        _rut_empresa_real  = rut_firmante or emisor.rut
+        emisor.rut = _rut_empresa_real
+    else:
+        _rut_firmante_cert = _rut_env
 
-    # RutEnvia = RUT del firmante del certificado (coincide con rutSender del upload)
-    _rut_firmante_libro = _rut_env  # ya viene limpio desde pfx
     xml_str = _construir_libro_xml(
         emisor        = emisor,
         dtes          = todos_dtes,
@@ -1546,7 +1547,7 @@ async def generar_libro_desde_xml_publico(
         periodo       = periodo,
         fch_resol     = fch_resol,
         nro_resol     = nro_resol,
-        rut_envia     = _rut_firmante_libro,
+        rut_envia     = _rut_firmante_cert,
     )
 
     firma = FirmaDigital(_p12_bytes, _p12_pwd)
@@ -1690,8 +1691,12 @@ async def _generar_libro_compras_impl(
     if pfx_base64:
         from app.services.firma_digital import FirmaDigital as _FD3
         _firma_tmp2 = _FD3(_p12_bytes2, _p12_pwd2)
-        _rut_real2 = rut_firmante_ext or getattr(_firma_tmp2, "rut_certificado", None) or emisor.rut
-        emisor.rut = _rut_real2
+        _rut_firmante_cert2 = getattr(_firma_tmp2, "rut_certificado", None) or _rut_env2
+        _rut_empresa_real2  = rut_firmante_ext or emisor.rut
+        emisor.rut = _rut_empresa_real2
+        rut_envia  = _rut_firmante_cert2
+    else:
+        rut_envia = _rut_env2
 
     try:
         xml_str = _construir_libro_xml(emisor, rut_envia, natencion, periodo, tmst,
