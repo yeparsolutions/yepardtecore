@@ -1528,6 +1528,13 @@ async def generar_libro_desde_xml_publico(
         f"archivos={len(archivos)} dtes={len(todos_dtes)}"
     )
 
+    # Usar el RUT real del cliente (viene en pfx si es stateless)
+    from app.services.firma_digital import FirmaDigital as _FD2
+    if pfx_base64:
+        _firma_tmp = _FD2(_p12_bytes, _p12_pwd)
+        _rut_real = rut_firmante or getattr(_firma_tmp, "rut_certificado", None) or emisor.rut
+        emisor.rut = _rut_real  # temporal para que _construir_libro_xml use el RUT correcto
+
     xml_str = _construir_libro_xml(
         emisor        = emisor,
         dtes          = todos_dtes,
@@ -1567,7 +1574,7 @@ async def generar_libro_desde_xml_publico(
         try:
             resultado_envio = await sender.enviar_sobre(
                 sobre_xml      = xml_firmado,
-                rut_emisor     = emisor.rut,
+                rut_emisor     = rut_firmante or emisor.rut,
                 rut_enviador   = _rut_env,
                 p12_bytes      = _p12_bytes,
                 password       = _p12_pwd,
@@ -1672,6 +1679,12 @@ async def _generar_libro_compras_impl(
     rut_envia = _rut_env2
     tmst      = _dt.now().strftime("%Y-%m-%dT%H:%M:%S")
 
+    if pfx_base64:
+        from app.services.firma_digital import FirmaDigital as _FD3
+        _firma_tmp2 = _FD3(_p12_bytes2, _p12_pwd2)
+        _rut_real2 = rut_firmante_ext or getattr(_firma_tmp2, "rut_certificado", None) or emisor.rut
+        emisor.rut = _rut_real2
+
     try:
         xml_str = _construir_libro_xml(emisor, rut_envia, natencion, periodo, tmst)
     except Exception as e:
@@ -1695,7 +1708,7 @@ async def _generar_libro_compras_impl(
         try:
             resultado_envio = await sender.enviar_sobre(
                 sobre_xml      = xml_firmado,
-                rut_emisor     = emisor.rut,
+                rut_emisor     = rut_firmante_ext or emisor.rut,
                 rut_enviador   = rut_envia,
                 p12_bytes      = _p12_bytes2,
                 password       = _p12_pwd2,
