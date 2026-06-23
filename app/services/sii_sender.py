@@ -114,23 +114,15 @@ class SIISender:
         )
         set_str = f'<SetDTE ID="SetDoc">{caratula}{"".join(dtes_str)}</SetDTE>'
 
-        # Usar EnvioBOLETA para boletas (tipo 39/41) y EnvioDTE para el resto.
-        if es_boleta:
-            schema_loc = f'xsi:schemaLocation="{NS} EnvioBOLETA_v11.xsd"'
-            sobre_sin_firmas = (
-                f'<?xml version="1.0" encoding="ISO-8859-1"?>\n'
-                f'<EnvioBOLETA xmlns="{NS}" xmlns:xsi="{XSI_NS}" version="1.0" {schema_loc}>'
-                f'{set_str}'
-                f'</EnvioBOLETA>'
-            )
-        else:
-            schema_loc = f'xsi:schemaLocation="{NS} EnvioDTE_v10.xsd"'
-            sobre_sin_firmas = (
-                f'<?xml version="1.0" encoding="ISO-8859-1"?>\n'
-                f'<EnvioDTE xmlns="{NS}" xmlns:xsi="{XSI_NS}" version="1.0" {schema_loc}>'
-                f'{set_str}'
-                f'</EnvioDTE>'
-            )
+        # Usar siempre EnvioDTE — palena y maullin no reconocen EnvioBOLETA.
+        # Las boletas (tipo 39/41) van igualmente dentro del EnvioDTE.
+        schema_loc = f'xsi:schemaLocation="{NS} EnvioDTE_v10.xsd"'
+        sobre_sin_firmas = (
+            f'<?xml version="1.0" encoding="ISO-8859-1"?>\n'
+            f'<EnvioDTE xmlns="{NS}" xmlns:xsi="{XSI_NS}" version="1.0" {schema_loc}>'
+            f'{set_str}'
+            f'</EnvioDTE>'
+        )
 
         return await firma_service.firmar_sobre(sobre_sin_firmas)
 
@@ -193,8 +185,14 @@ class SIISender:
         # aceptó históricamente para EnvioBOLETA (dio TrackID en certificación).
         # El endpoint REST api.sii.cl/boleta.electronica.envio devolvía
         # "Acceso Denegado (from client)", así que NO se usa.
-        # Siempre DTEUpload (maullin/palena) para todos los tipos
-        url_envio = self.url_upload
+        # Para boletas: usar proxy LightNode si está configurado (Railway no alcanza maullin directamente)
+        import os
+        _proxy_url = os.environ.get("SII_BOLETA_PROXY_URL", "").strip()
+        if es_boleta and _proxy_url:
+            url_envio = _proxy_url
+            logger.info(f"[SII ENVIO] Usando proxy boleta: {_proxy_url}")
+        else:
+            url_envio = self.url_upload
         rut_limpio  = self.limpiar_rut(rut_emisor)
         env_limpio  = self.limpiar_rut(rut_enviador)
         timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
