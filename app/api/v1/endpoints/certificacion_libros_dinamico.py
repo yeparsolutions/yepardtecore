@@ -148,11 +148,12 @@ def _construir_libro_xml(
     #                     NO tiene TipoOperacion (campo exclusivo de LibroCV)
     # LibroCV_v10.xsd:    RutEmisorLibro → ... → NroResol → TipoOperacion → TipoLibro → TipoEnvio → ...
     car = etree.SubElement(envio, f"{{{NS}}}Caratula")
-    etree.SubElement(car, f"{{{NS}}}RutEmisorLibro").text    = emisor.rut
+    _limpiar = lambda r: r.replace(".", "").strip() if r else r
+    etree.SubElement(car, f"{{{NS}}}RutEmisorLibro").text    = _limpiar(emisor.rut)
     # RutEnvia: RUT del firmante del certificado (puede diferir del RUT del emisor)
     # El SII valida que RutEnvia coincida con el RUT del certificado usado en el upload
     rut_env = rut_envia or emisor.rut
-    etree.SubElement(car, f"{{{NS}}}RutEnvia").text          = rut_env
+    etree.SubElement(car, f"{{{NS}}}RutEnvia").text          = _limpiar(rut_env)
     etree.SubElement(car, f"{{{NS}}}PeriodoTributario").text = periodo
     etree.SubElement(car, f"{{{NS}}}FchResol").text          = fch_resol
     etree.SubElement(car, f"{{{NS}}}NroResol").text          = nro_resol
