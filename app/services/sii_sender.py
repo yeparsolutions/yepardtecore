@@ -114,23 +114,15 @@ class SIISender:
         )
         set_str = f'<SetDTE ID="SetDoc">{caratula}{"".join(dtes_str)}</SetDTE>'
 
-        if es_boleta:
-            # EnvioBOLETA: sin xsi:schemaLocation — el SII producción
-            # no encuentra EnvioBOLETA_v11.xsd y rechaza con ENV-3-0.
-            sobre_sin_firmas = (
-                f'<?xml version="1.0" encoding="ISO-8859-1"?>\n'
-                f'<{tag} xmlns="{NS}" version="1.0">'
-                f'{set_str}'
-                f'</{tag}>'
-            )
-        else:
-            schema_loc = f'xsi:schemaLocation="{NS} EnvioDTE_v10.xsd"'
-            sobre_sin_firmas = (
-                f'<?xml version="1.0" encoding="ISO-8859-1"?>\n'
-                f'<{tag} xmlns="{NS}" xmlns:xsi="{XSI_NS}" version="1.0" {schema_loc}>'
-                f'{set_str}'
-                f'</{tag}>'
-            )
+        # Usar siempre EnvioDTE — palena y maullin no reconocen EnvioBOLETA.
+        # Las boletas (tipo 39/41) van igualmente dentro del EnvioDTE.
+        schema_loc = f'xsi:schemaLocation="{NS} EnvioDTE_v10.xsd"'
+        sobre_sin_firmas = (
+            f'<?xml version="1.0" encoding="ISO-8859-1"?>\n'
+            f'<EnvioDTE xmlns="{NS}" xmlns:xsi="{XSI_NS}" version="1.0" {schema_loc}>'
+            f'{set_str}'
+            f'</EnvioDTE>'
+        )
 
         return await firma_service.firmar_sobre(sobre_sin_firmas)
 
