@@ -16,6 +16,7 @@
 
 import logging
 import httpx
+from app.services.http_client import get_sii_client  # proxy Chile SII
 from lxml import etree
 from datetime import datetime, timezone, timedelta
 from app.core.config import settings
@@ -225,10 +226,9 @@ class SIISender:
             # solo una vez — en certificación un eventual duplicado es inocuo,
             # el SII simplemente registra otro track.
             async def _subir():
-                async with httpx.AsyncClient(timeout=120.0,
-                                             follow_redirects=True) as client:
+                async with get_sii_client(timeout=120.0) as client:
                     return await client.post(url_envio, headers=headers,
-                                             files=files)
+                                             files=files, follow_redirects=True)
 
             # 4 intentos: reintentar es SEGURO porque si un intento "fallido"
             # en realidad entró al SII, el siguiente recibe STATUS 99 y el
@@ -441,7 +441,7 @@ class SIISender:
             '</soapenv:Body></soapenv:Envelope>'
         )
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with get_sii_client(timeout=30.0) as client:
                 response = await client.post(
                     url, content=soap.encode("utf-8"),
                     headers={"Content-Type": "text/xml; charset=utf-8", "SOAPAction": ""},
