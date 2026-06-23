@@ -1537,10 +1537,10 @@ async def generar_libro_desde_xml_publico(
         periodo       = periodo,
         fch_resol     = fch_resol,
         nro_resol     = nro_resol,
-        rut_envia     = cert.rut_firmante or emisor.rut,
+        rut_envia     = _rut_env,
     )
 
-    firma = FirmaDigital(bytes(cert.certificado_p12), cert.certificado_password or "")
+    firma = FirmaDigital(_p12_bytes, _p12_pwd)
     try:
         xml_firmado = await firma.firmar_libro(xml_str)
     except Exception as e:
