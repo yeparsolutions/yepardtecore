@@ -16,7 +16,6 @@
 
 import logging
 import httpx
-from app.services.http_client import get_sii_client  # proxy Chile SII
 from lxml import etree
 from datetime import datetime, timezone, timedelta
 from app.core.config import settings
@@ -115,15 +114,23 @@ class SIISender:
         )
         set_str = f'<SetDTE ID="SetDoc">{caratula}{"".join(dtes_str)}</SetDTE>'
 
-        # Usar siempre EnvioDTE — palena y maullin no reconocen EnvioBOLETA.
-        # Las boletas (tipo 39/41) van igualmente dentro del EnvioDTE.
-        schema_loc = f'xsi:schemaLocation="{NS} EnvioDTE_v10.xsd"'
-        sobre_sin_firmas = (
-            f'<?xml version="1.0" encoding="ISO-8859-1"?>\n'
-            f'<EnvioDTE xmlns="{NS}" xmlns:xsi="{XSI_NS}" version="1.0" {schema_loc}>'
-            f'{set_str}'
-            f'</EnvioDTE>'
-        )
+        # Usar EnvioBOLETA para boletas (tipo 39/41) y EnvioDTE para el resto.
+        if es_boleta:
+            schema_loc = f'xsi:schemaLocation="{NS} EnvioBOLETA_v11.xsd"'
+            sobre_sin_firmas = (
+                f'<?xml version="1.0" encoding="ISO-8859-1"?>\n'
+                f'<EnvioBOLETA xmlns="{NS}" xmlns:xsi="{XSI_NS}" version="1.0" {schema_loc}>'
+                f'{set_str}'
+                f'</EnvioBOLETA>'
+            )
+        else:
+            schema_loc = f'xsi:schemaLocation="{NS} EnvioDTE_v10.xsd"'
+            sobre_sin_firmas = (
+                f'<?xml version="1.0" encoding="ISO-8859-1"?>\n'
+                f'<EnvioDTE xmlns="{NS}" xmlns:xsi="{XSI_NS}" version="1.0" {schema_loc}>'
+                f'{set_str}'
+                f'</EnvioDTE>'
+            )
 
         return await firma_service.firmar_sobre(sobre_sin_firmas)
 
@@ -226,9 +233,10 @@ class SIISender:
             # solo una vez — en certificación un eventual duplicado es inocuo,
             # el SII simplemente registra otro track.
             async def _subir():
-                async with get_sii_client(timeout=120.0) as client:
+                async with httpx.AsyncClient(timeout=120.0,
+                                             follow_redirects=True) as client:
                     return await client.post(url_envio, headers=headers,
-                                             files=files, follow_redirects=True)
+                                             files=files)
 
             # 4 intentos: reintentar es SEGURO porque si un intento "fallido"
             # en realidad entró al SII, el siguiente recibe STATUS 99 y el
@@ -441,7 +449,7 @@ class SIISender:
             '</soapenv:Body></soapenv:Envelope>'
         )
         try:
-            async with get_sii_client(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
                     url, content=soap.encode("utf-8"),
                     headers={"Content-Type": "text/xml; charset=utf-8", "SOAPAction": ""},
