@@ -1535,8 +1535,8 @@ async def generar_libro_desde_xml_publico(
         _rut_real = rut_firmante or getattr(_firma_tmp, "rut_certificado", None) or emisor.rut
         emisor.rut = _rut_real  # temporal para que _construir_libro_xml use el RUT correcto
 
-    # RutEnvia en el libro debe coincidir con rutSender del upload = RUT empresa
-    _rut_envia_libro = (rut_firmante or emisor.rut).replace(".", "").strip()
+    # RutEnvia = RUT del firmante del certificado (coincide con rutSender del upload)
+    _rut_firmante_libro = _rut_env  # ya viene limpio desde pfx
     xml_str = _construir_libro_xml(
         emisor        = emisor,
         dtes          = todos_dtes,
@@ -1546,7 +1546,7 @@ async def generar_libro_desde_xml_publico(
         periodo       = periodo,
         fch_resol     = fch_resol,
         nro_resol     = nro_resol,
-        rut_envia     = _rut_envia_libro,
+        rut_envia     = _rut_firmante_libro,
     )
 
     firma = FirmaDigital(_p12_bytes, _p12_pwd)
@@ -1574,12 +1574,12 @@ async def generar_libro_desde_xml_publico(
         # credencial que las facturas; solo cambia el contenido del paquete.
         sender = SIISender(ambiente=ambiente)
         try:
-            # Para libros: rutSender y RutEnvia deben ser el RUT de la empresa emisora
-            _rut_empresa = (rut_firmante or emisor.rut).replace(".", "").strip()
+            # rut_emisor = empresa (rutCompany), rut_enviador = firmante (rutSender)
+            _rut_empresa_libro = (rut_firmante or emisor.rut).replace(".", "").strip()
             resultado_envio = await sender.enviar_sobre(
                 sobre_xml      = xml_firmado,
-                rut_emisor     = _rut_empresa,
-                rut_enviador   = _rut_empresa,
+                rut_emisor     = _rut_empresa_libro,
+                rut_enviador   = _rut_env,
                 p12_bytes      = _p12_bytes,
                 password       = _p12_pwd,
                 auth_p12_bytes = None,
