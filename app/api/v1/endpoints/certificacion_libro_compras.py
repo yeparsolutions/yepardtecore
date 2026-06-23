@@ -76,7 +76,7 @@ DOCUMENTOS = [
 ]
 
 def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
-                          periodo: str, tmst: str) -> str:
+                          periodo: str, tmst: str, fch_resol: str = "2026-04-19") -> str:
     # El período tributario DEBE corresponder al mes de los documentos del
     # libro, no al mes en que se genera. Los documentos del set son de mayo
     # (2026-05-22), así que derivamos el período de su fecha y NO del parámetro
@@ -96,10 +96,11 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
     envio.set("ID", "LibroCompras")
 
     car = etree.SubElement(envio, f"{{{NS}}}Caratula")
-    etree.SubElement(car, f"{{{NS}}}RutEmisorLibro").text   = emisor.rut
-    etree.SubElement(car, f"{{{NS}}}RutEnvia").text          = rut_envia
+    _limpiar = lambda r: r.replace(".", "").strip() if r else r
+    etree.SubElement(car, f"{{{NS}}}RutEmisorLibro").text   = _limpiar(emisor.rut)
+    etree.SubElement(car, f"{{{NS}}}RutEnvia").text          = _limpiar(rut_envia)
     etree.SubElement(car, f"{{{NS}}}PeriodoTributario").text = periodo
-    etree.SubElement(car, f"{{{NS}}}FchResol").text          = "2026-04-19"
+    etree.SubElement(car, f"{{{NS}}}FchResol").text          = fch_resol
     etree.SubElement(car, f"{{{NS}}}NroResol").text          = "0"
     etree.SubElement(car, f"{{{NS}}}TipoOperacion").text     = "COMPRA"
     etree.SubElement(car, f"{{{NS}}}TipoLibro").text         = "ESPECIAL"
