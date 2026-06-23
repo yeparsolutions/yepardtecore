@@ -1535,6 +1535,8 @@ async def generar_libro_desde_xml_publico(
         _rut_real = rut_firmante or getattr(_firma_tmp, "rut_certificado", None) or emisor.rut
         emisor.rut = _rut_real  # temporal para que _construir_libro_xml use el RUT correcto
 
+    # RutEnvia en el libro debe coincidir con rutSender del upload = RUT empresa
+    _rut_envia_libro = (rut_firmante or emisor.rut).replace(".", "").strip()
     xml_str = _construir_libro_xml(
         emisor        = emisor,
         dtes          = todos_dtes,
@@ -1544,7 +1546,7 @@ async def generar_libro_desde_xml_publico(
         periodo       = periodo,
         fch_resol     = fch_resol,
         nro_resol     = nro_resol,
-        rut_envia     = _rut_env,
+        rut_envia     = _rut_envia_libro,
     )
 
     firma = FirmaDigital(_p12_bytes, _p12_pwd)
@@ -1572,10 +1574,12 @@ async def generar_libro_desde_xml_publico(
         # credencial que las facturas; solo cambia el contenido del paquete.
         sender = SIISender(ambiente=ambiente)
         try:
+            # Para libros: rutSender y RutEnvia deben ser el RUT de la empresa emisora
+            _rut_empresa = (rut_firmante or emisor.rut).replace(".", "").strip()
             resultado_envio = await sender.enviar_sobre(
                 sobre_xml      = xml_firmado,
-                rut_emisor     = rut_firmante or emisor.rut,
-                rut_enviador   = _rut_env,
+                rut_emisor     = _rut_empresa,
+                rut_enviador   = _rut_empresa,
                 p12_bytes      = _p12_bytes,
                 password       = _p12_pwd,
                 auth_p12_bytes = None,
@@ -1622,6 +1626,8 @@ async def generar_libro_compras_publico(
     pfx_base64:   str          = Form(""),
     pfx_password: str          = Form(""),
     rut_firmante: str          = Form(""),
+    fch_resol:    str          = Form("2026-04-19"),
+    nro_resol:    str          = Form("0"),
     emisor:       Emisor       = Depends(get_emisor_by_api_key),
     db:           AsyncSession = Depends(get_db),
 ):
@@ -1632,7 +1638,8 @@ async def generar_libro_compras_publico(
     try:
         return await _generar_libro_compras_impl(
             natencion, periodo, auto_enviar, ambiente, emisor, db,
-            pfx_base64=pfx_base64, pfx_password=pfx_password, rut_firmante_ext=rut_firmante)
+            pfx_base64=pfx_base64, pfx_password=pfx_password, rut_firmante_ext=rut_firmante,
+            fch_resol=fch_resol)
     except HTTPException:
         raise
     except Exception as _e:
@@ -1647,6 +1654,7 @@ async def _generar_libro_compras_impl(
     natencion: str, periodo: str, auto_enviar: bool, ambiente: str,
     emisor: Emisor, db: AsyncSession,
     pfx_base64: str = "", pfx_password: str = "", rut_firmante_ext: str = "",
+    fch_resol: str = "2026-04-19",
 ):
     from app.api.v1.endpoints.certificacion_libro_compras import _construir_libro_xml, DOCUMENTOS as _DOCS_COMPRA
     from app.services.firma_digital import FirmaDigital
@@ -1686,7 +1694,8 @@ async def _generar_libro_compras_impl(
         emisor.rut = _rut_real2
 
     try:
-        xml_str = _construir_libro_xml(emisor, rut_envia, natencion, periodo, tmst)
+        xml_str = _construir_libro_xml(emisor, rut_envia, natencion, periodo, tmst,
+                                        fch_resol=fch_resol)
     except Exception as e:
         logger.error(f"[LIBRO-COMPRAS] Error construyendo: {e}", exc_info=True)
         raise HTTPException(500, f"Error construyendo libro de compras: {e}")
@@ -1706,10 +1715,11 @@ async def _generar_libro_compras_impl(
     if auto_enviar:
         sender = SIISender(ambiente=ambiente)
         try:
+            _rut_empresa2 = (rut_firmante_ext or emisor.rut).replace(".", "").strip()
             resultado_envio = await sender.enviar_sobre(
                 sobre_xml      = xml_firmado,
-                rut_emisor     = rut_firmante_ext or emisor.rut,
-                rut_enviador   = rut_envia,
+                rut_emisor     = _rut_empresa2,
+                rut_enviador   = _rut_empresa2,
                 p12_bytes      = _p12_bytes2,
                 password       = _p12_pwd2,
                 auth_p12_bytes = None,
