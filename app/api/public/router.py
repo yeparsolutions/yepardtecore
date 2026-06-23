@@ -1563,21 +1563,16 @@ async def generar_libro_desde_xml_publico(
         # (e-Sign registrado), igual que en el envío del set.
         # Analogía: el libro viaja por la misma ventanilla y con la misma
         # credencial que las facturas; solo cambia el contenido del paquete.
-        auth_p12 = bytes(cert.certificado_auth_p12) if cert.certificado_auth_p12 \
-                   else bytes(cert.certificado_p12)
-        auth_pwd = cert.certificado_auth_password if cert.certificado_auth_p12 \
-                   else cert.certificado_password
-        rut_firmante = cert.rut_firmante or emisor.rut
         sender = SIISender(ambiente=ambiente)
         try:
             resultado_envio = await sender.enviar_sobre(
                 sobre_xml      = xml_firmado,
                 rut_emisor     = emisor.rut,
-                rut_enviador   = rut_firmante,
-                p12_bytes      = bytes(cert.certificado_p12),
-                password       = cert.certificado_password or "",
-                auth_p12_bytes = auth_p12,
-                auth_password  = auth_pwd,
+                rut_enviador   = _rut_env,
+                p12_bytes      = _p12_bytes,
+                password       = _p12_pwd,
+                auth_p12_bytes = None,
+                auth_password  = None,
             )
             logger.warning(
                 f"[LIBRO-PUB] Enviado {tipo_libro} track_id="
@@ -1672,7 +1667,7 @@ async def _generar_libro_compras_impl(
             raise HTTPException(400, "Sin certificado .p12 para firmar el libro de compras")
         _p12_bytes2 = bytes(cert.certificado_p12)
         _p12_pwd2   = cert.certificado_password or ""
-        _rut_env2   = cert.rut_firmante or emisor.rut
+        _rut_env2   = rut_firmante_ext or emisor.rut
 
     rut_envia = _rut_env2
     tmst      = _dt.now().strftime("%Y-%m-%dT%H:%M:%S")
@@ -1683,7 +1678,7 @@ async def _generar_libro_compras_impl(
         logger.error(f"[LIBRO-COMPRAS] Error construyendo: {e}", exc_info=True)
         raise HTTPException(500, f"Error construyendo libro de compras: {e}")
 
-    firma = FirmaDigital(bytes(cert.certificado_p12), cert.certificado_password or "")
+    firma = FirmaDigital(_p12_bytes2, _p12_pwd2)
     try:
         xml_firmado = await firma.firmar_libro(xml_str)
     except Exception as e:
@@ -1696,20 +1691,16 @@ async def _generar_libro_compras_impl(
 
     resultado_envio = None
     if auto_enviar:
-        auth_p12 = bytes(cert.certificado_auth_p12) if cert.certificado_auth_p12 \
-                   else bytes(cert.certificado_p12)
-        auth_pwd = cert.certificado_auth_password if cert.certificado_auth_p12 \
-                   else cert.certificado_password
         sender = SIISender(ambiente=ambiente)
         try:
             resultado_envio = await sender.enviar_sobre(
                 sobre_xml      = xml_firmado,
                 rut_emisor     = emisor.rut,
                 rut_enviador   = rut_envia,
-                p12_bytes      = bytes(cert.certificado_p12),
-                password       = cert.certificado_password or "",
-                auth_p12_bytes = auth_p12,
-                auth_password  = auth_pwd,
+                p12_bytes      = _p12_bytes2,
+                password       = _p12_pwd2,
+                auth_p12_bytes = None,
+                auth_password  = None,
             )
             logger.warning(
                 f"[LIBRO-COMPRAS] Enviado track_id={resultado_envio.get('track_id')} "
