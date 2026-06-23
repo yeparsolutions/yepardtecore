@@ -1434,97 +1434,6 @@ async def enviar_sobre_directo(datos: EnviarSobreInput):
     }
 
 
-
-# ══════════════════════════════════════════════════════════════
-# ENVIAR SOBRE DIRECTO — para YeparDTE (usa certificado registrado)
-# Recibe emisor_id + (sobre_id | xml_sobre_b64). Recupera el sobre
-# del guardarropa (ticket) o lo decodifica, busca el certificado del
-# emisor en la BD de Core, y lo envía al SII (vía proxy chileno).
-# Analogía: YeparDTE entrega el ticket del guardarropa; Core retira
-# el sobre original que él mismo firmó y lo despacha al SII.
-# ══════════════════════════════════════════════════════════════
-
-class EnviarSobreDirectoInput(BaseModel):
-    emisor_id:     int
-    sobre_id:      Optional[str] = None
-    xml_sobre_b64: Optional[str] = None
-    ambiente:      Optional[str] = None
-
-
-@router.post("/enviar-sobre/directo")
-async def enviar_sobre_directo_emisor(
-    datos: EnviarSobreDirectoInput,
-    db:    AsyncSession = Depends(get_db),
-):
-    # 1. Recuperar el sobre: por ticket (sobre_id) o por base64 directo
-    if datos.sobre_id:
-        from app.services import sobre_store
-        sobre_bytes = sobre_store.obtener(datos.sobre_id)
-        if not sobre_bytes:
-            raise HTTPException(404, "Sobre no encontrado o expirado (sobre_id)")
-        sobre_xml = sobre_bytes.decode("ISO-8859-1")
-    elif datos.xml_sobre_b64:
-        try:
-            sobre_xml = _b64.b64decode(datos.xml_sobre_b64).decode("ISO-8859-1")
-        except Exception as ex:
-            raise HTTPException(400, f"Error decodificando xml_sobre_b64: {ex}")
-    else:
-        raise HTTPException(400, "Falta sobre_id o xml_sobre_b64")
-
-    # 2. Buscar el emisor y su certificado activo en la BD de Core
-    emisor = (await db.execute(
-        select(Emisor).where(Emisor.id == datos.emisor_id)
-    )).scalar_one_or_none()
-    if not emisor:
-        raise HTTPException(404, f"Emisor {datos.emisor_id} no encontrado")
-
-    cert = (await db.execute(
-        select(Certificado).where(
-            Certificado.emisor_id == datos.emisor_id,
-            Certificado.activo == True,
-        ).limit(1)
-    )).scalar_one_or_none()
-    if not cert or not cert.certificado_p12:
-        raise HTTPException(400, "El emisor no tiene certificado activo registrado")
-
-    pfx_bytes = cert.certificado_p12
-    pfx_pwd   = cert.certificado_password
-    ambiente  = datos.ambiente or emisor.ambiente or "certificacion"
-
-    # 3. Enviar al SII (el tráfico sale por el proxy chileno)
-    from app.services.firma_digital import FirmaDigital
-    try:
-        firma        = FirmaDigital(pfx_bytes, pfx_pwd, ambiente=ambiente)
-        rut_firmante = getattr(firma, "rut_certificado", None) or emisor.rut
-    except Exception as ex:
-        raise HTTPException(400, f"Error leyendo certificado: {ex}")
-
-    sender = SIISender(ambiente=ambiente)
-    try:
-        resultado = await sender.enviar_sobre(
-            sobre_xml      = sobre_xml,
-            rut_emisor     = emisor.rut,
-            rut_enviador   = rut_firmante,
-            p12_bytes      = pfx_bytes,
-            password       = pfx_pwd,
-            auth_p12_bytes = pfx_bytes,
-            auth_password  = pfx_pwd,
-        )
-    except Exception as ex:
-        logger.error(f"[ENVIAR-SOBRE-DIRECTO] Error: {ex}", exc_info=True)
-        raise HTTPException(500, f"Error enviando al SII: {ex}")
-
-    logger.info(f"[ENVIAR-SOBRE-DIRECTO] track_id={resultado.get('track_id')} "
-                f"estado={resultado.get('estado')}")
-
-    return {
-        "ok":       resultado.get("track_id") is not None,
-        "track_id": resultado.get("track_id"),
-        "estado":   resultado.get("estado", "ENVIADO"),
-        "mensaje":  resultado.get("mensaje", ""),
-    }
-
-
 # ── Libro de Ventas / Guías desde XML aprobado (flujo público con API Key) ────
 # Replica el endpoint interno /v1/certificacion-libros/desde-xml pero por el
 # router público, para que YeparDTE lo llame igual que /generar-set: con API Key.
@@ -1545,6 +1454,9 @@ async def generar_libro_desde_xml_publico(
     folios_anulados: str             = Form(""),    # LibroGuías: folios anulados "76,77"
     auto_enviar:     bool            = Form(False), # True = enviar al SII; False = solo generar
     ambiente:        str             = Form("certificacion"),
+    pfx_base64:      str             = Form(""),    # Certificado en base64 (stateless)
+    pfx_password:    str             = Form(""),    # Password del certificado
+    rut_firmante:    str             = Form(""),    # RUT del firmante
     emisor:          Emisor          = Depends(get_emisor_by_api_key),
     db:              AsyncSession    = Depends(get_db),
 ):
@@ -1558,13 +1470,22 @@ async def generar_libro_desde_xml_publico(
     if tipo_libro not in ("ventas", "guias", "compras"):
         raise HTTPException(400, "tipo_libro debe ser: ventas | guias | compras")
 
-    # Certificado del emisor dueño de la API Key (Yepar, registrado en SII)
-    cert = (await db.execute(
-        select(Certificado).where(Certificado.emisor_id == emisor.id,
-                                   Certificado.activo == True).limit(1)
-    )).scalar_one_or_none()
-    if not cert or not cert.certificado_p12:
-        raise HTTPException(400, "Sin certificado .p12 para firmar el libro")
+    # Certificado: modo stateless (pfx_base64) o desde BD
+    import base64 as _b64cert
+    if pfx_base64:
+        _p12_bytes = _b64cert.b64decode(pfx_base64)
+        _p12_pwd   = pfx_password
+        _rut_env   = rut_firmante or emisor.rut
+    else:
+        cert = (await db.execute(
+            select(Certificado).where(Certificado.emisor_id == emisor.id,
+                                       Certificado.activo == True).limit(1)
+        )).scalar_one_or_none()
+        if not cert or not cert.certificado_p12:
+            raise HTTPException(400, "Sin certificado .p12 para firmar el libro")
+        _p12_bytes = bytes(cert.certificado_p12)
+        _p12_pwd   = cert.certificado_password or ""
+        _rut_env   = cert.rut_firmante or emisor.rut
 
     # Folios anulados (solo LibroGuías): "76,77" → {76, 77}
     folios_anulados_set = set()
@@ -1692,12 +1613,15 @@ async def generar_libro_desde_xml_publico(
 # las boletas que te dieron a TI — datos distintos, de otra fuente.
 @router.post("/generar-libro-compras")
 async def generar_libro_compras_publico(
-    natencion:   str          = Form("4841545"),
-    periodo:     str          = Form("2026-05"),
-    auto_enviar: bool         = Form(False),
-    ambiente:    str          = Form("certificacion"),
-    emisor:      Emisor       = Depends(get_emisor_by_api_key),
-    db:          AsyncSession = Depends(get_db),
+    natencion:    str          = Form("4841545"),
+    periodo:      str          = Form("2026-05"),
+    auto_enviar:  bool         = Form(False),
+    ambiente:     str          = Form("certificacion"),
+    pfx_base64:   str          = Form(""),
+    pfx_password: str          = Form(""),
+    rut_firmante: str          = Form(""),
+    emisor:       Emisor       = Depends(get_emisor_by_api_key),
+    db:           AsyncSession = Depends(get_db),
 ):
     # Todo el cuerpo va dentro de un try que loguea el traceback COMPLETO y lo
     # devuelve en el mensaje de error. Así, si algo falla, el log y la respuesta
@@ -1705,7 +1629,8 @@ async def generar_libro_compras_publico(
     import traceback as _tb
     try:
         return await _generar_libro_compras_impl(
-            natencion, periodo, auto_enviar, ambiente, emisor, db)
+            natencion, periodo, auto_enviar, ambiente, emisor, db,
+            pfx_base64=pfx_base64, pfx_password=pfx_password, rut_firmante_ext=rut_firmante)
     except HTTPException:
         raise
     except Exception as _e:
@@ -1719,6 +1644,7 @@ async def generar_libro_compras_publico(
 async def _generar_libro_compras_impl(
     natencion: str, periodo: str, auto_enviar: bool, ambiente: str,
     emisor: Emisor, db: AsyncSession,
+    pfx_base64: str = "", pfx_password: str = "", rut_firmante_ext: str = "",
 ):
     from app.api.v1.endpoints.certificacion_libro_compras import _construir_libro_xml, DOCUMENTOS as _DOCS_COMPRA
     from app.services.firma_digital import FirmaDigital
@@ -1732,14 +1658,23 @@ async def _generar_libro_compras_impl(
         if len(_f) >= 7:
             periodo = _f[:7]
 
-    cert = (await db.execute(
-        select(Certificado).where(Certificado.emisor_id == emisor.id,
-                                   Certificado.activo == True).limit(1)
-    )).scalar_one_or_none()
-    if not cert or not cert.certificado_p12:
-        raise HTTPException(400, "Sin certificado .p12 para firmar el libro de compras")
+    import base64 as _b64cert2
+    if pfx_base64:
+        _p12_bytes2 = _b64cert2.b64decode(pfx_base64)
+        _p12_pwd2   = pfx_password
+        _rut_env2   = rut_firmante_ext or emisor.rut
+    else:
+        cert = (await db.execute(
+            select(Certificado).where(Certificado.emisor_id == emisor.id,
+                                       Certificado.activo == True).limit(1)
+        )).scalar_one_or_none()
+        if not cert or not cert.certificado_p12:
+            raise HTTPException(400, "Sin certificado .p12 para firmar el libro de compras")
+        _p12_bytes2 = bytes(cert.certificado_p12)
+        _p12_pwd2   = cert.certificado_password or ""
+        _rut_env2   = cert.rut_firmante or emisor.rut
 
-    rut_envia = cert.rut_firmante or emisor.rut
+    rut_envia = _rut_env2
     tmst      = _dt.now().strftime("%Y-%m-%dT%H:%M:%S")
 
     try:
