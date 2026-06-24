@@ -1900,10 +1900,11 @@ async def generar_consumo_folios(
         _x5c_el = _etree.SubElement(_x5d_el, f"{{{NS_DS}}}X509Certificate")
         _x5c_el.text = _cert_b64
 
-        xml_firmado = (
-            '<?xml version="1.0" encoding="ISO-8859-1"?>\n' +
-            _etree.tostring(_root, encoding="unicode")
-        )
+        # Serializar eliminando prefijos ns0 de la firma
+        _xml_str = _etree.tostring(_root, encoding="unicode")
+        _xml_str = _xml_str.replace(' xmlns:ns0="http://www.w3.org/2000/09/xmldsig#"', '')
+        _xml_str = _xml_str.replace('ns0:', '').replace(':ns0', '')
+        xml_firmado = '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + _xml_str
         if not xml_firmado:
             raise ValueError("Firma vacía")
     except HTTPException:
