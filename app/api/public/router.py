@@ -1908,20 +1908,45 @@ async def generar_consumo_folios(
 
     resultado_envio = None
     if datos.auto_enviar:
-        sender = SIISender(ambiente=datos.ambiente, fch_resol=datos.fch_resol, nro_resol=datos.nro_resol)
+        # Consumo de folios va a RCFUpload, no DTEUpload
+        _url_rcf = (
+            "https://maullin.sii.cl/cgi_dte/UPL/RCFUpload"
+            if datos.ambiente == "certificacion"
+            else "https://palena.sii.cl/cgi_dte/UPL/RCFUpload"
+        )
         try:
-            resultado_envio = await sender.enviar_sobre(
-                sobre_xml      = xml_firmado,
-                rut_emisor     = rut_em,
-                rut_enviador   = rut_env,
-                p12_bytes      = p12_bytes,
-                password       = datos.pfx_password,
-                auth_p12_bytes = None,
-                auth_password  = None,
-            )
+            from app.services.sii_auth import obtener_token
+            import httpx as _httpx
+            _token = await obtener_token(p12_bytes, datos.pfx_password)
+            _bnd = "RCFBoundary"
+            _nl  = "\r\n"
+            _filename = rut_em.replace(".", "").replace("-", "") + "_RCF.xml"
+            _parts = []
+            for name, val in [("rutSender", rut_env), ("rutCompany", rut_em)]:
+                _parts.append(f"--{_bnd}{_nl}Content-Disposition: form-data; name=\"{name}\"{_nl}{_nl}{val}{_nl}")
+            _xml_bytes = xml_firmado.encode("ISO-8859-1")
+            _parts.append(f"--{_bnd}{_nl}Content-Disposition: form-data; name=\"archivo\"; filename=\"{_filename}\"{_nl}Content-Type: text/xml{_nl}{_nl}")
+            _body = "".join(_parts).encode("ISO-8859-1") + _xml_bytes + f"{_nl}--{_bnd}--{_nl}".encode()
+            async with _httpx.AsyncClient(timeout=60) as _c:
+                _r = await _c.post(
+                    _url_rcf,
+                    content=_body,
+                    headers={
+                        "Cookie": f"TOKEN={_token}",
+                        "Content-Type": f"multipart/form-data; boundary={_bnd}",
+                    }
+                )
+            logger.info(f"[RCF] HTTP={_r.status_code} body={_r.text[:500]}")
+            import re as _re
+            _tid = _re.search(r"<TRACKID>(\d+)</TRACKID>", _r.text)
+            resultado_envio = {
+                "track_id": _tid.group(1) if _tid else None,
+                "estado":   "RECIBIDO" if _tid else "RECHAZADO",
+                "mensaje":  _r.text[:300],
+            }
         except Exception as e:
+            import traceback; traceback.print_exc()
             raise HTTPException(500, f"Consumo generado pero falló el envío: {e}")
-
     return {
         "ok":      True,
         "xml":     xml_firmado,
