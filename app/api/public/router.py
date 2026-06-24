@@ -1849,9 +1849,10 @@ async def generar_consumo_folios(
     xml_str = etree.tostring(root, encoding="ISO-8859-1", xml_declaration=True).decode("ISO-8859-1")
 
     try:
-        xml_firmado = await firma.firmar_libro(xml_str)
+        # ConsumoFolios usa firmar_sobre (no firmar_libro que espera EnvioLibro)
+        xml_firmado = await firma.firmar_sobre(xml_str)
         if not xml_firmado:
-            raise ValueError("firmar_libro retornó None o vacío")
+            raise ValueError("firmar_sobre retornó None o vacío")
     except Exception as e:
         import traceback
         traceback.print_exc()
