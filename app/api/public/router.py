@@ -997,14 +997,14 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
         fin = _contador[tipo] - 1   # último folio efectivamente asignado
         folios_por_tipo[str(tipo)] = {"desde": ini, "hasta": fin}
 
-    def _resolver_ref(caso_obj, folio_actual):
+    def _resolver_ref(caso_obj, folio_actual, _natencion="SET"):
         """Construye las referencias del documento. Siempre la referencia al
         SET; además, si es NC/ND con referencia a otro caso, la referencia al
         documento corregido (obligatoria para que el SII no rechace)."""
         from app.services.xml_builder import ReferenciaDTE as _RefDTE
         refs_out = [_RefDTE(
             tipo_doc_ref="SET", folio_ref=folio_actual,
-            fecha_ref=fecha_dt, razon_ref=f"CASO {natencion}-{caso_obj.numero_caso}",
+            fecha_ref=fecha_dt, razon_ref=f"CASO {_natencion}-{caso_obj.numero_caso}",
             cod_ref=0,
         )]
         ref = caso_obj.referencia
@@ -1242,7 +1242,7 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
                             f"detalle ajuste monto={monto_ref} (ref caso {ref_num})"
                         )
             # Referencias: al SET + (si es NC/ND) al documento corregido
-            refs = _resolver_ref(caso, folio)
+            refs = _resolver_ref(caso, folio, datos.natencion)
             # Receptor completo (con giro/dirección) para evitar reparos del SII
             rcpt = caso.receptor or {}
             input_obj = InputDTE(
