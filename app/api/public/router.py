@@ -1803,121 +1803,105 @@ async def generar_consumo_folios(
     rut_env   = _limpiar(getattr(firma, "rut_certificado", None) or datos.rut_emisor)
     tmst      = _dt.now().strftime("%Y-%m-%dT%H:%M:%S")
 
-    NS_CF  = "http://www.sii.cl/SiiDte"
-    XSI_CF = "http://www.w3.org/2001/XMLSchema-instance"
+    from cryptography.hazmat.primitives.serialization import pkcs12 as _pkcs12
+    from cryptography.hazmat.primitives import hashes as _hashes
+    from cryptography.hazmat.primitives.asymmetric import padding as _pad
+    from lxml import etree as _etree
+    import base64 as _b64s, hashlib as _hs
 
-    root = etree.Element(
-        f"{{{NS_CF}}}ConsumoFolios",
-        nsmap={None: NS_CF, "xsi": XSI_CF},
-        attrib={"version": "1.0",
-                f"{{{XSI_CF}}}schemaLocation": f"{NS_CF} ConsumoFolios_v10.xsd"}
-    )
-    doc = etree.SubElement(root, f"{{{NS_CF}}}DocumentoConsumoFolios")
-    doc.set("ID", "ConsumoFolios")
+    NS_SII = "http://www.sii.cl/SiiDte"
+    NS_DS  = "http://www.w3.org/2000/09/xmldsig#"
 
-    car = etree.SubElement(doc, f"{{{NS_CF}}}Caratula")
-    etree.SubElement(car, f"{{{NS_CF}}}RutEmisorLibro").text = rut_em
-    etree.SubElement(car, f"{{{NS_CF}}}RutEnvia").text       = rut_env
-    etree.SubElement(car, f"{{{NS_CF}}}FchResol").text       = datos.fch_resol
-    etree.SubElement(car, f"{{{NS_CF}}}NroResol").text       = datos.nro_resol
-    etree.SubElement(car, f"{{{NS_CF}}}FchInicio").text      = datos.fch_inicio
-    etree.SubElement(car, f"{{{NS_CF}}}FchFinal").text       = datos.fch_final
-    etree.SubElement(car, f"{{{NS_CF}}}SecEnvio").text       = str(datos.sec_envio)
-    etree.SubElement(car, f"{{{NS_CF}}}TmstFirmaEnv").text   = tmst
-
-    res = etree.SubElement(doc, f"{{{NS_CF}}}Resumen")
-    etree.SubElement(res, f"{{{NS_CF}}}TipoDocumento").text  = str(datos.tipo_documento)
-    etree.SubElement(res, f"{{{NS_CF}}}MntNeto").text        = str(datos.mnt_neto)
-    etree.SubElement(res, f"{{{NS_CF}}}MntIVA").text         = str(datos.mnt_iva)
-    etree.SubElement(res, f"{{{NS_CF}}}TasaIVA").text        = datos.tasa_iva.replace(".", ",")
-    etree.SubElement(res, f"{{{NS_CF}}}MntExento").text      = str(datos.mnt_exento)
-    etree.SubElement(res, f"{{{NS_CF}}}MntTotal").text       = str(datos.mnt_total)
-    etree.SubElement(res, f"{{{NS_CF}}}CantEmitidos").text   = str(datos.cant_emitidos)
-    etree.SubElement(res, f"{{{NS_CF}}}CantAnulados").text   = str(datos.cant_anulados)
-    etree.SubElement(res, f"{{{NS_CF}}}CantUtilizados").text = str(datos.cant_utilizados)
-
+    # Construir XML como string (sin prefijos)
+    tasa = datos.tasa_iva.replace(".", ",")
+    rangos_xml = ""
     for r in datos.rangos_utilizados:
-        rango = etree.SubElement(res, f"{{{NS_CF}}}RangoUtilizados")
-        etree.SubElement(rango, f"{{{NS_CF}}}Inicial").text = str(r.desde)
-        etree.SubElement(rango, f"{{{NS_CF}}}Final").text   = str(r.hasta)
-
+        rangos_xml += f"<RangoUtilizados><Inicial>{r.desde}</Inicial><Final>{r.hasta}</Final></RangoUtilizados>"
+    anulados_xml = ""
     for r in datos.rangos_anulados:
-        rango = etree.SubElement(res, f"{{{NS_CF}}}RangoAnulados")
-        etree.SubElement(rango, f"{{{NS_CF}}}Inicial").text = str(r.desde)
-        etree.SubElement(rango, f"{{{NS_CF}}}Final").text   = str(r.hasta)
+        anulados_xml += f"<RangoAnulados><Inicial>{r.desde}</Inicial><Final>{r.hasta}</Final></RangoAnulados>"
 
-    xml_str = etree.tostring(root, encoding="ISO-8859-1", xml_declaration=True).decode("ISO-8859-1")
+    doc_xml = (
+        f'<DocumentoConsumoFolios ID="ConsumoFolios" xmlns="{NS_SII}">'
+        f'<Caratula>'
+        f'<RutEmisorLibro>{rut_em}</RutEmisorLibro>'
+        f'<RutEnvia>{rut_env}</RutEnvia>'
+        f'<FchResol>{datos.fch_resol}</FchResol>'
+        f'<NroResol>{datos.nro_resol}</NroResol>'
+        f'<FchInicio>{datos.fch_inicio}</FchInicio>'
+        f'<FchFinal>{datos.fch_final}</FchFinal>'
+        f'<SecEnvio>{datos.sec_envio}</SecEnvio>'
+        f'<TmstFirmaEnv>{tmst}</TmstFirmaEnv>'
+        f'</Caratula>'
+        f'<Resumen>'
+        f'<TipoDocumento>{datos.tipo_documento}</TipoDocumento>'
+        f'<MntNeto>{datos.mnt_neto}</MntNeto>'
+        f'<MntIVA>{datos.mnt_iva}</MntIVA>'
+        f'<TasaIVA>{tasa}</TasaIVA>'
+        f'<MntExento>{datos.mnt_exento}</MntExento>'
+        f'<MntTotal>{datos.mnt_total}</MntTotal>'
+        f'<CantEmitidos>{datos.cant_emitidos}</CantEmitidos>'
+        f'<CantAnulados>{datos.cant_anulados}</CantAnulados>'
+        f'<CantUtilizados>{datos.cant_utilizados}</CantUtilizados>'
+        f'{rangos_xml}{anulados_xml}'
+        f'</Resumen>'
+        f'</DocumentoConsumoFolios>'
+    )
+
+    # Cargar certificado y calcular digest
+    _priv, _cert, _ = _pkcs12.load_key_and_certificates(
+        p12_bytes, datos.pfx_password.encode() if datos.pfx_password else None)
+    _cert_der = _cert.public_bytes(
+        __import__("cryptography.hazmat.primitives.serialization",
+                   fromlist=["Encoding"]).Encoding.DER)
+    _cert_b64 = _b64s.b64encode(_cert_der).decode()
+
+    _doc_el   = _etree.fromstring(doc_xml.encode("ISO-8859-1"))
+    _doc_c14n = _etree.tostring(_doc_el, method="c14n", exclusive=False)
+    _digest   = _b64s.b64encode(_hs.sha1(_doc_c14n).digest()).decode()
+
+    _si_xml = (
+        f'<SignedInfo xmlns="{NS_DS}">'
+        f'<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>'
+        f'<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>'
+        f'<Reference URI="#ConsumoFolios">'
+        f'<Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/></Transforms>'
+        f'<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>'
+        f'<DigestValue>{_digest}</DigestValue>'
+        f'</Reference>'
+        f'</SignedInfo>'
+    )
+    _si_c14n = _etree.tostring(_etree.fromstring(_si_xml.encode()), method="c14n", exclusive=False)
+    _sig_val  = _b64s.b64encode(_priv.sign(_si_c14n, _pad.PKCS1v15(), _hashes.SHA1())).decode()
+
+    # Ensamblar firma como string sin prefijos
+    firma_xml = (
+        f'<Signature xmlns="{NS_DS}">'
+        f'{_si_xml.replace(f\' xmlns="{NS_DS}"\', "")}'
+        f'<SignatureValue>{_sig_val}</SignatureValue>'
+        f'<KeyInfo><X509Data><X509Certificate>{_cert_b64}</X509Certificate></X509Data></KeyInfo>'
+        f'</Signature>'
+    )
+
+    # XML final completo
+    doc_con_firma = doc_xml.replace("</DocumentoConsumoFolios>", f"{firma_xml}</DocumentoConsumoFolios>")
+    xml_firmado = (
+        '<?xml version="1.0" encoding="ISO-8859-1"?>\n'
+        f'<ConsumoFolios xmlns="{NS_SII}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+        f'version="1.0" xsi:schemaLocation="{NS_SII} ConsumoFolios_v10.xsd">'
+        f'{doc_con_firma}'
+        f'</ConsumoFolios>'
+    )
 
     try:
-        # ConsumoFolios requiere firma Python puro (Java no soporta este schema)
-        from cryptography.hazmat.primitives.serialization import pkcs12 as _pkcs12
-        from cryptography.hazmat.primitives import hashes as _hashes
-        from cryptography.hazmat.primitives.asymmetric import padding as _pad
-        from lxml import etree as _etree
-        import base64 as _b64s, hashlib as _hs
-
-        NS_DS = "http://www.w3.org/2000/09/xmldsig#"
-        NS_CF2 = "http://www.sii.cl/SiiDte"
-
-        _priv, _cert, _ = _pkcs12.load_key_and_certificates(
-            p12_bytes, datos.pfx_password.encode() if datos.pfx_password else None)
-        _cert_der = _cert.public_bytes(
-            __import__("cryptography.hazmat.primitives.serialization",
-                       fromlist=["Encoding"]).Encoding.DER)
-        _cert_b64 = _b64s.b64encode(_cert_der).decode()
-
-        _root = _etree.fromstring(xml_str.encode("ISO-8859-1"))
-        _doc  = _root.find(f"{{{NS_CF2}}}DocumentoConsumoFolios")
-        _doc_id = _doc.get("ID", "ConsumoFolios")
-        _doc.set("ID", _doc_id)
-
-        _doc_c14n = _etree.tostring(_doc, method="c14n", exclusive=False)
-        _digest   = _b64s.b64encode(_hs.sha1(_doc_c14n).digest()).decode()
-
-        _si_xml = (
-            f'<SignedInfo xmlns="{NS_DS}">'
-            f'<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>'
-            f'<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>'
-            f'<Reference URI="#{_doc_id}">'
-            f'<Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/></Transforms>'
-            f'<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>'
-            f'<DigestValue>{_digest}</DigestValue>'
-            f'</Reference>'
-            f'</SignedInfo>'
-        )
-        _si_c14n = _etree.tostring(
-            _etree.fromstring(_si_xml.encode()), method="c14n", exclusive=False)
-        _sig_val = _b64s.b64encode(
-            _priv.sign(_si_c14n, _pad.PKCS1v15(), _hashes.SHA1())).decode()
-
-        _sig_el = _etree.SubElement(_doc, f"{{{NS_DS}}}Signature")
-        _si_el  = _etree.fromstring(_si_xml.encode())
-        _sig_el.append(_si_el)
-        _sv_el  = _etree.SubElement(_sig_el, f"{{{NS_DS}}}SignatureValue")
-        _sv_el.text = _sig_val
-        _ki_el  = _etree.SubElement(_sig_el, f"{{{NS_DS}}}KeyInfo")
-        _x5d_el = _etree.SubElement(_ki_el, f"{{{NS_DS}}}X509Data")
-        _x5c_el = _etree.SubElement(_x5d_el, f"{{{NS_DS}}}X509Certificate")
-        _x5c_el.text = _cert_b64
-
-        # Serializar: reemplazar prefijo ns0 por xmlns explícito en Signature
-        _xml_str = _etree.tostring(_root, encoding="unicode")
-        _xml_str = _xml_str.replace(
-            'ns0:Signature xmlns:ns0="http://www.w3.org/2000/09/xmldsig#"',
-            'Signature xmlns="http://www.w3.org/2000/09/xmldsig#"'
-        )
-        _xml_str = _xml_str.replace('</ns0:Signature>', '</Signature>')
-        _xml_str = _xml_str.replace('ns0:', '')
-        xml_firmado = '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + _xml_str
         if not xml_firmado:
-            raise ValueError("Firma vacía")
+            raise ValueError("XML vacío")
     except HTTPException:
         raise
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(500, f"Error firmando consumo de folios: {e}")
-
     xml_b64 = _b64cf.b64encode(xml_firmado.encode("ISO-8859-1")).decode()
 
     resultado_envio = None
