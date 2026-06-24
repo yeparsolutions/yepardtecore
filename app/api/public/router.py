@@ -1915,9 +1915,9 @@ async def generar_consumo_folios(
             else "https://palena.sii.cl/cgi_dte/UPL/RCFUpload"
         )
         try:
-            from app.services.sii_auth import obtener_token
+            from app.services.sii_auth import obtener_token_cached
             import httpx as _httpx
-            _token = await obtener_token(p12_bytes, datos.pfx_password)
+            _token = await obtener_token_cached(p12_bytes, datos.pfx_password, ambiente=datos.ambiente)
             _bnd = "RCFBoundary"
             _nl  = "\r\n"
             _filename = rut_em.replace(".", "").replace("-", "") + "_RCF.xml"
