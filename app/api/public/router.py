@@ -1877,7 +1877,7 @@ async def generar_consumo_folios(
     # Ensamblar firma como string sin prefijos
     firma_xml = (
         f'<Signature xmlns="{NS_DS}">'
-        f'{_si_xml.replace(f\' xmlns="{NS_DS}"\', "")}'
+        f'{_si_xml.replace(" xmlns=\"" + NS_DS + "\"", "")}'
         f'<SignatureValue>{_sig_val}</SignatureValue>'
         f'<KeyInfo><X509Data><X509Certificate>{_cert_b64}</X509Certificate></X509Data></KeyInfo>'
         f'</Signature>'
