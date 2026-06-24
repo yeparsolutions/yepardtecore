@@ -1829,7 +1829,7 @@ async def generar_consumo_folios(
     etree.SubElement(res, f"{{{NS_CF}}}TipoDocumento").text  = str(datos.tipo_documento)
     etree.SubElement(res, f"{{{NS_CF}}}MntNeto").text        = str(datos.mnt_neto)
     etree.SubElement(res, f"{{{NS_CF}}}MntIVA").text         = str(datos.mnt_iva)
-    etree.SubElement(res, f"{{{NS_CF}}}TasaIVA").text        = datos.tasa_iva
+    etree.SubElement(res, f"{{{NS_CF}}}TasaIVA").text        = datos.tasa_iva.replace(".", ",")
     etree.SubElement(res, f"{{{NS_CF}}}MntExento").text      = str(datos.mnt_exento)
     etree.SubElement(res, f"{{{NS_CF}}}MntTotal").text       = str(datos.mnt_total)
     etree.SubElement(res, f"{{{NS_CF}}}CantEmitidos").text   = str(datos.cant_emitidos)
@@ -1900,10 +1900,14 @@ async def generar_consumo_folios(
         _x5c_el = _etree.SubElement(_x5d_el, f"{{{NS_DS}}}X509Certificate")
         _x5c_el.text = _cert_b64
 
-        # Serializar eliminando prefijos ns0 de la firma
+        # Serializar: reemplazar prefijo ns0 por xmlns explícito en Signature
         _xml_str = _etree.tostring(_root, encoding="unicode")
-        _xml_str = _xml_str.replace(' xmlns:ns0="http://www.w3.org/2000/09/xmldsig#"', '')
-        _xml_str = _xml_str.replace('ns0:', '').replace(':ns0', '')
+        _xml_str = _xml_str.replace(
+            'ns0:Signature xmlns:ns0="http://www.w3.org/2000/09/xmldsig#"',
+            'Signature xmlns="http://www.w3.org/2000/09/xmldsig#"'
+        )
+        _xml_str = _xml_str.replace('</ns0:Signature>', '</Signature>')
+        _xml_str = _xml_str.replace('ns0:', '')
         xml_firmado = '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + _xml_str
         if not xml_firmado:
             raise ValueError("Firma vacía")
