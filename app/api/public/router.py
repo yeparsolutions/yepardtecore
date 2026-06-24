@@ -1849,10 +1849,65 @@ async def generar_consumo_folios(
     xml_str = etree.tostring(root, encoding="ISO-8859-1", xml_declaration=True).decode("ISO-8859-1")
 
     try:
-        # ConsumoFolios usa firmar_sobre (no firmar_libro que espera EnvioLibro)
-        xml_firmado = await firma.firmar_sobre(xml_str)
+        # ConsumoFolios requiere firma Python puro (Java no soporta este schema)
+        from cryptography.hazmat.primitives.serialization import pkcs12 as _pkcs12
+        from cryptography.hazmat.primitives import hashes as _hashes
+        from cryptography.hazmat.primitives.asymmetric import padding as _pad
+        from lxml import etree as _etree
+        import base64 as _b64s, hashlib as _hs
+
+        NS_DS = "http://www.w3.org/2000/09/xmldsig#"
+        NS_CF2 = "http://www.sii.cl/SiiDte"
+
+        _priv, _cert, _ = _pkcs12.load_key_and_certificates(
+            p12_bytes, datos.pfx_password.encode() if datos.pfx_password else None)
+        _cert_der = _cert.public_bytes(
+            __import__("cryptography.hazmat.primitives.serialization",
+                       fromlist=["Encoding"]).Encoding.DER)
+        _cert_b64 = _b64s.b64encode(_cert_der).decode()
+
+        _root = _etree.fromstring(xml_str.encode("ISO-8859-1"))
+        _doc  = _root.find(f"{{{NS_CF2}}}DocumentoConsumoFolios")
+        _doc_id = _doc.get("ID", "ConsumoFolios")
+        _doc.set("ID", _doc_id)
+
+        _doc_c14n = _etree.tostring(_doc, method="c14n", exclusive=False)
+        _digest   = _b64s.b64encode(_hs.sha1(_doc_c14n).digest()).decode()
+
+        _si_xml = (
+            f'<SignedInfo xmlns="{NS_DS}">'
+            f'<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>'
+            f'<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>'
+            f'<Reference URI="#{_doc_id}">'
+            f'<Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/></Transforms>'
+            f'<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>'
+            f'<DigestValue>{_digest}</DigestValue>'
+            f'</Reference>'
+            f'</SignedInfo>'
+        )
+        _si_c14n = _etree.tostring(
+            _etree.fromstring(_si_xml.encode()), method="c14n", exclusive=False)
+        _sig_val = _b64s.b64encode(
+            _priv.sign(_si_c14n, _pad.PKCS1v15(), _hashes.SHA1())).decode()
+
+        _sig_el = _etree.SubElement(_doc, f"{{{NS_DS}}}Signature")
+        _si_el  = _etree.fromstring(_si_xml.encode())
+        _sig_el.append(_si_el)
+        _sv_el  = _etree.SubElement(_sig_el, f"{{{NS_DS}}}SignatureValue")
+        _sv_el.text = _sig_val
+        _ki_el  = _etree.SubElement(_sig_el, f"{{{NS_DS}}}KeyInfo")
+        _x5d_el = _etree.SubElement(_ki_el, f"{{{NS_DS}}}X509Data")
+        _x5c_el = _etree.SubElement(_x5d_el, f"{{{NS_DS}}}X509Certificate")
+        _x5c_el.text = _cert_b64
+
+        xml_firmado = (
+            '<?xml version="1.0" encoding="ISO-8859-1"?>\n' +
+            _etree.tostring(_root, encoding="unicode")
+        )
         if not xml_firmado:
-            raise ValueError("firmar_sobre retornó None o vacío")
+            raise ValueError("Firma vacía")
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()
