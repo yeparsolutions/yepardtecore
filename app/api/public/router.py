@@ -1930,6 +1930,12 @@ async def generar_consumo_folios(
         + "</ds:Signature>"
     )
 
+    # Firma va DENTRO de DocumentoConsumoFolios (antes del cierre)
+    doc_con_firma = doc_sin_firma.replace(
+        "</DocumentoConsumoFolios>",
+        firma_str + "</DocumentoConsumoFolios>"
+    )
+
     xml_firmado = (
         '<?xml version="1.0" encoding="ISO-8859-1"?>\n'
         + "<ConsumoFolios"
@@ -1938,8 +1944,7 @@ async def generar_consumo_folios(
         + " xmlns:xsi=" + chr(34) + "http://www.w3.org/2001/XMLSchema-instance" + chr(34)
         + " version=" + chr(34) + "1.0" + chr(34)
         + " xsi:schemaLocation=" + chr(34) + NS_SII + " ConsumoFolio_v10.xsd" + chr(34) + ">"
-        + doc_sin_firma
-        + firma_str
+        + doc_con_firma
         + "</ConsumoFolios>"
     )
 
