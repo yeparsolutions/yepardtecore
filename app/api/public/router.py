@@ -1850,7 +1850,11 @@ async def generar_consumo_folios(
 
     try:
         xml_firmado = await firma.firmar_libro(xml_str)
+        if not xml_firmado:
+            raise ValueError("firmar_libro retornó None o vacío")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(500, f"Error firmando consumo de folios: {e}")
 
     xml_b64 = _b64cf.b64encode(xml_firmado.encode("ISO-8859-1")).decode()
