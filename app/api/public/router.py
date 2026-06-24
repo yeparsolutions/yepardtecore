@@ -1783,7 +1783,7 @@ class ConsumoFoliosIn(BaseModel):
     auto_enviar:       bool = False
 
 
-@router.post("/api/generar-consumo-folios")
+@router.post("/generar-consumo-folios")
 async def generar_consumo_folios(
     datos:  ConsumoFoliosIn,
     emisor: Emisor = Depends(get_emisor_by_api_key),
