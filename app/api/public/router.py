@@ -1783,6 +1783,34 @@ class ConsumoFoliosIn(BaseModel):
     auto_enviar:       bool = False
 
 
+class RangoFoliosIn(BaseModel):
+    desde: int
+    hasta: int
+
+class ConsumoFoliosIn(BaseModel):
+    tipo_documento:    int = 39
+    fch_inicio:        str
+    fch_final:         str
+    sec_envio:         int = 1
+    mnt_neto:          int = 0
+    mnt_iva:           int = 0
+    tasa_iva:          str = "19.00"
+    mnt_exento:        int = 0
+    mnt_total:         int
+    cant_emitidos:     int
+    cant_anulados:     int = 0
+    cant_utilizados:   int
+    rangos_utilizados: list[RangoFoliosIn]
+    rangos_anulados:   list[RangoFoliosIn] = []
+    pfx_base64:        str
+    pfx_password:      str
+    rut_emisor:        str
+    fch_resol:         str = "2026-06-23"
+    nro_resol:         str = "0"
+    ambiente:          str = "certificacion"
+    auto_enviar:       bool = False
+
+
 @router.post("/generar-consumo-folios")
 async def generar_consumo_folios(
     datos:  ConsumoFoliosIn,
@@ -1790,153 +1818,148 @@ async def generar_consumo_folios(
     db:     AsyncSession = Depends(get_db),
 ):
     """Genera y opcionalmente envía el Reporte de Consumo de Folios al SII."""
-    from lxml import etree
-    import base64 as _b64cf
-    from app.services.firma_digital import FirmaDigital
-    from app.services.sii_sender import SIISender
-    from datetime import datetime as _dt
-
-    _limpiar = lambda r: r.replace(".", "").strip() if r else r
-    rut_em    = _limpiar(datos.rut_emisor)
-    p12_bytes = _b64cf.b64decode(datos.pfx_base64)
-    firma     = FirmaDigital(p12_bytes, datos.pfx_password)
-    rut_env   = _limpiar(getattr(firma, "rut_certificado", None) or datos.rut_emisor)
-    tmst      = _dt.now().strftime("%Y-%m-%dT%H:%M:%S")
-
     from cryptography.hazmat.primitives.serialization import pkcs12 as _pkcs12
     from cryptography.hazmat.primitives import hashes as _hashes
     from cryptography.hazmat.primitives.asymmetric import padding as _pad
     from lxml import etree as _etree
-    import base64 as _b64s, hashlib as _hs
+    import base64 as _b64cf, hashlib as _hs
+    from datetime import datetime as _dt
 
-    NS_SII = "http://www.sii.cl/SiiDte"
-    NS_DS  = "http://www.w3.org/2000/09/xmldsig#"
+    _limpiar  = lambda r: r.replace(".", "").strip() if r else r
+    rut_em    = _limpiar(datos.rut_emisor)
+    p12_bytes = _b64cf.b64decode(datos.pfx_base64)
 
-    # Construir XML como string (sin prefijos)
-    tasa = datos.tasa_iva.replace(".", ",")
-    rangos_xml = ""
-    for r in datos.rangos_utilizados:
-        rangos_xml += f"<RangoUtilizados><Inicial>{r.desde}</Inicial><Final>{r.hasta}</Final></RangoUtilizados>"
-    anulados_xml = ""
-    for r in datos.rangos_anulados:
-        anulados_xml += f"<RangoAnulados><Inicial>{r.desde}</Inicial><Final>{r.hasta}</Final></RangoAnulados>"
-
-    doc_xml = (
-        f'<DocumentoConsumoFolios ID="ConsumoFolios" xmlns="{NS_SII}">'
-        f'<Caratula>'
-        f'<RutEmisorLibro>{rut_em}</RutEmisorLibro>'
-        f'<RutEnvia>{rut_env}</RutEnvia>'
-        f'<FchResol>{datos.fch_resol}</FchResol>'
-        f'<NroResol>{datos.nro_resol}</NroResol>'
-        f'<FchInicio>{datos.fch_inicio}</FchInicio>'
-        f'<FchFinal>{datos.fch_final}</FchFinal>'
-        f'<SecEnvio>{datos.sec_envio}</SecEnvio>'
-        f'<TmstFirmaEnv>{tmst}</TmstFirmaEnv>'
-        f'</Caratula>'
-        f'<Resumen>'
-        f'<TipoDocumento>{datos.tipo_documento}</TipoDocumento>'
-        f'<MntNeto>{datos.mnt_neto}</MntNeto>'
-        f'<MntIVA>{datos.mnt_iva}</MntIVA>'
-        f'<TasaIVA>{tasa}</TasaIVA>'
-        f'<MntExento>{datos.mnt_exento}</MntExento>'
-        f'<MntTotal>{datos.mnt_total}</MntTotal>'
-        f'<CantEmitidos>{datos.cant_emitidos}</CantEmitidos>'
-        f'<CantAnulados>{datos.cant_anulados}</CantAnulados>'
-        f'<CantUtilizados>{datos.cant_utilizados}</CantUtilizados>'
-        f'{rangos_xml}{anulados_xml}'
-        f'</Resumen>'
-        f'</DocumentoConsumoFolios>'
-    )
-
-    # Cargar certificado y calcular digest
     _priv, _cert, _ = _pkcs12.load_key_and_certificates(
         p12_bytes, datos.pfx_password.encode() if datos.pfx_password else None)
     _cert_der = _cert.public_bytes(
         __import__("cryptography.hazmat.primitives.serialization",
                    fromlist=["Encoding"]).Encoding.DER)
-    _cert_b64 = _b64s.b64encode(_cert_der).decode()
+    _cert_b64 = _b64cf.b64encode(_cert_der).decode()
 
+    # Extraer RUT firmante del certificado
+    from app.services.firma_digital import FirmaDigital as _FD
+    _firma_tmp = _FD(p12_bytes, datos.pfx_password)
+    rut_env = _limpiar(getattr(_firma_tmp, "rut_certificado", None) or datos.rut_emisor)
+
+    tmst = _dt.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+    # Calcular datos del resumen
+    folio_min = min((r.desde for r in datos.rangos_utilizados), default=0)
+    folio_max = max((r.hasta for r in datos.rangos_utilizados), default=0)
+
+    NS_SII = "http://www.sii.cl/SiiDte"
+    NS_DS  = "http://www.w3.org/2000/09/xmldsig#"
+    doc_id = "RCOF_FOLIO_1"
+
+    # Construir carátula y resumen según schema RCOF correcto
+    doc_xml = (
+        "<DocumentoConsumoFolios"
+        + ' ID="' + doc_id + '"'
+        + ' xmlns="' + NS_SII + '">'
+        + "<Caratula>"
+        + "<RutEmisor>" + rut_em + "</RutEmisor>"
+        + "<RutEnvia>" + rut_env + "</RutEnvia>"
+        + "<FchResolucion>" + datos.fch_resol + "</FchResolucion>"
+        + "<NroResolucion>" + datos.nro_resol + "</NroResolucion>"
+        + "<TpoDocConsumo>" + str(datos.tipo_documento) + "</TpoDocConsumo>"
+        + "<FolioInicial>" + str(folio_min) + "</FolioInicial>"
+        + "<FolioFinal>" + str(folio_max) + "</FolioFinal>"
+        + "<FchInicio>" + datos.fch_inicio + "</FchInicio>"
+        + "<FchFinal>" + datos.fch_final + "</FchFinal>"
+        + "</Caratula>"
+        + "<Resumen>"
+        + "<NroDetalle>1</NroDetalle>"
+        + "<TpoDoc>" + str(datos.tipo_documento) + "</TpoDoc>"
+        + "<MinFolio>" + str(folio_min) + "</MinFolio>"
+        + "<MaxFolio>" + str(folio_max) + "</MaxFolio>"
+        + "<TotFolios>" + str(datos.cant_utilizados) + "</TotFolios>"
+        + "<TotMonto>" + str(datos.mnt_total) + "</TotMonto>"
+        + "</Resumen>"
+        + "</DocumentoConsumoFolios>"
+    )
+
+    # Firmar DocumentoConsumoFolios
     _doc_el   = _etree.fromstring(doc_xml.encode("ISO-8859-1"))
     _doc_c14n = _etree.tostring(_doc_el, method="c14n", exclusive=False)
-    _digest   = _b64s.b64encode(_hs.sha1(_doc_c14n).digest()).decode()
+    _digest   = _b64cf.b64encode(_hs.sha1(_doc_c14n).digest()).decode()
 
     _si_xml = (
-        f'<SignedInfo xmlns="{NS_DS}">'
-        f'<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>'
-        f'<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>'
-        f'<Reference URI="#ConsumoFolios">'
-        f'<Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/></Transforms>'
-        f'<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>'
-        f'<DigestValue>{_digest}</DigestValue>'
-        f'</Reference>'
-        f'</SignedInfo>'
+        "<SignedInfo"
+        + ' xmlns="' + NS_DS + '">'
+        + '<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>'
+        + '<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>'
+        + '<Reference URI="#' + doc_id + '">'
+        + "<Transforms>"
+        + '<Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>'
+        + "</Transforms>"
+        + '<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>'
+        + "<DigestValue>" + _digest + "</DigestValue>"
+        + "</Reference>"
+        + "</SignedInfo>"
     )
     _si_c14n = _etree.tostring(_etree.fromstring(_si_xml.encode()), method="c14n", exclusive=False)
-    _sig_val  = _b64s.b64encode(_priv.sign(_si_c14n, _pad.PKCS1v15(), _hashes.SHA1())).decode()
+    _sig_val  = _b64cf.b64encode(_priv.sign(_si_c14n, _pad.PKCS1v15(), _hashes.SHA1())).decode()
 
-    # Ensamblar firma como string sin prefijos
-    _ns_ds_attr = " xmlns=" + chr(34) + NS_DS + chr(34)
-    _si_inner   = _si_xml.replace(_ns_ds_attr, "")
+    _ns_attr = ' xmlns="' + NS_DS + '"'
+    _si_inner = _si_xml.replace(_ns_attr, "")
     firma_xml = (
-        "<Signature xmlns=" + chr(34) + NS_DS + chr(34) + ">"
+        "<Signature"
+        + ' xmlns="' + NS_DS + '">'
         + _si_inner
         + "<SignatureValue>" + _sig_val + "</SignatureValue>"
         + "<KeyInfo><X509Data><X509Certificate>" + _cert_b64 + "</X509Certificate></X509Data></KeyInfo>"
         + "</Signature>"
     )
 
-    # XML final completo
-    doc_con_firma = doc_xml.replace("</DocumentoConsumoFolios>", f"{firma_xml}</DocumentoConsumoFolios>")
+    doc_con_firma = doc_xml.replace("</DocumentoConsumoFolios>", firma_xml + "</DocumentoConsumoFolios>")
     xml_firmado = (
         '<?xml version="1.0" encoding="ISO-8859-1"?>\n'
-        f'<ConsumoFolios xmlns="{NS_SII}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
-        f'version="1.0" xsi:schemaLocation="{NS_SII} ConsumoFolios_v10.xsd">'
-        f'{doc_con_firma}'
-        f'</ConsumoFolios>'
+        + '<ConsumoFolios xmlns="' + NS_SII + '" xmlns:ds="' + NS_DS + '">'
+        + doc_con_firma
+        + "</ConsumoFolios>"
     )
 
-    try:
-        if not xml_firmado:
-            raise ValueError("XML vacío")
-    except HTTPException:
-        raise
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(500, f"Error firmando consumo de folios: {e}")
     xml_b64 = _b64cf.b64encode(xml_firmado.encode("ISO-8859-1")).decode()
 
     resultado_envio = None
     if datos.auto_enviar:
-        # Consumo de folios va a RCFUpload, no DTEUpload
-        _url_rcf = (
-            "https://maullin.sii.cl/cgi_dte/UPL/RCFUpload"
-            if datos.ambiente == "certificacion"
-            else "https://palena.sii.cl/cgi_dte/UPL/RCFUpload"
-        )
         try:
             from app.services.sii_auth import obtener_token_cached
             import httpx as _httpx
             _token = await obtener_token_cached(p12_bytes, datos.pfx_password, ambiente=datos.ambiente)
+            _url = (
+                "https://maullin.sii.cl/cgi_dte/UPL/DTEUpload"
+                if datos.ambiente == "certificacion"
+                else "https://palena.sii.cl/cgi_dte/UPL/DTEUpload"
+            )
             _bnd = "RCFBoundary"
             _nl  = "\r\n"
-            _filename = rut_em.replace(".", "").replace("-", "") + "_RCF.xml"
+            _fname = rut_em.replace("-", "") + "_RCOF.xml"
             _parts = []
             for name, val in [("rutSender", rut_env), ("rutCompany", rut_em)]:
-                _parts.append(f"--{_bnd}{_nl}Content-Disposition: form-data; name=\"{name}\"{_nl}{_nl}{val}{_nl}")
-            _xml_bytes = xml_firmado.encode("ISO-8859-1")
-            _parts.append(f"--{_bnd}{_nl}Content-Disposition: form-data; name=\"archivo\"; filename=\"{_filename}\"{_nl}Content-Type: text/xml{_nl}{_nl}")
-            _body = "".join(_parts).encode("ISO-8859-1") + _xml_bytes + f"{_nl}--{_bnd}--{_nl}".encode()
-            async with _httpx.AsyncClient(timeout=60) as _c:
+                _parts.append(
+                    "--" + _bnd + _nl
+                    + "Content-Disposition: form-data; name=" + chr(34) + name + chr(34) + _nl + _nl
+                    + val + _nl
+                )
+            _parts.append(
+                "--" + _bnd + _nl
+                + "Content-Disposition: form-data; name=" + chr(34) + "archivo" + chr(34)
+                + "; filename=" + chr(34) + _fname + chr(34) + _nl
+                + "Content-Type: text/xml" + _nl + _nl
+            )
+            _body = "".join(_parts).encode("ISO-8859-1") + xml_firmado.encode("ISO-8859-1") + (
+                (_nl + "--" + _bnd + "--" + _nl).encode()
+            )
+            async with _httpx.AsyncClient(timeout=60, follow_redirects=True) as _c:
                 _r = await _c.post(
-                    _url_rcf,
-                    content=_body,
+                    _url, content=_body,
                     headers={
-                        "Cookie": f"TOKEN={_token}",
-                        "Content-Type": f"multipart/form-data; boundary={_bnd}",
+                        "Cookie": "TOKEN=" + _token,
+                        "Content-Type": "multipart/form-data; boundary=" + _bnd,
                     }
                 )
-            logger.info(f"[RCF] HTTP={_r.status_code} body={_r.text[:500]}")
+            logger.info("[RCF] HTTP=%s body=%s", _r.status_code, _r.text[:500])
             import re as _re
             _tid = _re.search(r"<TRACKID>(\d+)</TRACKID>", _r.text)
             resultado_envio = {
@@ -1946,7 +1969,8 @@ async def generar_consumo_folios(
             }
         except Exception as e:
             import traceback; traceback.print_exc()
-            raise HTTPException(500, f"Consumo generado pero falló el envío: {e}")
+            raise HTTPException(500, "Consumo generado pero falló el envío: " + str(e))
+
     return {
         "ok":      True,
         "xml":     xml_firmado,
