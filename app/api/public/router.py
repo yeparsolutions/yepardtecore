@@ -1817,7 +1817,13 @@ async def generar_consumo_folios(
     emisor: Emisor = Depends(get_emisor_by_api_key),
     db:     AsyncSession = Depends(get_db),
 ):
-    """Genera y opcionalmente envía el Reporte de Consumo de Folios al SII."""
+    """Genera y opcionalmente envía el Reporte de Consumo de Folios al SII.
+    
+    Estructura según ConsumoFolio_v10.xsd:
+      ConsumoFolios
+        DocumentoConsumoFolios (Caratula + Resumen, sin firma adentro)
+        ds:Signature           (firma al nivel de ConsumoFolios)
+    """
     from cryptography.hazmat.primitives.serialization import pkcs12 as _pkcs12
     from cryptography.hazmat.primitives import hashes as _hashes
     from cryptography.hazmat.primitives.asymmetric import padding as _pad
@@ -1845,7 +1851,7 @@ async def generar_consumo_folios(
     NS_SII = "http://www.sii.cl/SiiDte"
     NS_DS  = "http://www.w3.org/2000/09/xmldsig#"
     NS_XSI = "http://www.w3.org/2001/XMLSchema-instance"
-    doc_id = "RCOF_" + datos.fch_inicio.replace("-", "")
+    doc_id = "ConsumoFolios"
 
     # RSAKeyValue
     _pub   = _cert.public_key()
@@ -1853,12 +1859,13 @@ async def generar_consumo_folios(
     _n_b64 = _b64cf.b64encode(_nums.n.to_bytes((_nums.n.bit_length()+7)//8,"big")).decode()
     _e_b64 = _b64cf.b64encode(_nums.e.to_bytes((_nums.e.bit_length()+7)//8,"big")).decode()
 
-    # Construir árbol XML completo con lxml para namespace correcto
+    # Construir árbol XML completo con lxml
     _nsmap = {None: NS_SII, "ds": NS_DS, "xsi": NS_XSI}
     _root  = _etree.Element(f"{{{NS_SII}}}ConsumoFolios", nsmap=_nsmap)
     _root.set("version", "1.0")
     _root.set(f"{{{NS_XSI}}}schemaLocation", NS_SII + " ConsumoFolio_v10.xsd")
 
+    # DocumentoConsumoFolios — solo Caratula y Resumen, SIN firma adentro
     _doc = _etree.SubElement(_root, f"{{{NS_SII}}}DocumentoConsumoFolios")
     _doc.set("ID", doc_id)
 
@@ -1884,11 +1891,17 @@ async def generar_consumo_folios(
     ]:
         _etree.SubElement(_res, f"{{{NS_SII}}}{_tag}").text = _val
 
-    # Calcular digest del DocumentoConsumoFolios (ya en contexto del root)
+    # Agregar rangos si existen
+    for _r in datos.rangos_utilizados:
+        _rango = _etree.SubElement(_res, f"{{{NS_SII}}}RangoUtilizados")
+        _etree.SubElement(_rango, f"{{{NS_SII}}}Inicial").text = str(_r.desde)
+        _etree.SubElement(_rango, f"{{{NS_SII}}}Final").text   = str(_r.hasta)
+
+    # Calcular digest del DocumentoConsumoFolios (en contexto del root)
     _doc_c14n = _etree.tostring(_doc, method="c14n", exclusive=False)
     _digest   = _b64cf.b64encode(_hs.sha1(_doc_c14n).digest()).decode()
 
-    # Construir SignedInfo como string para calcular firma
+    # Construir SignedInfo
     _si_str = (
         "<ds:SignedInfo xmlns:ds=" + chr(34) + NS_DS + chr(34) + ">"
         + "<ds:CanonicalizationMethod Algorithm=" + chr(34) + "http://www.w3.org/TR/2001/REC-xml-c14n-20010315" + chr(34) + "/>"
@@ -1903,10 +1916,9 @@ async def generar_consumo_folios(
     _si_c14n = _etree.tostring(_si_el, method="c14n", exclusive=False)
     _sval    = _b64cf.b64encode(_priv.sign(_si_c14n, _pad.PKCS1v15(), _hashes.SHA1())).decode()
 
-    # Agregar firma dentro del DocumentoConsumoFolios
-    _sig = _etree.SubElement(_doc, f"{{{NS_DS}}}Signature")
-    _si_node = _etree.fromstring(_si_str.encode())
-    _sig.append(_si_node)
+    # Firma al nivel de ConsumoFolios (no dentro del documento)
+    _sig = _etree.SubElement(_root, f"{{{NS_DS}}}Signature")
+    _sig.append(_etree.fromstring(_si_str.encode()))
     _sv = _etree.SubElement(_sig, f"{{{NS_DS}}}SignatureValue")
     _sv.text = _sval
     _ki = _etree.SubElement(_sig, f"{{{NS_DS}}}KeyInfo")
@@ -1917,7 +1929,6 @@ async def generar_consumo_folios(
     _x5d = _etree.SubElement(_ki, f"{{{NS_DS}}}X509Data")
     _etree.SubElement(_x5d, f"{{{NS_DS}}}X509Certificate").text = _cert_b64
 
-    # Serializar el XML final
     xml_firmado = (
         '<?xml version="1.0" encoding="ISO-8859-1"?>\n'
         + _etree.tostring(_root, encoding="unicode")
