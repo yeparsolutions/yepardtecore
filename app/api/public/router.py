@@ -1880,14 +1880,17 @@ async def generar_consumo_folios(
         + "</DocumentoConsumoFolios>"
     )
 
-    # Calcular digest del documento (con namespace del padre)
-    _NS_SII_ATTR = " xmlns=" + chr(34) + NS_SII + chr(34)
-    doc_para_digest = doc_sin_firma.replace(
-        "<DocumentoConsumoFolios",
-        "<DocumentoConsumoFolios" + _NS_SII_ATTR,
-        1
+    # Calcular digest del documento tal como quedará en el XML final
+    # (dentro de ConsumoFolios con namespace heredado)
+    _envelope_tmp = (
+        "<ConsumoFolios"
+        + " xmlns=" + chr(34) + NS_SII + chr(34)
+        + " xmlns:ds=" + chr(34) + NS_DS + chr(34) + ">"
+        + doc_sin_firma
+        + "</ConsumoFolios>"
     )
-    _doc_el   = _etree.fromstring(doc_para_digest.encode("ISO-8859-1"))
+    _env_el  = _etree.fromstring(_envelope_tmp.encode("ISO-8859-1"))
+    _doc_el  = _env_el.find("{" + NS_SII + "}DocumentoConsumoFolios")
     _doc_c14n = _etree.tostring(_doc_el, method="c14n", exclusive=False)
     _digest   = _b64cf.b64encode(_hs.sha1(_doc_c14n).digest()).decode()
 
