@@ -1004,7 +1004,7 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
         from app.services.xml_builder import ReferenciaDTE as _RefDTE
         refs_out = [_RefDTE(
             tipo_doc_ref="SET", folio_ref=folio_actual,
-            fecha_ref=fecha_dt, razon_ref=f"CASO-{caso_obj.numero_caso}",
+            fecha_ref=fecha_dt, razon_ref=f"CASO {natencion}-{caso_obj.numero_caso}",
             cod_ref=0,
         )]
         ref = caso_obj.referencia
@@ -1912,14 +1912,19 @@ async def generar_consumo_folios(
         + "<ds:DigestValue>" + _digest + "</ds:DigestValue>"
         + "</ds:Reference></ds:SignedInfo>"
     )
-    _si_el   = _etree.fromstring(_si_str.encode())
-    _si_c14n = _etree.tostring(_si_el, method="c14n", exclusive=False)
-    _sval    = _b64cf.b64encode(_priv.sign(_si_c14n, _pad.PKCS1v15(), _hashes.SHA1())).decode()
-
-    # Firma al nivel de ConsumoFolios (no dentro del documento)
+    # Agregar firma al árbol PRIMERO, luego calcular c14n del SignedInfo en contexto
     _sig = _etree.SubElement(_root, f"{{{NS_DS}}}Signature")
-    _sig.append(_etree.fromstring(_si_str.encode()))
+    _si_node = _etree.fromstring(_si_str.encode())
+    _sig.append(_si_node)
+
+    # SignatureValue placeholder
     _sv = _etree.SubElement(_sig, f"{{{NS_DS}}}SignatureValue")
+    _sv.text = "PLACEHOLDER"
+
+    # Calcular c14n del SignedInfo YA INSERTADO en el árbol (prefijos pueden cambiar)
+    _si_in_tree = _sig.find(f"{{{NS_DS}}}SignedInfo")
+    _si_c14n = _etree.tostring(_si_in_tree, method="c14n", exclusive=False)
+    _sval    = _b64cf.b64encode(_priv.sign(_si_c14n, _pad.PKCS1v15(), _hashes.SHA1())).decode()
     _sv.text = _sval
     _ki = _etree.SubElement(_sig, f"{{{NS_DS}}}KeyInfo")
     _kv = _etree.SubElement(_ki, f"{{{NS_DS}}}KeyValue")
