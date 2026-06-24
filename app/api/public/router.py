@@ -1844,108 +1844,83 @@ async def generar_consumo_folios(
 
     NS_SII = "http://www.sii.cl/SiiDte"
     NS_DS  = "http://www.w3.org/2000/09/xmldsig#"
+    NS_XSI = "http://www.w3.org/2001/XMLSchema-instance"
     doc_id = "RCOF_" + datos.fch_inicio.replace("-", "")
 
-    # RSAKeyValue para KeyInfo
-    _pub    = _cert.public_key()
-    _nums   = _pub.public_numbers()
-    _n_b64  = _b64cf.b64encode(_nums.n.to_bytes((_nums.n.bit_length()+7)//8,"big")).decode()
-    _e_b64  = _b64cf.b64encode(_nums.e.to_bytes((_nums.e.bit_length()+7)//8,"big")).decode()
+    # RSAKeyValue
+    _pub   = _cert.public_key()
+    _nums  = _pub.public_numbers()
+    _n_b64 = _b64cf.b64encode(_nums.n.to_bytes((_nums.n.bit_length()+7)//8,"big")).decode()
+    _e_b64 = _b64cf.b64encode(_nums.e.to_bytes((_nums.e.bit_length()+7)//8,"big")).decode()
 
-    # Construir DocumentoConsumoFolios SIN firma para calcular digest
-    doc_sin_firma = (
-        "<DocumentoConsumoFolios"
-        + " ID=" + chr(34) + doc_id + chr(34) + ">"
-        + "<Caratula version=" + chr(34) + "1.0" + chr(34) + ">"
-        + "<RutEmisor>" + rut_em + "</RutEmisor>"
-        + "<RutEnvia>" + rut_env + "</RutEnvia>"
-        + "<FchResol>" + datos.fch_resol + "</FchResol>"
-        + "<NroResol>" + datos.nro_resol + "</NroResol>"
-        + "<FchInicio>" + datos.fch_inicio + "</FchInicio>"
-        + "<FchFinal>" + datos.fch_final + "</FchFinal>"
-        + "<SecEnvio>" + str(datos.sec_envio) + "</SecEnvio>"
-        + "<TmstFirmaEnv>" + tmst + "</TmstFirmaEnv>"
-        + "</Caratula>"
-        + "<Resumen>"
-        + "<TipoDocumento>" + str(datos.tipo_documento) + "</TipoDocumento>"
-        + "<MntNeto>" + str(datos.mnt_neto) + "</MntNeto>"
-        + "<MntIva>" + str(datos.mnt_iva) + "</MntIva>"
-        + "<TasaIVA>19.0</TasaIVA>"
-        + "<MntExento>" + str(datos.mnt_exento) + "</MntExento>"
-        + "<MntTotal>" + str(datos.mnt_total) + "</MntTotal>"
-        + "<FoliosEmitidos>" + str(datos.cant_emitidos) + "</FoliosEmitidos>"
-        + "<FoliosAnulados>" + str(datos.cant_anulados) + "</FoliosAnulados>"
-        + "<FoliosUtilizados>" + str(datos.cant_utilizados) + "</FoliosUtilizados>"
-        + "</Resumen>"
-        + "</DocumentoConsumoFolios>"
-    )
+    # Construir árbol XML completo con lxml para namespace correcto
+    _nsmap = {None: NS_SII, "ds": NS_DS, "xsi": NS_XSI}
+    _root  = _etree.Element(f"{{{NS_SII}}}ConsumoFolios", nsmap=_nsmap)
+    _root.set("version", "1.0")
+    _root.set(f"{{{NS_XSI}}}schemaLocation", NS_SII + " ConsumoFolio_v10.xsd")
 
-    # Calcular digest del documento tal como quedará en el XML final
-    # (dentro de ConsumoFolios con namespace heredado)
-    _envelope_tmp = (
-        "<ConsumoFolios"
-        + " xmlns=" + chr(34) + NS_SII + chr(34)
-        + " xmlns:ds=" + chr(34) + NS_DS + chr(34) + ">"
-        + doc_sin_firma
-        + "</ConsumoFolios>"
-    )
-    _env_el  = _etree.fromstring(_envelope_tmp.encode("ISO-8859-1"))
-    _doc_el  = _env_el.find("{" + NS_SII + "}DocumentoConsumoFolios")
-    _doc_c14n = _etree.tostring(_doc_el, method="c14n", exclusive=False)
+    _doc = _etree.SubElement(_root, f"{{{NS_SII}}}DocumentoConsumoFolios")
+    _doc.set("ID", doc_id)
+
+    _car = _etree.SubElement(_doc, f"{{{NS_SII}}}Caratula")
+    _car.set("version", "1.0")
+    for _tag, _val in [
+        ("RutEmisor", rut_em), ("RutEnvia", rut_env),
+        ("FchResol", datos.fch_resol), ("NroResol", datos.nro_resol),
+        ("FchInicio", datos.fch_inicio), ("FchFinal", datos.fch_final),
+        ("SecEnvio", str(datos.sec_envio)), ("TmstFirmaEnv", tmst),
+    ]:
+        _etree.SubElement(_car, f"{{{NS_SII}}}{_tag}").text = _val
+
+    _res = _etree.SubElement(_doc, f"{{{NS_SII}}}Resumen")
+    for _tag, _val in [
+        ("TipoDocumento", str(datos.tipo_documento)),
+        ("MntNeto", str(datos.mnt_neto)), ("MntIva", str(datos.mnt_iva)),
+        ("TasaIVA", "19.0"),
+        ("MntExento", str(datos.mnt_exento)), ("MntTotal", str(datos.mnt_total)),
+        ("FoliosEmitidos", str(datos.cant_emitidos)),
+        ("FoliosAnulados", str(datos.cant_anulados)),
+        ("FoliosUtilizados", str(datos.cant_utilizados)),
+    ]:
+        _etree.SubElement(_res, f"{{{NS_SII}}}{_tag}").text = _val
+
+    # Calcular digest del DocumentoConsumoFolios (ya en contexto del root)
+    _doc_c14n = _etree.tostring(_doc, method="c14n", exclusive=False)
     _digest   = _b64cf.b64encode(_hs.sha1(_doc_c14n).digest()).decode()
 
-    # SignedInfo
-    _si = (
-        "<SignedInfo xmlns=" + chr(34) + NS_DS + chr(34) + ">"
-        + "<CanonicalizationMethod Algorithm=" + chr(34) + "http://www.w3.org/TR/2001/REC-xml-c14n-20010315" + chr(34) + "/>"
-        + "<SignatureMethod Algorithm=" + chr(34) + "http://www.w3.org/2000/09/xmldsig#rsa-sha1" + chr(34) + "/>"
-        + "<Reference URI=" + chr(34) + "#" + doc_id + chr(34) + ">"
-        + "<Transforms><Transform Algorithm=" + chr(34) + "http://www.w3.org/2000/09/xmldsig#enveloped-signature" + chr(34) + "/></Transforms>"
-        + "<DigestMethod Algorithm=" + chr(34) + "http://www.w3.org/2000/09/xmldsig#sha1" + chr(34) + "/>"
-        + "<DigestValue>" + _digest + "</DigestValue>"
-        + "</Reference></SignedInfo>"
+    # Construir SignedInfo como string para calcular firma
+    _si_str = (
+        "<ds:SignedInfo xmlns:ds=" + chr(34) + NS_DS + chr(34) + ">"
+        + "<ds:CanonicalizationMethod Algorithm=" + chr(34) + "http://www.w3.org/TR/2001/REC-xml-c14n-20010315" + chr(34) + "/>"
+        + "<ds:SignatureMethod Algorithm=" + chr(34) + "http://www.w3.org/2000/09/xmldsig#rsa-sha1" + chr(34) + "/>"
+        + "<ds:Reference URI=" + chr(34) + "#" + doc_id + chr(34) + ">"
+        + "<ds:Transforms><ds:Transform Algorithm=" + chr(34) + "http://www.w3.org/2000/09/xmldsig#enveloped-signature" + chr(34) + "/></ds:Transforms>"
+        + "<ds:DigestMethod Algorithm=" + chr(34) + "http://www.w3.org/2000/09/xmldsig#sha1" + chr(34) + "/>"
+        + "<ds:DigestValue>" + _digest + "</ds:DigestValue>"
+        + "</ds:Reference></ds:SignedInfo>"
     )
-    _si_c14n = _etree.tostring(_etree.fromstring(_si.encode()), method="c14n", exclusive=False)
+    _si_el   = _etree.fromstring(_si_str.encode())
+    _si_c14n = _etree.tostring(_si_el, method="c14n", exclusive=False)
     _sval    = _b64cf.b64encode(_priv.sign(_si_c14n, _pad.PKCS1v15(), _hashes.SHA1())).decode()
-    _si_inner = _si.replace(" xmlns=" + chr(34) + NS_DS + chr(34), "")
 
-    firma_str = (
-        "<ds:Signature xmlns:ds=" + chr(34) + NS_DS + chr(34) + ">"
-        + _si_inner.replace("<SignedInfo", "<ds:SignedInfo").replace("</SignedInfo>", "</ds:SignedInfo>")
-            .replace("<CanonicalizationMethod", "<ds:CanonicalizationMethod").replace("/>", "/>")
-            .replace("<SignatureMethod", "<ds:SignatureMethod")
-            .replace("<Reference", "<ds:Reference").replace("</Reference>", "</ds:Reference>")
-            .replace("<Transforms>", "<ds:Transforms>").replace("</Transforms>", "</ds:Transforms>")
-            .replace("<Transform", "<ds:Transform")
-            .replace("<DigestMethod", "<ds:DigestMethod")
-            .replace("<DigestValue>", "<ds:DigestValue>").replace("</DigestValue>", "</ds:DigestValue>")
-        + "<ds:SignatureValue>" + _sval + "</ds:SignatureValue>"
-        + "<ds:KeyInfo>"
-        + "<ds:KeyValue><ds:RSAKeyValue>"
-        + "<ds:Modulus>" + _n_b64 + "</ds:Modulus>"
-        + "<ds:Exponent>" + _e_b64 + "</ds:Exponent>"
-        + "</ds:RSAKeyValue></ds:KeyValue>"
-        + "<ds:X509Data><ds:X509Certificate>" + _cert_b64 + "</ds:X509Certificate></ds:X509Data>"
-        + "</ds:KeyInfo>"
-        + "</ds:Signature>"
-    )
+    # Agregar firma dentro del DocumentoConsumoFolios
+    _sig = _etree.SubElement(_doc, f"{{{NS_DS}}}Signature")
+    _si_node = _etree.fromstring(_si_str.encode())
+    _sig.append(_si_node)
+    _sv = _etree.SubElement(_sig, f"{{{NS_DS}}}SignatureValue")
+    _sv.text = _sval
+    _ki = _etree.SubElement(_sig, f"{{{NS_DS}}}KeyInfo")
+    _kv = _etree.SubElement(_ki, f"{{{NS_DS}}}KeyValue")
+    _rsa = _etree.SubElement(_kv, f"{{{NS_DS}}}RSAKeyValue")
+    _etree.SubElement(_rsa, f"{{{NS_DS}}}Modulus").text  = _n_b64
+    _etree.SubElement(_rsa, f"{{{NS_DS}}}Exponent").text = _e_b64
+    _x5d = _etree.SubElement(_ki, f"{{{NS_DS}}}X509Data")
+    _etree.SubElement(_x5d, f"{{{NS_DS}}}X509Certificate").text = _cert_b64
 
-    # Firma va DENTRO de DocumentoConsumoFolios (antes del cierre)
-    doc_con_firma = doc_sin_firma.replace(
-        "</DocumentoConsumoFolios>",
-        firma_str + "</DocumentoConsumoFolios>"
-    )
-
+    # Serializar el XML final
     xml_firmado = (
         '<?xml version="1.0" encoding="ISO-8859-1"?>\n'
-        + "<ConsumoFolios"
-        + " xmlns=" + chr(34) + NS_SII + chr(34)
-        + " xmlns:ds=" + chr(34) + NS_DS + chr(34)
-        + " xmlns:xsi=" + chr(34) + "http://www.w3.org/2001/XMLSchema-instance" + chr(34)
-        + " version=" + chr(34) + "1.0" + chr(34)
-        + " xsi:schemaLocation=" + chr(34) + NS_SII + " ConsumoFolio_v10.xsd" + chr(34) + ">"
-        + doc_con_firma
-        + "</ConsumoFolios>"
+        + _etree.tostring(_root, encoding="unicode")
     )
 
     xml_b64 = _b64cf.b64encode(xml_firmado.encode("ISO-8859-1")).decode()
