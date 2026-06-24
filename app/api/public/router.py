@@ -1876,45 +1876,70 @@ async def generar_consumo_folios(
         + "</DocumentoConsumoFolios>"
     )
 
-    _doc_el   = _etree.fromstring(doc_xml.encode("ISO-8859-1"))
-    _doc_c14n = _etree.tostring(_doc_el, method="c14n", exclusive=False)
-    _digest   = _b64cf.b64encode(_hs.sha1(_doc_c14n).digest()).decode()
-
-    _si_xml = (
-        "<SignedInfo"
-        + ' xmlns="' + NS_DS + '">'
-        + '<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>'
-        + '<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>'
-        + '<Reference URI="#' + doc_id + '">'
-        + "<Transforms>"
-        + '<Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>'
-        + "</Transforms>"
-        + '<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>'
-        + "<DigestValue>" + _digest + "</DigestValue>"
-        + "</Reference>"
-        + "</SignedInfo>"
-    )
-    _si_c14n = _etree.tostring(_etree.fromstring(_si_xml.encode()), method="c14n", exclusive=False)
-    _sig_val  = _b64cf.b64encode(_priv.sign(_si_c14n, _pad.PKCS1v15(), _hashes.SHA1())).decode()
-
-    _ns_attr = ' xmlns="' + NS_DS + '"'
-    _si_inner = _si_xml.replace(_ns_attr, "")
-    firma_xml = (
-        "<Signature"
-        + ' xmlns="' + NS_DS + '">'
-        + _si_inner
-        + "<SignatureValue>" + _sig_val + "</SignatureValue>"
-        + "<KeyInfo><X509Data><X509Certificate>" + _cert_b64 + "</X509Certificate></X509Data></KeyInfo>"
-        + "</Signature>"
+    # Calcular RSAKeyValue para KeyInfo
+    _pub_key  = _cert.public_key()
+    _pub_nums = _pub_key.public_numbers()
+    _n_bytes  = _pub_nums.n.to_bytes((_pub_nums.n.bit_length() + 7) // 8, "big")
+    _e_bytes  = _pub_nums.e.to_bytes((_pub_nums.e.bit_length() + 7) // 8, "big")
+    _mod_b64  = _b64cf.b64encode(_n_bytes).decode()
+    _exp_b64  = _b64cf.b64encode(_e_bytes).decode()
+    _key_info = (
+        "<KeyInfo>"
+        + "<KeyValue><RSAKeyValue>"
+        + "<Modulus>" + _mod_b64 + "</Modulus>"
+        + "<Exponent>" + _exp_b64 + "</Exponent>"
+        + "</RSAKeyValue></KeyValue>"
+        + "<X509Data><X509Certificate>" + _cert_b64 + "</X509Certificate></X509Data>"
+        + "</KeyInfo>"
     )
 
-    doc_con_firma = doc_xml.replace("</DocumentoConsumoFolios>", firma_xml + "</DocumentoConsumoFolios>")
-    xml_firmado = (
-        '<?xml version="1.0" encoding="ISO-8859-1"?>\n'
-        + '<ConsumoFolios xmlns="' + NS_SII + '" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"'
+    def _firmar_elemento(xml_str, ref_id):
+        """Firma un elemento XML y retorna el bloque Signature como string."""
+        _el    = _etree.fromstring(xml_str.encode("ISO-8859-1"))
+        _c14n  = _etree.tostring(_el, method="c14n", exclusive=False)
+        _dval  = _b64cf.b64encode(_hs.sha1(_c14n).digest()).decode()
+        _si    = (
+            "<SignedInfo"
+            + ' xmlns="' + NS_DS + '">'
+            + '<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>'
+            + '<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>'
+            + '<Reference URI="#' + ref_id + '">'
+            + "<Transforms>"
+            + '<Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>'
+            + "</Transforms>"
+            + '<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>'
+            + "<DigestValue>" + _dval + "</DigestValue>"
+            + "</Reference></SignedInfo>"
+        )
+        _si_c14n = _etree.tostring(_etree.fromstring(_si.encode()), method="c14n", exclusive=False)
+        _sval    = _b64cf.b64encode(_priv.sign(_si_c14n, _pad.PKCS1v15(), _hashes.SHA1())).decode()
+        _ns_rm   = ' xmlns="' + NS_DS + '"'
+        return (
+            '<Signature xmlns="' + NS_DS + '">' 
+            + _si.replace(_ns_rm, "")
+            + "<SignatureValue>" + _sval + "</SignatureValue>"
+            + _key_info
+            + "</Signature>"
+        )
+
+    # Firma 1: DocumentoConsumoFolios
+    _firma_doc = _firmar_elemento(doc_xml, doc_id)
+    doc_con_firma = doc_xml.replace("</DocumentoConsumoFolios>", _firma_doc + "</DocumentoConsumoFolios>")
+
+    # Armar ConsumoFolios completo
+    _env_id = "EnvioConsumoFolios"
+    _consumo_sin_firma = (
+        '<ConsumoFolios ID="' + _env_id + '" xmlns="' + NS_SII + '" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"'
         + ' version="1.0" xsi:schemaLocation="' + NS_SII + ' ConsumoFolio_v10.xsd">'
         + doc_con_firma
         + "</ConsumoFolios>"
+    )
+
+    # Firma 2: ConsumoFolios completo (sin declaración XML)
+    _firma_env = _firmar_elemento(_consumo_sin_firma, _env_id)
+    xml_firmado = (
+        '<?xml version="1.0" encoding="ISO-8859-1"?>\n'
+        + _consumo_sin_firma.replace("</ConsumoFolios>", _firma_env + "</ConsumoFolios>")
     )
 
     xml_b64 = _b64cf.b64encode(xml_firmado.encode("ISO-8859-1")).decode()
