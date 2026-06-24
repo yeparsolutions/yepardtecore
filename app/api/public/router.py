@@ -1875,12 +1875,14 @@ async def generar_consumo_folios(
     _sig_val  = _b64s.b64encode(_priv.sign(_si_c14n, _pad.PKCS1v15(), _hashes.SHA1())).decode()
 
     # Ensamblar firma como string sin prefijos
+    _ns_ds_attr = " xmlns=" + chr(34) + NS_DS + chr(34)
+    _si_inner   = _si_xml.replace(_ns_ds_attr, "")
     firma_xml = (
-        f'<Signature xmlns="{NS_DS}">'
-        f'{_si_xml.replace(" xmlns=\"" + NS_DS + "\"", "")}'
-        f'<SignatureValue>{_sig_val}</SignatureValue>'
-        f'<KeyInfo><X509Data><X509Certificate>{_cert_b64}</X509Certificate></X509Data></KeyInfo>'
-        f'</Signature>'
+        "<Signature xmlns=" + chr(34) + NS_DS + chr(34) + ">"
+        + _si_inner
+        + "<SignatureValue>" + _sig_val + "</SignatureValue>"
+        + "<KeyInfo><X509Data><X509Certificate>" + _cert_b64 + "</X509Certificate></X509Data></KeyInfo>"
+        + "</Signature>"
     )
 
     # XML final completo
