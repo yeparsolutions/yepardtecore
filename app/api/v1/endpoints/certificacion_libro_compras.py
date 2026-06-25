@@ -25,54 +25,39 @@ FCT_PROP  = "0.60"
 def _iva(n): return round(n * 0.19)
 
 DOCUMENTOS = [
-    # Set 4841545. Cada documento refleja EXACTAMENTE lo que el SII pide en el
-    # .txt de compras, con su situación tributaria. La clasificación del tipo y
-    # del código de IVA no recuperable es lo que el SII evalúa estrictamente.
+    # Set 4919758. Montos exactos del TXT del SII.
     #
-    # Doc 30 - Factura (giro con derecho a crédito) — folio 234, afecto 34744
+    # Doc 30 - Factura (giro con derecho a crédito) — folio 234, afecto 26140
     {"tipo": 30, "folio": 234, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 34744, "exe": 0, "iva": _iva(34744), "total": 34744 + _iva(34744), "tipo_especial": None},
+     "neto": 26140, "exe": 0, "iva": _iva(26140), "total": 26140 + _iva(26140), "tipo_especial": None},
 
     # Doc 33 - Factura Electrónica (giro con derecho a crédito) — folio 32,
-    # exento 9597 + afecto 8608
+    # exento 9115 + afecto 7277
     {"tipo": 33, "folio": 32, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 8608, "exe": 9597, "iva": _iva(8608), "total": 8608 + _iva(8608) + 9597, "tipo_especial": None},
+     "neto": 7277, "exe": 9115, "iva": _iva(7277), "total": 7277 + _iva(7277) + 9115, "tipo_especial": None},
 
-    # Doc 30 - Factura (IVA USO COMÚN, factor 0.60) — folio 781, afecto 29947
+    # Doc 30 - Factura (IVA USO COMÚN, factor 0.60) — folio 781, afecto 29844
     {"tipo": 30, "folio": 781, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 29947, "exe": 0, "iva": 0, "iva_uso_comun": _iva(29947),
-     "total": 29947 + _iva(29947), "tipo_especial": "iva_uso_comun"},
+     "neto": 29844, "exe": 0, "iva": 0, "iva_uso_comun": _iva(29844),
+     "total": 29844 + _iva(29844), "tipo_especial": "iva_uso_comun"},
 
-    # Doc 60 - NOTA DE CRÉDITO por descuento a factura 234 — folio 451, monto 2807
-    # El set dice "NOTA DE CREDITO" → tipo 60 (antes estaba mal como 61, por eso
-    # el reparo "Resumen Doc 60 no aparece en el libro").
+    # Doc 60 - NOTA DE CRÉDITO por descuento a factura 234 — folio 451, monto 2750
     {"tipo": 60, "folio": 451, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 2807, "exe": 0, "iva": _iva(2807), "total": 2807 + _iva(2807), "tipo_especial": None},
+     "neto": 2750, "exe": 0, "iva": _iva(2750), "total": 2750 + _iva(2750), "tipo_especial": None},
 
     # Doc 33 - Factura Electrónica (ENTREGA GRATUITA → IVA NO RECUPERABLE)
-    # El set dice "ENTREGA GRATUITA DEL PROVEEDOR" → CodIVANoRec=4 (entregas
-    # gratuitas recibidas), NO 9. El IVA va solo en iva_no_rec.
     {"tipo": 33, "folio": 67, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 10913, "exe": 0, "iva": 0, "iva_no_rec": _iva(10913), "cod_iva_no_rec": 4,
-     "total": 10913 + _iva(10913), "tipo_especial": "iva_no_rec"},
+     "neto": 10345, "exe": 0, "iva": 0, "iva_no_rec": _iva(10345), "cod_iva_no_rec": 4,
+     "total": 10345 + _iva(10345), "tipo_especial": "iva_no_rec"},
 
-    # Doc 46 - Factura de Compra Electrónica (RETENCIÓN TOTAL DEL IVA) — folio 9
-    # Dos reglas del SII que aplican a la vez:
-    #   1. MntIVA = MntNeto*TasaImp (el IVA SÍ se declara, nunca 0).
-    #   2. MntTotal = MntNeto + MntIVA (el total BRUTO del documento, tal como
-    #      lo emitió el proveedor). La retención NO cambia el total del documento:
-    #      es info adicional de quién entera el IVA, no un descuento al total.
-    # La retención se informa además en iva_ret_total / IVARetTotal.
-    # Analogía: la boleta del proveedor vale neto+IVA aunque luego el comprador
-    # sea quien le pague ese IVA al fisco en vez de al proveedor.
+    # Doc 46 - Factura de Compra Electrónica (RETENCIÓN TOTAL DEL IVA) — folio 9, afecto 9735
     {"tipo": 46, "folio": 9, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 10019, "exe": 0, "iva": _iva(10019), "iva_ret_total": _iva(10019),
-     "total": 10019 + _iva(10019), "tipo_especial": "iva_ret_total"},
+     "neto": 9735, "exe": 0, "iva": _iva(9735), "iva_ret_total": _iva(9735),
+     "total": 9735 + _iva(9735), "tipo_especial": "iva_ret_total"},
 
-    # Doc 60 - NOTA DE CRÉDITO por descuento a factura electrónica 32 — folio 211,
-    # monto 6396. El set dice "NOTA DE CREDITO" → tipo 60.
+    # Doc 60 - NOTA DE CRÉDITO por descuento a factura electrónica 32 — folio 211, monto 5160
     {"tipo": 60, "folio": 211, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 6396, "exe": 0, "iva": _iva(6396), "total": 6396 + _iva(6396), "tipo_especial": None},
+     "neto": 5160, "exe": 0, "iva": _iva(5160), "total": 5160 + _iva(5160), "tipo_especial": None},
 ]
 
 def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
@@ -189,7 +174,7 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
 @router.post("/generar-xml", summary="Genera Libro de Compras N° Atención 4841545")
 async def generar_libro_compras(
     emisor_id: int,
-    natencion: Optional[str] = "4841545",
+    natencion: Optional[str] = "4919758",
     periodo:   Optional[str] = "2026-05",
     db: AsyncSession = Depends(get_db),
 ):
