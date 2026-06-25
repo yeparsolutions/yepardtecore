@@ -1249,8 +1249,11 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
                         # Monto PROPIO del documento referido (sin seguir cadena).
                         monto_directo = monto_por_caso.get(ref_num, 0) if ref_num else 0
                         glosa_anula = (ref.get("razon") or "Anula documento").strip()
+                        # Si el doc referenciado tiene monto 0 (ej. NC de texto),
+                        # el ND también va con monto 0 y sin qty (forzar_monto_cero).
                         items_d.append(ItemDTE(
-                            nombre=glosa_anula, cantidad=1,
+                            nombre=glosa_anula,
+                            cantidad=0 if monto_directo == 0 else 1,
                             precio_unitario=monto_directo, exento=False,
                             unidad="", codigo="", descuento_pct=0,
                         ))
@@ -1291,7 +1294,11 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
                     getattr(caso, "forzar_monto_cero", False) or
                     # NC/ND CodRef=2 (corrige texto) → sin montos en el detalle
                     (not caso.items and tipo_dte in (61,56) and
-                     int((caso.referencia or {}).get("cod_ref", 0) or 0) == 2)
+                     int((caso.referencia or {}).get("cod_ref", 0) or 0) == 2) or
+                    # ND CodRef=1 anulando doc con monto 0 → también sin qty
+                    (not caso.items and tipo_dte in (61,56) and
+                     int((caso.referencia or {}).get("cod_ref", 0) or 0) == 1 and
+                     monto_por_caso.get(_sufijo_caso_ref(caso), 0) == 0)
                 ),
             )
             xml_bytes = XMLBuilder(input_obj).construir()
