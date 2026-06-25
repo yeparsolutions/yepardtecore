@@ -1620,7 +1620,7 @@ async def generar_libro_desde_xml_publico(
 # las boletas que te dieron a TI — datos distintos, de otra fuente.
 @router.post("/generar-libro-compras")
 async def generar_libro_compras_publico(
-    natencion:    str          = Form("4841545"),
+    natencion:    str          = Form("SET"),
     periodo:      str          = Form("2026-05"),
     auto_enviar:  bool         = Form(False),
     ambiente:     str          = Form("certificacion"),
@@ -1629,6 +1629,7 @@ async def generar_libro_compras_publico(
     rut_firmante: str          = Form(""),
     fch_resol:    str          = Form("2026-04-19"),
     nro_resol:    str          = Form("0"),
+    documentos:   str          = Form("[]"),
     emisor:       Emisor       = Depends(get_emisor_by_api_key),
     db:           AsyncSession = Depends(get_db),
 ):
@@ -1640,7 +1641,7 @@ async def generar_libro_compras_publico(
         return await _generar_libro_compras_impl(
             natencion, periodo, auto_enviar, ambiente, emisor, db,
             pfx_base64=pfx_base64, pfx_password=pfx_password, rut_firmante_ext=rut_firmante,
-            fch_resol=fch_resol)
+            fch_resol=fch_resol, documentos_json=documentos)
     except HTTPException:
         raise
     except Exception as _e:
@@ -1655,7 +1656,7 @@ async def _generar_libro_compras_impl(
     natencion: str, periodo: str, auto_enviar: bool, ambiente: str,
     emisor: Emisor, db: AsyncSession,
     pfx_base64: str = "", pfx_password: str = "", rut_firmante_ext: str = "",
-    fch_resol: str = "2026-04-19",
+    fch_resol: str = "2026-04-19", documentos_json: str = "",
 ):
     from app.api.v1.endpoints.certificacion_libro_compras import _construir_libro_xml, DOCUMENTOS as _DOCS_COMPRA
     from app.services.firma_digital import FirmaDigital
@@ -1698,9 +1699,49 @@ async def _generar_libro_compras_impl(
     else:
         rut_envia = _rut_env2
 
+    # Documentos dinámicos si vienen del frontend (parseo del TXT del SII)
+    _docs_override = None
+    if documentos_json and documentos_json.strip() not in ("", "[]"):
+        import json as _json
+        try:
+            _docs_raw = _json.loads(documentos_json)
+            if _docs_raw:
+                def _iva(n): return round(n * 0.19)
+                _docs_override = []
+                for d in _docs_raw:
+                    neto = d.get("neto", 0)
+                    exe  = d.get("exe", 0)
+                    te   = d.get("tipo_especial")
+                    if te == "iva_uso_comun":
+                        doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": "2026-05-22",
+                               "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
+                               "neto": neto, "exe": exe, "iva": 0, "iva_uso_comun": _iva(neto),
+                               "total": neto + _iva(neto) + exe, "tipo_especial": "iva_uso_comun"}
+                    elif te == "iva_no_rec":
+                        doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": "2026-05-22",
+                               "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
+                               "neto": neto, "exe": exe, "iva": 0, "iva_no_rec": _iva(neto),
+                               "cod_iva_no_rec": 4, "total": neto + _iva(neto) + exe,
+                               "tipo_especial": "iva_no_rec"}
+                    elif te == "iva_ret_total":
+                        doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": "2026-05-22",
+                               "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
+                               "neto": neto, "exe": exe, "iva": _iva(neto),
+                               "iva_ret_total": _iva(neto), "total": neto + _iva(neto) + exe,
+                               "tipo_especial": "iva_ret_total"}
+                    else:
+                        doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": "2026-05-22",
+                               "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
+                               "neto": neto, "exe": exe, "iva": _iva(neto),
+                               "total": neto + _iva(neto) + exe, "tipo_especial": None}
+                    _docs_override.append(doc)
+        except Exception as _je:
+            logger.warning(f"[LIBRO-COMPRAS] Error parseando documentos_json: {_je}")
+
     try:
         xml_str = _construir_libro_xml(emisor, rut_envia, natencion, periodo, tmst,
-                                        fch_resol=fch_resol)
+                                        fch_resol=fch_resol,
+                                        docs_override=_docs_override)
     except Exception as e:
         logger.error(f"[LIBRO-COMPRAS] Error construyendo: {e}", exc_info=True)
         raise HTTPException(500, f"Error construyendo libro de compras: {e}")
