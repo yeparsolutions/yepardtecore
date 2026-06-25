@@ -25,39 +25,30 @@ FCT_PROP  = "0.60"
 def _iva(n): return round(n * 0.19)
 
 DOCUMENTOS = [
-    # Set 4919758. Montos exactos del TXT del SII.
-    #
-    # Doc 30 - Factura (giro con derecho a crédito) — folio 234, afecto 26140
+    # Set 4919743. Montos exactos del TXT del SII.
     {"tipo": 30, "folio": 234, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 26140, "exe": 0, "iva": _iva(26140), "total": 26140 + _iva(26140), "tipo_especial": None},
+     "neto": 18269, "exe": 0, "iva": _iva(18269), "total": 18269 + _iva(18269), "tipo_especial": None},
 
-    # Doc 33 - Factura Electrónica (giro con derecho a crédito) — folio 32,
-    # exento 9115 + afecto 7277
     {"tipo": 33, "folio": 32, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 7277, "exe": 9115, "iva": _iva(7277), "total": 7277 + _iva(7277) + 9115, "tipo_especial": None},
+     "neto": 6059, "exe": 8674, "iva": _iva(6059), "total": 6059 + _iva(6059) + 8674, "tipo_especial": None},
 
-    # Doc 30 - Factura (IVA USO COMÚN, factor 0.60) — folio 781, afecto 29844
     {"tipo": 30, "folio": 781, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 29844, "exe": 0, "iva": 0, "iva_uso_comun": _iva(29844),
-     "total": 29844 + _iva(29844), "tipo_especial": "iva_uso_comun"},
+     "neto": 29749, "exe": 0, "iva": 0, "iva_uso_comun": _iva(29749),
+     "total": 29749 + _iva(29749), "tipo_especial": "iva_uso_comun"},
 
-    # Doc 60 - NOTA DE CRÉDITO por descuento a factura 234 — folio 451, monto 2750
     {"tipo": 60, "folio": 451, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 2750, "exe": 0, "iva": _iva(2750), "total": 2750 + _iva(2750), "tipo_especial": None},
+     "neto": 2699, "exe": 0, "iva": _iva(2699), "total": 2699 + _iva(2699), "tipo_especial": None},
 
-    # Doc 33 - Factura Electrónica (ENTREGA GRATUITA → IVA NO RECUPERABLE)
     {"tipo": 33, "folio": 67, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 10345, "exe": 0, "iva": 0, "iva_no_rec": _iva(10345), "cod_iva_no_rec": 4,
-     "total": 10345 + _iva(10345), "tipo_especial": "iva_no_rec"},
+     "neto": 9826, "exe": 0, "iva": 0, "iva_no_rec": _iva(9826), "cod_iva_no_rec": 4,
+     "total": 9826 + _iva(9826), "tipo_especial": "iva_no_rec"},
 
-    # Doc 46 - Factura de Compra Electrónica (RETENCIÓN TOTAL DEL IVA) — folio 9, afecto 9735
     {"tipo": 46, "folio": 9, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 9735, "exe": 0, "iva": _iva(9735), "iva_ret_total": _iva(9735),
-     "total": 9735 + _iva(9735), "tipo_especial": "iva_ret_total"},
+     "neto": 9474, "exe": 0, "iva": _iva(9474), "iva_ret_total": _iva(9474),
+     "total": 9474 + _iva(9474), "tipo_especial": "iva_ret_total"},
 
-    # Doc 60 - NOTA DE CRÉDITO por descuento a factura electrónica 32 — folio 211, monto 5160
     {"tipo": 60, "folio": 211, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 5160, "exe": 0, "iva": _iva(5160), "total": 5160 + _iva(5160), "tipo_especial": None},
+     "neto": 4030, "exe": 0, "iva": _iva(4030), "total": 4030 + _iva(4030), "tipo_especial": None},
 ]
 
 def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
@@ -174,7 +165,7 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
 @router.post("/generar-xml", summary="Genera Libro de Compras N° Atención 4841545")
 async def generar_libro_compras(
     emisor_id: int,
-    natencion: Optional[str] = "4919758",
+    natencion: Optional[str] = "4919743",
     periodo:   Optional[str] = "2026-05",
     db: AsyncSession = Depends(get_db),
 ):
