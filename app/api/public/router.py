@@ -805,6 +805,9 @@ class CasoSetInput(BaseModel):
     #   razon:    motivo (ej. "CORRIGE GIRO DEL RECEPTOR")
     #   tipo_doc_ref: tipo del documento referido (33, 61, etc.)
     referencia:      Optional[dict] = None
+    desc_global:     int   = 0      # descuento global en % (ej. 14 = 14%)
+    motivo:          str   = ""     # motivo guía de despacho
+    forzar_monto_cero: bool = False # NC CodRef=2
 
 class GenerarSetInput(BaseModel):
     emisor:         EmisorStateless
@@ -832,6 +835,29 @@ class GenerarSetInput(BaseModel):
                                           # se usa el inicio del rango del CAF.
                                           # Así el cliente controla el contador
                                           # SIN tocar el CAF firmado.
+
+
+def _ind_traslado(motivo: str) -> int:
+    """Determina IndTraslado según el motivo de la guía de despacho."""
+    m = motivo.upper()
+    if "BODEGA" in m or "INTERNO" in m or "TRASLADO" in m:
+        return 5  # Traslado interno
+    elif "CLIENTE" in m and "LOCAL" in m:
+        return 1  # Venta, emisor despacha al local del cliente
+    elif "CLIENTE" in m:
+        return 1  # Venta, cliente retira
+    return 1
+
+def _ind_despacho(motivo: str) -> int:
+    """Determina TipoDespacho según el motivo de la guía de despacho."""
+    m = motivo.upper()
+    if "BODEGA" in m or ("TRASLADO" in m and "INTERNO" in m):
+        return 0  # Sin TipoDespacho para traslado interno
+    elif "EMISOR" in m:
+        return 2  # Emisor despacha al local del cliente
+    elif "CLIENTE" in m:
+        return 1  # Cliente retira
+    return 0
 
 
 @router.post("/generar-set")
@@ -1181,11 +1207,12 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
 
                 if cod_ref == 2:
                     # Corrige SOLO texto → el detalle NO lleva monto (precio 0).
-                    # Usar la RAZÓN literal como glosa (ej. "CORRIGE GIRO DEL
-                    # RECEPTOR"), igual que el XML que el SII aceptó sin reparos.
+                    # cantidad debe ser vacía (no 1) — el SII rechaza qty=1 con monto=0.
+                    # Usamos forzar_monto_cero=True en el InputDTE para que el builder
+                    # genere solo NmbItem + MontoItem=0 sin QtyItem.
                     glosa_texto = (ref.get("razon") or "Corrige texto").strip()
                     items_d.append(ItemDTE(
-                        nombre=glosa_texto, cantidad=1,
+                        nombre=glosa_texto, cantidad=0,
                         precio_unitario=0, exento=False, unidad="", codigo="",
                         descuento_pct=0,
                     ))
@@ -1257,6 +1284,15 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
                     correo=rcpt.get("correo", "") or "",
                 ),
                 items=items_d, referencias=refs, ambiente=datos.ambiente,
+                descuento_global_pct=float(caso.desc_global or 0),
+                indicador_traslado=_ind_traslado(caso.motivo or ""),
+                indicador_despacho=_ind_despacho(caso.motivo or ""),
+                forzar_monto_cero=(
+                    getattr(caso, "forzar_monto_cero", False) or
+                    # NC/ND CodRef=2 (corrige texto) → sin montos en el detalle
+                    (not caso.items and tipo_dte in (61,56) and
+                     int((caso.referencia or {}).get("cod_ref", 0) or 0) == 2)
+                ),
             )
             xml_bytes = XMLBuilder(input_obj).construir()
 
