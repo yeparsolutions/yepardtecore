@@ -44,7 +44,7 @@ DOCUMENTOS = [
      "total": 9826 + _iva(9826), "tipo_especial": "iva_no_rec"},
 
     {"tipo": 46, "folio": 9, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     # total = neto (= neto+iva-iva_ret cuando retención es total, SII pág 37)
+     # total=neto: MntTotal=neto+iva-iva_ret=neto cuando retención es total
      "neto": 9474, "exe": 0, "iva": _iva(9474), "iva_ret_total": _iva(9474),
      "total": 9474, "tipo_especial": "iva_ret_total"},
 
@@ -115,20 +115,15 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
             etree.SubElement(tot, f"{{{NS}}}FctProp").text            = FCT_PROP
             etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(FCT_PROP)))
 
-        # FIX REPARO 2: TotIVARetTotal informa la retención; TotMntIVA ya es 0 para estos docs
+        # TotImpSinCredito = IVA retenido total (sin derecho a crédito fiscal)
+        # TotOpIVARetTotal + TotIVARetTotal informan la retención
         t_ret = sum(d.get("iva_ret_total", 0) for d in dt)
         if t_ret:
+            etree.SubElement(tot, f"{{{NS}}}TotImpSinCredito").text  = str(t_ret)
             etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in dt if d.get("iva_ret_total", 0)))
             etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_ret)
 
-        # TotMntTotal: para iva_ret_total usar neto+iva-iva_ret (SII pág 37)
-        _tot_total = sum(
-            d["neto"] + d["iva"] - d.get("iva_ret_total", 0)
-            if d.get("tipo_especial") == "iva_ret_total"
-            else d["total"]
-            for d in dt
-        )
-        etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(_tot_total)
+        etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in dt))
 
     for doc in docs:
         det = etree.SubElement(envio, f"{{{NS}}}Detalle")
@@ -153,15 +148,16 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
             etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc["cod_iva_no_rec"])
             etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
         elif te == "iva_ret_total":
-            # El SII exige MntIVA = MntNeto*TasaImp SIEMPRE (no puede ir en 0).
-            # La retención se informa ADEMÁS en IVARetTotal. El comprador declara
-            # el IVA y a la vez registra que lo retuvo para enterarlo él.
+            # MntIVA = neto*tasa (SII lo valida matemáticamente)
+            # MntSinCred = IVA retenido (el comprador no tiene derecho a crédito fiscal)
+            # IVARetTotal = monto retenido
             etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
+            etree.SubElement(det, f"{{{NS}}}MntSinCred").text  = str(doc["iva_ret_total"])
             etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
         else:
             etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
 
-        # MntTotal: para iva_ret_total usar neto+iva-iva_ret (SII pág 37)
+        # MntTotal: neto+iva-iva_ret para retención total (SII pág 37)
         if doc.get("tipo_especial") == "iva_ret_total":
             _mnt_total = doc["neto"] + doc["iva"] - doc.get("iva_ret_total", 0)
         else:
