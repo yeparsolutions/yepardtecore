@@ -199,18 +199,22 @@ class XMLBuilder:
             self.monto_neto   = round(monto_afecto)
             self.monto_iva    = round(monto_afecto * 0.19)
             self.monto_exento = round(subtotal_exento)
-            # MntTotal calculado ítem por ítem (igual que el SII) para evitar
-            # diferencias de 1 peso por redondeo acumulado en documentos mixtos.
-            # El SII suma (neto_item + round(neto_item*0.19)) por cada ítem afecto.
-            fct_desc = (1 - self.datos.descuento_global_pct / 100) if self.datos.descuento_global_pct > 0 else 1.0
-            total_items = 0
-            for i in items:
-                if i.exento:
-                    total_items += i.monto_item
-                else:
-                    neto_i = round(i.monto_item * fct_desc)
-                    total_items += neto_i + round(neto_i * 0.19)
-            self.monto_total = total_items
+            # MntTotal: el SII calcula el total ítem por ítem en documentos mixtos
+            # (afectos + exentos) sin descuentos. En esos casos, sum(neto_i + round(neto_i*0.19))
+            # puede diferir en 1 peso de neto_total + round(neto_total*0.19).
+            # Con descuentos (ítem o global) el cálculo original coincide con el SII.
+            _items_afectos = [i for i in items if not i.exento]
+            _items_exentos = [i for i in items if i.exento]
+            _hay_mixto    = bool(_items_afectos) and bool(_items_exentos)
+            _hay_desc_item = any(i.descuento_pct > 0 for i in _items_afectos)
+            if _hay_mixto and not _hay_desc_item and self.datos.descuento_global_pct == 0:
+                # Mixto sin descuentos: acumular por ítem igual que el SII
+                self.monto_total = (
+                    sum(i.monto_item + round(i.monto_item * 0.19) for i in _items_afectos)
+                    + sum(i.monto_item for i in _items_exentos)
+                )
+            else:
+                self.monto_total = self.monto_neto + self.monto_iva + self.monto_exento
 
         if self.datos.forzar_monto_cero:
             self.monto_neto   = 0
