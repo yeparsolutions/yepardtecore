@@ -199,21 +199,19 @@ class XMLBuilder:
             self.monto_neto   = round(monto_afecto)
             self.monto_iva    = round(monto_afecto * 0.19)
             self.monto_exento = round(subtotal_exento)
-            # MntTotal: el SII usa ceil(neto_i * 0.19) por ítem cuando hay
-            # descuento por ítem O documento mixto (afecto+exento) sin desc global.
-            # En los demás casos usa round sobre el neto total.
-            import math as _math
-            _items_afectos  = [i for i in items if not i.exento]
-            _items_exentos  = [i for i in items if i.exento]
-            _hay_desc_item  = any(i.descuento_pct > 0 for i in _items_afectos)
-            _hay_exento     = bool(_items_exentos)
-            _hay_desc_global = self.datos.descuento_global_pct > 0
-            _usar_ceil_item = _hay_desc_item or (_hay_exento and not _hay_desc_global)
-            if _usar_ceil_item:
-                fct_desc = (1 - self.datos.descuento_global_pct / 100) if _hay_desc_global else 1.0
+            # MntTotal: el SII acumula (neto_i + round(neto_i*0.19)) ítem por ítem
+            # en documentos mixtos (afecto+exento) sin descuentos. En ese caso
+            # puede diferir 1 peso de neto+iva por redondeo acumulado.
+            _items_afectos = [i for i in items if not i.exento]
+            _items_exentos = [i for i in items if i.exento]
+            _es_mixto_sin_desc = (
+                bool(_items_afectos) and bool(_items_exentos)
+                and self.datos.descuento_global_pct == 0
+                and not any(i.descuento_pct > 0 for i in _items_afectos)
+            )
+            if _es_mixto_sin_desc:
                 self.monto_total = (
-                    sum(round(i.monto_item * fct_desc) + _math.ceil(round(i.monto_item * fct_desc) * 0.19)
-                        for i in _items_afectos)
+                    sum(i.monto_item + round(i.monto_item * 0.19) for i in _items_afectos)
                     + sum(i.monto_item for i in _items_exentos)
                 )
             else:
