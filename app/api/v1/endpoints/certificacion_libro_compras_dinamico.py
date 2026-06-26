@@ -245,9 +245,7 @@ def _construir_libro_xml(
             t_exe = sum(d["exe"] for d in docs_t)
             etree.SubElement(tot, f"{{{NS}}}TotMntExe").text   = str(t_exe)
             etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text  = str(sum(d["neto"]  for d in docs_t))
-            # TotMntIVA excluye docs iva_ret_total (su IVA va solo en TotIVARetTotal)
-            _tot_iva = sum(d["iva"] for d in docs_t if d.get("tipo_especial") != "iva_ret_total")
-            etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text   = str(_tot_iva)
+            etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text   = str(sum(d["iva"]   for d in docs_t))
             # IVA No Recuperable
             t_nr = sum(d.get("iva_no_rec", 0) for d in docs_t)
             if t_nr:
@@ -267,7 +265,14 @@ def _construir_libro_xml(
             if t_ret:
                 etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in docs_t if d.get("iva_ret_total", 0)))
                 etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_ret)
-            etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in docs_t))
+            # TotMntTotal: para iva_ret_total usar neto+iva-iva_ret (SII pág 37)
+            _tot_total = sum(
+                d["neto"] + d["iva"] - d.get("iva_ret_total", 0)
+                if d.get("tipo_especial") == "iva_ret_total"
+                else d["total"]
+                for d in docs_t
+            )
+            etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(_tot_total)
 
     # ── Detalle ───────────────────────────────────────────────────────────────
     for doc in docs:
@@ -298,7 +303,12 @@ def _construir_libro_xml(
                 etree.SubElement(det, f"{{{NS}}}IVA").text     = str(doc["iva"])
             if doc["exe"] != 0:
                 etree.SubElement(det, f"{{{NS}}}MntExe").text  = str(doc["exe"])
-            etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
+            # MntTotal: para iva_ret_total usar neto+iva-iva_ret (SII pág 37)
+            if doc.get("tipo_especial") == "iva_ret_total":
+                _mnt_total = doc["neto"] + doc["iva"] - doc.get("iva_ret_total", 0)
+            else:
+                _mnt_total = doc["total"]
+            etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(_mnt_total)
         else:
             # LibroCV_v10.xsd: TpoDoc → NroDoc → TasaImp → FchDoc → RUTDoc → RznSoc
             #                  → [MntExe] → MntNeto → [MntIVA/IVAUsoComun/IVANoRec/IVARetTotal] → MntTotal
