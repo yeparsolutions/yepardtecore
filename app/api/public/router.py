@@ -1767,8 +1767,8 @@ async def _generar_libro_compras_impl(
                                "cod_iva_no_rec": 4, "total": neto + _iva(neto) + exe,
                                "tipo_especial": "iva_no_rec"}
                     elif te == "iva_ret_total":
-                        # total = neto+exe (= neto+iva-iva_ret cuando ret=iva, SII pág 37)
-                        # MntTotal y TotMntTotal se calculan como neto+iva-iva_ret en el XML
+                        # total=neto+exe: MntTotal=neto+iva-iva_ret=neto cuando ret=iva (SII pág 37)
+                        # MntSinCred=iva_ret (sin derecho a crédito) se agrega en el XML
                         doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": "2026-05-22",
                                "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
                                "neto": neto, "exe": exe, "iva": _iva(neto),
