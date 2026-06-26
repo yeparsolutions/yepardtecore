@@ -55,9 +55,16 @@ class ItemDTE:
     exento: bool = False
 
     @property
-    def monto_item(self) -> int:
+    def monto_item(self) -> float:
+        """Retorna el monto del ítem con decimales (sin redondear).
+        El redondeo se aplica solo al acumular subtotales, igual que el SII."""
         bruto = self.cantidad * self.precio_unitario
-        return round(bruto - bruto * (self.descuento_pct / 100))
+        return bruto - bruto * (self.descuento_pct / 100)
+
+    @property
+    def monto_item_int(self) -> int:
+        """Monto redondeado para mostrar en el XML (MontoItem)."""
+        return _round_half_up(self.monto_item)
 
 
 @dataclass
@@ -156,6 +163,12 @@ def _fmt_qty(cantidad: float) -> str:
     return f"{cantidad:.2f}"
 
 
+def _round_half_up(x) -> int:
+    """Redondeo estilo Excel/SII: 0.5 siempre redondea hacia arriba."""
+    from decimal import Decimal, ROUND_HALF_UP
+    return int(Decimal(str(x)).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+
+
 class XMLBuilder:
 
     NAMESPACE = SII_NS
@@ -168,54 +181,45 @@ class XMLBuilder:
         tipo  = self.datos.tipo_dte
         items = self.datos.items
 
+        # Mantener decimales internamente — igual que el SII.
+        # Solo redondear (round half up) al obtener subtotales finales.
         subtotal_afecto = sum(i.monto_item for i in items if not i.exento)
         subtotal_exento = sum(i.monto_item for i in items if i.exento)
 
-        desc = 0
+        desc = 0.0
         if self.datos.descuento_global_pct > 0:
-            desc = round(subtotal_afecto * self.datos.descuento_global_pct / 100)
+            desc = subtotal_afecto * self.datos.descuento_global_pct / 100
         elif self.datos.descuento_global_monto > 0:
-            desc = self.datos.descuento_global_monto
-        self._desc_global_monto = desc
+            desc = float(self.datos.descuento_global_monto)
+        self._desc_global_monto = _round_half_up(desc)
         monto_afecto = subtotal_afecto - desc
 
         if tipo in TIPOS_BOLETA:
             if monto_afecto > 0:
-                neto = round(monto_afecto / 1.19)
-                iva  = monto_afecto - neto
+                neto = _round_half_up(monto_afecto / 1.19)
+                iva  = _round_half_up(monto_afecto) - neto
                 self.monto_neto = neto
                 self.monto_iva  = iva
             else:
                 self.monto_neto = 0
                 self.monto_iva  = 0
-            self.monto_exento = round(subtotal_exento)
-            self.monto_total  = round(monto_afecto + subtotal_exento)
+            self.monto_exento = _round_half_up(subtotal_exento)
+            self.monto_total  = _round_half_up(monto_afecto + subtotal_exento)
         elif tipo in TIPOS_FACTURA_EXENTA:
             self.monto_neto   = 0
             self.monto_iva    = 0
-            self.monto_exento = round(monto_afecto + subtotal_exento)
+            self.monto_exento = _round_half_up(monto_afecto + subtotal_exento)
             self.monto_total  = self.monto_exento
         else:
-            self.monto_neto   = round(monto_afecto)
-            self.monto_exento = round(subtotal_exento)
-            # IVA y MntTotal: el SII valida MntTotal = MntNeto + IVA + MntExe.
-            # En documentos mixtos (afecto+exento) sin descuentos, el SII calcula
-            # el IVA acumulando round(neto_i * 0.19) ítem por ítem, lo que puede
-            # diferir 1 peso de round(neto_total * 0.19) por redondeo acumulado.
-            _items_afectos = [i for i in items if not i.exento]
-            _items_exentos = [i for i in items if i.exento]
-            _es_mixto_sin_desc = (
-                bool(_items_afectos) and bool(_items_exentos)
-                and self.datos.descuento_global_pct == 0
-                and not any(i.descuento_pct > 0 for i in _items_afectos)
-            )
-            if _es_mixto_sin_desc:
-                # IVA = suma de IVA por ítem (igual que el SII)
-                self.monto_iva   = sum(round(i.monto_item * 0.19) for i in _items_afectos)
-                self.monto_total = (self.monto_neto + self.monto_iva + self.monto_exento)
-            else:
-                self.monto_iva   = round(monto_afecto * 0.19)
-                self.monto_total = self.monto_neto + self.monto_iva + self.monto_exento
+            # Acumular IVA con decimales y redondear al final (igual que el SII)
+            iva_decimal = sum(i.monto_item * 0.19 for i in items if not i.exento)
+            if self.datos.descuento_global_pct > 0:
+                fct = 1 - self.datos.descuento_global_pct / 100
+                iva_decimal = sum(i.monto_item * fct * 0.19 for i in items if not i.exento)
+            self.monto_neto   = _round_half_up(monto_afecto)
+            self.monto_iva    = _round_half_up(iva_decimal)
+            self.monto_exento = _round_half_up(subtotal_exento)
+            self.monto_total  = self.monto_neto + self.monto_iva + self.monto_exento
 
         if self.datos.forzar_monto_cero:
             self.monto_neto   = 0
@@ -407,10 +411,10 @@ class XMLBuilder:
         if item.descuento_pct > 0:
             etree.SubElement(det, f"{{{NS}}}DescuentoPct").text   = f"{item.descuento_pct:.2f}"
             etree.SubElement(det, f"{{{NS}}}DescuentoMonto").text = str(
-                round(item.cantidad * item.precio_unitario * item.descuento_pct / 100)
+                _round_half_up(item.cantidad * item.precio_unitario * item.descuento_pct / 100)
             )
 
-        etree.SubElement(det, f"{{{NS}}}MontoItem").text = str(item.monto_item)
+        etree.SubElement(det, f"{{{NS}}}MontoItem").text = str(item.monto_item_int)
 
     def _build_referencia(self, parent, ref, numero: int):
         NS = self.NAMESPACE
