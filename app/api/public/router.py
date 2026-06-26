@@ -1767,11 +1767,12 @@ async def _generar_libro_compras_impl(
                                "cod_iva_no_rec": 4, "total": neto + _iva(neto) + exe,
                                "tipo_especial": "iva_no_rec"}
                     elif te == "iva_ret_total":
-                        # MntTotal = solo neto (el comprador retiene el IVA, no lo paga al proveedor)
-                        # MntIVA = 0 en el Detalle; IVARetTotal informa el monto retenido
+                        # SII exige MntIVA = MntNeto*TasaImp (lo valida matemáticamente)
+                        # IVARetTotal = mismo monto (indica que está retenido por el comprador)
+                        # MntTotal = solo neto (el proveedor no recibe el IVA retenido)
                         doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": "2026-05-22",
                                "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
-                               "neto": neto, "exe": exe, "iva": 0,
+                               "neto": neto, "exe": exe, "iva": _iva(neto),
                                "iva_ret_total": _iva(neto), "total": neto + exe,
                                "tipo_especial": "iva_ret_total"}
                     else:
