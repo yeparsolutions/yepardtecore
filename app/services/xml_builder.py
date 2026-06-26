@@ -197,21 +197,20 @@ class XMLBuilder:
             self.monto_total  = self.monto_exento
         else:
             self.monto_neto   = round(monto_afecto)
-            # IVA calculado ítem por ítem (igual que el SII) para evitar diferencias
-            # de redondeo de 1 peso cuando hay múltiples ítems afectos.
-            # round(sum) puede diferir de sum(round) por acumulación de fracciones.
-            items_afectos = [i for i in items if not i.exento]
-            if len(items_afectos) > 1 and desc == 0:
-                # Sin descuento global: IVA = suma del IVA por ítem
-                self.monto_iva = sum(round(i.monto_item * 0.19) for i in items_afectos)
-            elif len(items_afectos) > 1 and desc > 0:
-                # Con descuento global: aplicar proporción del descuento a cada ítem
-                fct = 1 - (desc / subtotal_afecto) if subtotal_afecto else 1
-                self.monto_iva = sum(round(i.monto_item * fct * 0.19) for i in items_afectos)
-            else:
-                self.monto_iva = round(monto_afecto * 0.19)
+            self.monto_iva    = round(monto_afecto * 0.19)
             self.monto_exento = round(subtotal_exento)
-            self.monto_total  = self.monto_neto + self.monto_iva + self.monto_exento
+            # MntTotal calculado ítem por ítem (igual que el SII) para evitar
+            # diferencias de 1 peso por redondeo acumulado en documentos mixtos.
+            # El SII suma (neto_item + round(neto_item*0.19)) por cada ítem afecto.
+            fct_desc = (1 - self.datos.descuento_global_pct / 100) if self.datos.descuento_global_pct > 0 else 1.0
+            total_items = 0
+            for i in items:
+                if i.exento:
+                    total_items += i.monto_item
+                else:
+                    neto_i = round(i.monto_item * fct_desc)
+                    total_items += neto_i + round(neto_i * 0.19)
+            self.monto_total = total_items
 
         if self.datos.forzar_monto_cero:
             self.monto_neto   = 0
