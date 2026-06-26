@@ -197,11 +197,11 @@ class XMLBuilder:
             self.monto_total  = self.monto_exento
         else:
             self.monto_neto   = round(monto_afecto)
-            self.monto_iva    = round(monto_afecto * 0.19)
             self.monto_exento = round(subtotal_exento)
-            # MntTotal: el SII acumula (neto_i + round(neto_i*0.19)) ítem por ítem
-            # en documentos mixtos (afecto+exento) sin descuentos. En ese caso
-            # puede diferir 1 peso de neto+iva por redondeo acumulado.
+            # IVA y MntTotal: el SII valida MntTotal = MntNeto + IVA + MntExe.
+            # En documentos mixtos (afecto+exento) sin descuentos, el SII calcula
+            # el IVA acumulando round(neto_i * 0.19) ítem por ítem, lo que puede
+            # diferir 1 peso de round(neto_total * 0.19) por redondeo acumulado.
             _items_afectos = [i for i in items if not i.exento]
             _items_exentos = [i for i in items if i.exento]
             _es_mixto_sin_desc = (
@@ -210,11 +210,11 @@ class XMLBuilder:
                 and not any(i.descuento_pct > 0 for i in _items_afectos)
             )
             if _es_mixto_sin_desc:
-                self.monto_total = (
-                    sum(i.monto_item + round(i.monto_item * 0.19) for i in _items_afectos)
-                    + sum(i.monto_item for i in _items_exentos)
-                )
+                # IVA = suma de IVA por ítem (igual que el SII)
+                self.monto_iva   = sum(round(i.monto_item * 0.19) for i in _items_afectos)
+                self.monto_total = (self.monto_neto + self.monto_iva + self.monto_exento)
             else:
+                self.monto_iva   = round(monto_afecto * 0.19)
                 self.monto_total = self.monto_neto + self.monto_iva + self.monto_exento
 
         if self.datos.forzar_monto_cero:
