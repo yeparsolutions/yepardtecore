@@ -245,7 +245,9 @@ def _construir_libro_xml(
             t_exe = sum(d["exe"] for d in docs_t)
             etree.SubElement(tot, f"{{{NS}}}TotMntExe").text   = str(t_exe)
             etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text  = str(sum(d["neto"]  for d in docs_t))
-            etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text   = str(sum(d["iva"]   for d in docs_t))
+            # TotMntIVA excluye docs iva_ret_total (su IVA va solo en TotIVARetTotal)
+            _tot_iva = sum(d["iva"] for d in docs_t if d.get("tipo_especial") != "iva_ret_total")
+            etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text   = str(_tot_iva)
             # IVA No Recuperable
             t_nr = sum(d.get("iva_no_rec", 0) for d in docs_t)
             if t_nr:
@@ -320,8 +322,7 @@ def _construir_libro_xml(
                 etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc.get("cod_iva_no_rec", 9))
                 etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
             elif te == "iva_ret_total":
-                # MntIVA=0: el IVA es retenido por el comprador; MntTotal = solo neto
-                etree.SubElement(det, f"{{{NS}}}MntIVA").text      = "0"
+                etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
                 etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
             else:
                 # Normal o T56/T61: siempre emitir MntIVA
