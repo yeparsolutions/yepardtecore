@@ -44,8 +44,7 @@ DOCUMENTOS = [
      "total": 9826 + _iva(9826), "tipo_especial": "iva_no_rec"},
 
     {"tipo": 46, "folio": 9, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     # SII: MntIVA=neto*tasa (validación matemática), IVARetTotal=mismo monto,
-     # MntTotal=solo neto (el proveedor no recibe el IVA retenido por el comprador)
+     # MntTotal = solo neto: el proveedor no recibe el IVA retenido por el comprador
      "neto": 9474, "exe": 0, "iva": _iva(9474), "iva_ret_total": _iva(9474),
      "total": 9474, "tipo_especial": "iva_ret_total"},
 
@@ -147,9 +146,9 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
             etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc["cod_iva_no_rec"])
             etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
         elif te == "iva_ret_total":
-            # El SII exige MntIVA = MntNeto*TasaImp SIEMPRE (no puede ir en 0).
-            # La retención se informa ADEMÁS en IVARetTotal. El comprador declara
-            # el IVA y a la vez registra que lo retuvo para enterarlo él.
+            # MntIVA = neto*tasa (SII lo valida matemáticamente, no puede ser 0)
+            # IVARetTotal = mismo monto (indica que el comprador lo retiene)
+            # MntTotal viene de doc["total"] = neto (sin IVA, porque está retenido)
             etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
             etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
         else:
