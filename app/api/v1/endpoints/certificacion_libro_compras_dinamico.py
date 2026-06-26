@@ -320,7 +320,8 @@ def _construir_libro_xml(
                 etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc.get("cod_iva_no_rec", 9))
                 etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
             elif te == "iva_ret_total":
-                etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
+                # MntIVA=0: el IVA es retenido por el comprador; MntTotal = solo neto
+                etree.SubElement(det, f"{{{NS}}}MntIVA").text      = "0"
                 etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
             else:
                 # Normal o T56/T61: siempre emitir MntIVA
