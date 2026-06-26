@@ -263,9 +263,10 @@ def _construir_libro_xml(
             # IVA Retención Total
             t_ret = sum(d.get("iva_ret_total", 0) for d in docs_t)
             if t_ret:
+                etree.SubElement(tot, f"{{{NS}}}TotImpSinCredito").text  = str(t_ret)
                 etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in docs_t if d.get("iva_ret_total", 0)))
                 etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_ret)
-            # TotMntTotal: para iva_ret_total usar neto+iva-iva_ret (SII pág 37)
+            # TotMntTotal: neto+iva-iva_ret para retención total (SII pág 37)
             _tot_total = sum(
                 d["neto"] + d["iva"] - d.get("iva_ret_total", 0)
                 if d.get("tipo_especial") == "iva_ret_total"
@@ -303,7 +304,7 @@ def _construir_libro_xml(
                 etree.SubElement(det, f"{{{NS}}}IVA").text     = str(doc["iva"])
             if doc["exe"] != 0:
                 etree.SubElement(det, f"{{{NS}}}MntExe").text  = str(doc["exe"])
-            # MntTotal: para iva_ret_total usar neto+iva-iva_ret (SII pág 37)
+            # MntTotal: neto+iva-iva_ret para retención total (SII pág 37)
             if doc.get("tipo_especial") == "iva_ret_total":
                 _mnt_total = doc["neto"] + doc["iva"] - doc.get("iva_ret_total", 0)
             else:
@@ -333,6 +334,7 @@ def _construir_libro_xml(
                 etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
             elif te == "iva_ret_total":
                 etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
+                etree.SubElement(det, f"{{{NS}}}MntSinCred").text  = str(doc["iva_ret_total"])
                 etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
             else:
                 # Normal o T56/T61: siempre emitir MntIVA
