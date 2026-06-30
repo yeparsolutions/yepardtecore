@@ -1756,22 +1756,24 @@ async def _generar_libro_compras_impl(
                     exe  = d.get("exe", 0)
                     te   = d.get("tipo_especial")
                     if te == "iva_uso_comun":
+                        # Estructura oficial SII: MntIVA completo (no 0)
                         doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": "2026-05-22",
                                "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
-                               "neto": neto, "exe": exe, "iva": 0, "iva_uso_comun": _iva(neto),
+                               "neto": neto, "exe": exe, "iva": _iva(neto), "iva_uso_comun": _iva(neto),
                                "total": neto + _iva(neto) + exe, "tipo_especial": "iva_uso_comun"}
                     elif te == "iva_no_rec":
+                        # Estructura oficial SII: MntIVA = neto*tasa COMPLETO (no 0)
                         doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": "2026-05-22",
                                "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
-                               "neto": neto, "exe": exe, "iva": 0, "iva_no_rec": _iva(neto),
+                               "neto": neto, "exe": exe, "iva": _iva(neto), "iva_no_rec": _iva(neto),
                                "cod_iva_no_rec": 4, "total": neto + _iva(neto) + exe,
                                "tipo_especial": "iva_no_rec"}
                     elif te == "iva_ret_total":
-                        # Estructura oficial SII: MntIVA=0, MntSinCred=iva, MntTotal=neto
+                        # Estructura oficial SII: MntIVA = neto*tasa COMPLETO, MntTotal=neto+iva
                         doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": "2026-05-22",
                                "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
-                               "neto": neto, "exe": exe, "iva": 0,
-                               "iva_ret_total": _iva(neto), "total": neto + exe,
+                               "neto": neto, "exe": exe, "iva": _iva(neto),
+                               "iva_ret_total": _iva(neto), "total": neto + _iva(neto) + exe,
                                "tipo_especial": "iva_ret_total"}
                     else:
                         doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": "2026-05-22",
