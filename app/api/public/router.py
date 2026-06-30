@@ -1767,11 +1767,12 @@ async def _generar_libro_compras_impl(
                                "cod_iva_no_rec": 4, "total": neto + _iva(neto) + exe,
                                "tipo_especial": "iva_no_rec"}
                     elif te == "iva_ret_total":
-                        # LC: iva=0 (no recuperable), iva_ret_total para MntSinCred, total=neto
+                        # PRUEBA: MntIVA=neto*tasa (recuperable) + MntSinCred + IVARetTotal
+                        # juntos. MntTotal = neto+iva (normal, no se resta nada).
                         doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": "2026-05-22",
                                "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
-                               "neto": neto, "exe": exe, "iva": 0,
-                               "iva_ret_total": _iva(neto), "total": neto + exe,
+                               "neto": neto, "exe": exe, "iva": _iva(neto),
+                               "iva_ret_total": _iva(neto), "total": neto + _iva(neto) + exe,
                                "tipo_especial": "iva_ret_total"}
                     else:
                         doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": "2026-05-22",
