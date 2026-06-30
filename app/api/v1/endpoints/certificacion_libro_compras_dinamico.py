@@ -260,12 +260,10 @@ def _construir_libro_xml(
                 etree.SubElement(tot, f"{{{NS}}}TotIVAUsoComun").text    = str(t_uc)
                 etree.SubElement(tot, f"{{{NS}}}FctProp").text            = fct
                 etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(fct)))
-            # PRUEBA: TotImpSinCredito + TotOpIVARetTotal + TotIVARetTotal juntos
+            # Estructura oficial SII: solo TotImpSinCredito
             t_ret = sum(d.get("iva_ret_total", 0) for d in docs_t)
             if t_ret:
-                etree.SubElement(tot, f"{{{NS}}}TotImpSinCredito").text  = str(t_ret)
-                etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in docs_t if d.get("iva_ret_total", 0)))
-                etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_ret)
+                etree.SubElement(tot, f"{{{NS}}}TotImpSinCredito").text = str(t_ret)
             etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in docs_t))
 
     # ── Detalle ───────────────────────────────────────────────────────────────
@@ -321,10 +319,9 @@ def _construir_libro_xml(
                 etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc.get("cod_iva_no_rec", 9))
                 etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
             elif te == "iva_ret_total":
-                # PRUEBA: MntIVA + MntSinCred + IVARetTotal juntos (orden XSD)
-                etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
-                etree.SubElement(det, f"{{{NS}}}MntSinCred").text  = str(doc["iva_ret_total"])
-                etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
+                # Estructura oficial SII: MntIVA=0, MntSinCred=iva, sin IVARetTotal
+                etree.SubElement(det, f"{{{NS}}}MntIVA").text     = "0"
+                etree.SubElement(det, f"{{{NS}}}MntSinCred").text = str(doc["iva_ret_total"])
             else:
                 # Normal o T56/T61: siempre emitir MntIVA
                 if doc["iva"] != 0 or doc["tipo"] in (56, 61):
