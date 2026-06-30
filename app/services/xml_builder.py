@@ -56,14 +56,13 @@ class ItemDTE:
 
     @property
     def monto_item(self) -> float:
-        """Retorna el monto del ítem con decimales (sin redondear).
-        El redondeo se aplica solo al acumular subtotales, igual que el SII."""
+        """Monto del ítem con decimales (sin redondear). Igual que el SII."""
         bruto = self.cantidad * self.precio_unitario
         return bruto - bruto * (self.descuento_pct / 100)
 
     @property
     def monto_item_int(self) -> int:
-        """Monto redondeado para mostrar en el XML (MontoItem)."""
+        """Monto redondeado para el XML (MontoItem)."""
         return _round_half_up(self.monto_item)
 
 
@@ -164,7 +163,7 @@ def _fmt_qty(cantidad: float) -> str:
 
 
 def _round_half_up(x) -> int:
-    """Redondeo estilo Excel/SII: 0.5 siempre redondea hacia arriba."""
+    """Redondeo estilo Excel/SII: 0.5 siempre sube."""
     from decimal import Decimal, ROUND_HALF_UP
     return int(Decimal(str(x)).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
 
@@ -182,7 +181,6 @@ class XMLBuilder:
         items = self.datos.items
 
         # Mantener decimales internamente — igual que el SII.
-        # Solo redondear (round half up) al obtener subtotales finales.
         subtotal_afecto = sum(i.monto_item for i in items if not i.exento)
         subtotal_exento = sum(i.monto_item for i in items if i.exento)
 
@@ -211,14 +209,17 @@ class XMLBuilder:
             self.monto_exento = _round_half_up(monto_afecto + subtotal_exento)
             self.monto_total  = self.monto_exento
         else:
-            # Acumular IVA con decimales y redondear al final (igual que el SII)
-            iva_decimal = sum(i.monto_item * 0.19 for i in items if not i.exento)
-            if self.datos.descuento_global_pct > 0:
-                fct = 1 - self.datos.descuento_global_pct / 100
-                iva_decimal = sum(i.monto_item * fct * 0.19 for i in items if not i.exento)
-            self.monto_neto   = _round_half_up(monto_afecto)
+            # MntNeto = sum(MontoItem) - desc_global (el SII valida sum(MontoItem)==MntNeto)
+            fct = 1 - self.datos.descuento_global_pct / 100
+            sum_mi_af = sum(i.monto_item_int for i in items if not i.exento)
+            sum_mi_ex = sum(i.monto_item_int for i in items if i.exento)
+            self.monto_neto   = sum_mi_af - self._desc_global_monto
+            # IVA acumulado sobre MontoItem ya redondeado (monto_item_int), no el
+            # decimal sin redondear — el SII calcula el IVA sobre el monto entero
+            # que efectivamente aparece en el Detalle.
+            iva_decimal = sum(i.monto_item_int * fct * 0.19 for i in items if not i.exento)
             self.monto_iva    = _round_half_up(iva_decimal)
-            self.monto_exento = _round_half_up(subtotal_exento)
+            self.monto_exento = sum_mi_ex
             self.monto_total  = self.monto_neto + self.monto_iva + self.monto_exento
 
         if self.datos.forzar_monto_cero:
