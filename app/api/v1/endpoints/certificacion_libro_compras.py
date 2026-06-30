@@ -34,7 +34,8 @@ DOCUMENTOS = [
 
     {"tipo": 30, "folio": 781, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
      # Estructura oficial SII: MntIVA completo (no 0)
-     "neto": 29749, "exe": 0, "iva": _iva(29749), "iva_uso_comun": _iva(29749),
+     # Revertido: MntIVA=0 funcionaba sin reparos para IVA Uso Común
+     "neto": 29749, "exe": 0, "iva": 0, "iva_uso_comun": _iva(29749),
      "total": 29749 + _iva(29749), "tipo_especial": "iva_uso_comun"},
 
     {"tipo": 60, "folio": 451, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
@@ -45,9 +46,9 @@ DOCUMENTOS = [
      "total": 9826 + _iva(9826), "tipo_especial": "iva_no_rec"},
 
     {"tipo": 46, "folio": 9, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     # Estructura oficial SII: MntIVA=neto*tasa COMPLETO, MntTotal=neto+iva
-     "neto": 9474, "exe": 0, "iva": _iva(9474), "iva_ret_total": _iva(9474),
-     "total": 9474 + _iva(9474), "tipo_especial": "iva_ret_total"},
+     # Vuelta a estructura exacta del ejemplo oficial: MntIVA=0, MntTotal=neto
+     "neto": 9474, "exe": 0, "iva": 0, "iva_ret_total": _iva(9474),
+     "total": 9474, "tipo_especial": "iva_ret_total"},
 
     {"tipo": 60, "folio": 211, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
      "neto": 4030, "exe": 0, "iva": _iva(4030), "total": 4030 + _iva(4030), "tipo_especial": None},
@@ -138,7 +139,7 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
 
         te = doc.get("tipo_especial")
         if te == "iva_uso_comun":
-            # Estructura oficial SII: MntIVA = neto*tasa COMPLETO (no 0)
+            # Revertido: MntIVA=0 — el campo doc["iva"] ahora es 0 para este tipo
             etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
             etree.SubElement(det, f"{{{NS}}}IVAUsoComun").text = str(doc["iva_uso_comun"])
         elif te == "iva_no_rec":
