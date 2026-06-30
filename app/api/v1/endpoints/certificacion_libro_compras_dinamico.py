@@ -260,7 +260,7 @@ def _construir_libro_xml(
                 etree.SubElement(tot, f"{{{NS}}}TotIVAUsoComun").text    = str(t_uc)
                 etree.SubElement(tot, f"{{{NS}}}FctProp").text            = fct
                 etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(fct)))
-            # Estructura oficial SII: solo TotImpSinCredito
+            # Estructura oficial SII: TotImpSinCredito informativo (no TotIVARetTotal)
             t_ret = sum(d.get("iva_ret_total", 0) for d in docs_t)
             if t_ret:
                 etree.SubElement(tot, f"{{{NS}}}TotImpSinCredito").text = str(t_ret)
@@ -311,16 +311,18 @@ def _construir_libro_xml(
             # MntIVA / campos especiales IVA
             te = doc.get("tipo_especial", "")
             if te == "iva_uso_comun":
-                etree.SubElement(det, f"{{{NS}}}MntIVA").text      = "0"
+                # Estructura oficial SII: MntIVA completo (no 0)
+                etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
                 etree.SubElement(det, f"{{{NS}}}IVAUsoComun").text = str(doc["iva_uso_comun"])
             elif te == "iva_no_rec":
-                etree.SubElement(det, f"{{{NS}}}MntIVA").text = "0"
+                # Estructura oficial SII: MntIVA completo (no 0)
+                etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
                 inr = etree.SubElement(det, f"{{{NS}}}IVANoRec")
                 etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc.get("cod_iva_no_rec", 9))
                 etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
             elif te == "iva_ret_total":
-                # Estructura oficial SII: MntIVA=0, MntSinCred=iva, sin IVARetTotal
-                etree.SubElement(det, f"{{{NS}}}MntIVA").text     = "0"
+                # Estructura oficial SII: MntIVA completo + MntSinCred informativo
+                etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
                 etree.SubElement(det, f"{{{NS}}}MntSinCred").text = str(doc["iva_ret_total"])
             else:
                 # Normal o T56/T61: siempre emitir MntIVA
