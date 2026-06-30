@@ -44,8 +44,9 @@ DOCUMENTOS = [
      "total": 9826 + _iva(9826), "tipo_especial": "iva_no_rec"},
 
     {"tipo": 46, "folio": 9, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 9474, "exe": 0, "iva": _iva(9474), "iva_ret_total": _iva(9474),
-     "total": 9474 + _iva(9474), "tipo_especial": "iva_ret_total"},
+     # Estructura confirmada con ejemplo oficial SII: MntIVA=0, MntSinCred=iva, MntTotal=neto
+     "neto": 9474, "exe": 0, "iva": 0, "iva_ret_total": _iva(9474),
+     "total": 9474, "tipo_especial": "iva_ret_total"},
 
     {"tipo": 60, "folio": 211, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
      "neto": 4030, "exe": 0, "iva": _iva(4030), "total": 4030 + _iva(4030), "tipo_especial": None},
@@ -114,12 +115,10 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
             etree.SubElement(tot, f"{{{NS}}}FctProp").text            = FCT_PROP
             etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(FCT_PROP)))
 
-        # PRUEBA: TotImpSinCredito + TotOpIVARetTotal + TotIVARetTotal juntos
+        # Estructura oficial SII: solo TotImpSinCredito, sin TotOpIVARetTotal/TotIVARetTotal
         t_ret = sum(d.get("iva_ret_total", 0) for d in dt)
         if t_ret:
-            etree.SubElement(tot, f"{{{NS}}}TotImpSinCredito").text  = str(t_ret)
-            etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in dt if d.get("iva_ret_total", 0)))
-            etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_ret)
+            etree.SubElement(tot, f"{{{NS}}}TotImpSinCredito").text = str(t_ret)
 
         etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in dt))
 
@@ -146,11 +145,10 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
             etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc["cod_iva_no_rec"])
             etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
         elif te == "iva_ret_total":
-            # PRUEBA: incluir MntIVA + MntSinCred + IVARetTotal juntos, en el
-            # orden exacto del XSD (MntSinCred antes que IVARetTotal).
-            etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
-            etree.SubElement(det, f"{{{NS}}}MntSinCred").text  = str(doc["iva_ret_total"])
-            etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
+            # Estructura confirmada con ejemplo oficial del SII (LibroCVS_v10):
+            # MntIVA=0, MntSinCred=IVA retenido, sin IVARetTotal
+            etree.SubElement(det, f"{{{NS}}}MntIVA").text     = "0"
+            etree.SubElement(det, f"{{{NS}}}MntSinCred").text = str(doc["iva_ret_total"])
         else:
             etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
 
