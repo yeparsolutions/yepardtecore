@@ -214,10 +214,9 @@ class XMLBuilder:
             sum_mi_af = sum(i.monto_item_int for i in items if not i.exento)
             sum_mi_ex = sum(i.monto_item_int for i in items if i.exento)
             self.monto_neto   = sum_mi_af - self._desc_global_monto
-            # IVA acumulado sobre MontoItem ya redondeado (monto_item_int), no el
-            # decimal sin redondear — el SII calcula el IVA sobre el monto entero
-            # que efectivamente aparece en el Detalle.
-            iva_decimal = sum(i.monto_item_int * fct * 0.19 for i in items if not i.exento)
+            # IVA acumulado sobre monto_item con decimales completos (sin redondear
+            # por ítem), igual que el SII: round_half_up(suma de decimales exactos).
+            iva_decimal = sum(i.monto_item * fct * 0.19 for i in items if not i.exento)
             self.monto_iva    = _round_half_up(iva_decimal)
             self.monto_exento = sum_mi_ex
             self.monto_total  = self.monto_neto + self.monto_iva + self.monto_exento
