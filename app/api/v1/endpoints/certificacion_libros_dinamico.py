@@ -210,7 +210,10 @@ def _construir_libro_xml(
             t_exe = sum(d["exe"] for d in docs_t)
             etree.SubElement(tot, f"{{{NS}}}TotMntExe").text   = str(t_exe)
             etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text  = str(sum(d["neto"]  for d in docs_t))
-            etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text   = str(sum(d["iva"]   for d in docs_t))
+            # TotMntIVA debe coincidir con suma de MntIVA del detalle XML.
+            # Docs con tipo_especial tienen MntIVA=0 en el XML → excluir del total.
+            tot_mnt_iva = sum(d["iva"] for d in docs_t if not d.get("tipo_especial"))
+            etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text   = str(tot_mnt_iva)
             t_nr = sum(d.get("iva_no_rec", 0) for d in docs_t)
             if t_nr:
                 inr = etree.SubElement(tot, f"{{{NS}}}TotIVANoRec")
