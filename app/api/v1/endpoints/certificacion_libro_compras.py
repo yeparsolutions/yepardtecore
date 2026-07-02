@@ -33,8 +33,6 @@ DOCUMENTOS = [
      "neto": 6059, "exe": 8674, "iva": _iva(6059), "total": 6059 + _iva(6059) + 8674, "tipo_especial": None},
 
     {"tipo": 30, "folio": 781, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     # Estructura oficial SII: MntIVA completo (no 0)
-     # Revertido: MntIVA=0 funcionaba sin reparos para IVA Uso Común
      "neto": 29749, "exe": 0, "iva": 0, "iva_uso_comun": _iva(29749),
      "total": 29749 + _iva(29749), "tipo_especial": "iva_uso_comun"},
 
@@ -46,9 +44,8 @@ DOCUMENTOS = [
      "total": 9826 + _iva(9826), "tipo_especial": "iva_no_rec"},
 
     {"tipo": 46, "folio": 9, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     # Vuelta a estructura exacta del ejemplo oficial: MntIVA=0, MntTotal=neto
-     "neto": 9474, "exe": 0, "iva": 0, "iva_ret_total": _iva(9474),
-     "total": 9474, "tipo_especial": "iva_ret_total"},
+     "neto": 9474, "exe": 0, "iva": _iva(9474), "iva_ret_total": _iva(9474),
+     "total": 9474 + _iva(9474), "tipo_especial": "iva_ret_total"},
 
     {"tipo": 60, "folio": 211, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
      "neto": 4030, "exe": 0, "iva": _iva(4030), "total": 4030 + _iva(4030), "tipo_especial": None},
@@ -97,9 +94,10 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
         etree.SubElement(tot, f"{{{NS}}}TotMntExe").text  = str(sum(d["exe"] for d in dt))
         etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text = str(sum(d["neto"] for d in dt))
 
-        # TotMntIVA: estructura oficial SII — incluye el IVA completo de TODOS los
-        # documentos, incluso los que tienen IVANoRec/MntSinCred (son informativos).
-        etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text  = str(sum(d["iva"] for d in dt))
+        # TotMntIVA debe coincidir con la suma de MntIVA de los detalles XML.
+        # Docs con tipo_especial tienen MntIVA=0 en el detalle → excluir del total.
+        _tot_mnt_iva = sum(d["iva"] for d in dt if not d.get("tipo_especial"))
+        etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text  = str(_tot_mnt_iva)
 
         # FIX REPARO 1: TotIVANoRec informa el IVA no recuperable por separado
         t_nr = sum(d.get("iva_no_rec", 0) for d in dt)
@@ -118,10 +116,11 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
             etree.SubElement(tot, f"{{{NS}}}FctProp").text            = FCT_PROP
             etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(FCT_PROP)))
 
-        # Estructura oficial SII: solo TotImpSinCredito, sin TotOpIVARetTotal/TotIVARetTotal
+        # FIX REPARO 2: TotIVARetTotal informa la retención; TotMntIVA ya es 0 para estos docs
         t_ret = sum(d.get("iva_ret_total", 0) for d in dt)
         if t_ret:
-            etree.SubElement(tot, f"{{{NS}}}TotImpSinCredito").text = str(t_ret)
+            etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in dt if d.get("iva_ret_total", 0)))
+            etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_ret)
 
         etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in dt))
 
@@ -139,8 +138,7 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
 
         te = doc.get("tipo_especial")
         if te == "iva_uso_comun":
-            # Revertido: MntIVA=0 — el campo doc["iva"] ahora es 0 para este tipo
-            etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
+            etree.SubElement(det, f"{{{NS}}}MntIVA").text      = "0"
             etree.SubElement(det, f"{{{NS}}}IVAUsoComun").text = str(doc["iva_uso_comun"])
         elif te == "iva_no_rec":
             # FIX REPARO 1: MntIVA=0, el monto va en IVANoRec
@@ -149,10 +147,11 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
             etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc["cod_iva_no_rec"])
             etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
         elif te == "iva_ret_total":
-            # Estructura oficial SII: MntIVA = neto*tasa COMPLETO (no en 0).
-            # MntSinCred es informativo adicional, igual patrón que IVANoRec.
-            etree.SubElement(det, f"{{{NS}}}MntIVA").text     = str(doc["iva"])
-            etree.SubElement(det, f"{{{NS}}}MntSinCred").text = str(doc["iva_ret_total"])
+            # El SII exige MntIVA = MntNeto*TasaImp SIEMPRE (no puede ir en 0).
+            # La retención se informa ADEMÁS en IVARetTotal. El comprador declara
+            # el IVA y a la vez registra que lo retuvo para enterarlo él.
+            etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
+            etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
         else:
             etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
 
