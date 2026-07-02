@@ -1,4 +1,4 @@
-# app/api/v1/endpoints/certificacion_libros_dinamico.py
+# app/api/v1/endpoints/certificacion_compras_libros_dinamico.py
 # ══════════════════════════════════════════════════════════════
 # Libros de Ventas y Compras DINÁMICOS
 # Lee los DTEs emitidos directamente desde la BD del emisor.
