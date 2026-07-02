@@ -1,13 +1,27 @@
 # app/api/v1/endpoints/certificacion_libros_dinamico.py
 # ══════════════════════════════════════════════════════════════
-# Libros de Ventas y Compras DINÁMICOS
-# Lee los DTEs emitidos directamente desde la BD del emisor.
-# Cero hardcode — funciona para cualquier usuario.
+# Libros de Ventas, Compras y Guías DINÁMICOS  —  ARCHIVO CANÓNICO ÚNICO
 #
-# Reemplaza:
-#   certificacion_libro_ventas.py   (NATENCION 4841544 hardcodeado)
-#   certificacion_libro_compras.py  (NATENCION 4841545 hardcodeado)
-#   certificacion_libro_guias.py    (NATENCION 4841547 hardcodeado)
+# ⚠ IMPORTANTE: Este es el ÚNICO archivo de libros dinámicos que debe
+#   existir en el proyecto. Eliminar cualquier copia duplicada
+#   (p.ej. certificacion_libro_compras_dinamico.py) y su include_router,
+#   porque comparten el prefix "/certificacion-libros" y FastAPI solo
+#   sirve uno de los dos → los cambios "desaparecen".
+#
+# FIX T46 (2026-07-02) — Factura de Compra con retención total de IVA:
+#   El SII rechazó el set 4929133 con:
+#     "No Informa Adecuadamente IVA Retenido Total / El Monto IVA No Cuadra"
+#   y el reparo LBR-2: [MntIVA] distinto a [MntNeto]*[TasaImp].
+#   Regla confirmada empíricamente contra maullin:
+#     - Detalle:  MntIVA = neto × 19% (NUNCA 0) + IVARetTotal = mismo monto
+#     - Resumen:  TotMntIVA incluye el IVA del T46 + TotOpIVARetTotal/TotIVARetTotal
+#     - MntTotal = neto (el IVA se retiene, no se paga al proveedor) → SIN reparo
+#   Analogía: el comprador es "cajero del fisco" — el IVA existe y se
+#   declara completo, solo que en vez de pagárselo al proveedor lo retiene
+#   y lo entera él mismo. Declarar MntIVA=0 es negar que hubo IVA.
+#
+# Lo demás NO se toca: tipos 30/33/60, IVA uso común e IVA no recuperable
+# con MntIVA=0 pasaron SIN reparo en el envío 252601730 (LOK - Cuadrado).
 # ══════════════════════════════════════════════════════════════
 
 import logging
@@ -31,12 +45,16 @@ router = APIRouter(prefix="/certificacion-libros", tags=["Certificacion Libros D
 
 NS = "http://www.sii.cl/SiiDte"
 
+# Tipos DTE que van en cada libro
 TIPOS_VENTAS  = {33, 34, 56, 61}
 TIPOS_COMPRAS = {46, 56, 61}
 TIPOS_GUIAS   = {52}
 
 
+# ── Helpers ───────────────────────────────────────────────────
+
 async def _get_emisor_y_cert(emisor_id: int, db: AsyncSession):
+    # Carga el emisor y su certificado activo; falla temprano si falta algo
     emisor = await db.get(Emisor, emisor_id)
     if not emisor:
         raise HTTPException(404, f"Emisor {emisor_id} no encontrado")
@@ -58,10 +76,16 @@ async def _obtener_dtes(
     periodo: str,
     db: AsyncSession,
 ) -> list[DTE]:
+    """
+    Obtiene los DTEs emitidos del período dado — SIN duplicados.
+    Cada regeneración crea nuevos registros en la BD con el mismo folio.
+    Usamos MAX(id) por (tipo_dte, folio) para quedarnos solo con el más reciente.
+    """
     from sqlalchemy import func as _func
     from datetime import date as _date
     import calendar
 
+    # Subquery: id más reciente por (tipo_dte, folio)
     sub = (
         select(_func.max(DTE.id).label("max_id"))
         .where(
@@ -81,7 +105,8 @@ async def _obtener_dtes(
     )
     dtes = result.scalars().all()
 
-    año, mes   = int(periodo[:4]), int(periodo[5:7])
+    # Filtrar por período usando la fecha de emisión (o created_at como respaldo)
+    año, mes    = int(periodo[:4]), int(periodo[5:7])
     fecha_desde = _date(año, mes, 1)
     fecha_hasta = _date(año, mes, calendar.monthrange(año, mes)[1])
 
@@ -104,15 +129,23 @@ async def _obtener_dtes(
 def _construir_libro_xml(
     emisor: Emisor,
     dtes: list[DTE],
-    tipo_libro: str,
-    tipo_envio_id: str,
-    natencion: str,
-    periodo: str,
+    tipo_libro: str,       # "VENTA" o "COMPRA"
+    tipo_envio_id: str,    # "LibroVentas" | "LibroCompras" | "LibroGuias"
+    natencion: str,        # N° de atención del set del libro
+    periodo: str,          # "AAAA-MM"
     fch_resol: str = "2026-04-19",
     nro_resol: str = "0",
-    rut_envia: str | None = None,
+    rut_envia: str | None = None,   # RUT firmante del cert; si None usa emisor.rut
+    cod_aut_rec: str | None = None, # Código de Autorización de Reemplazo (rectificación)
 ) -> str:
-    """Construye el XML del Libro dinámicamente desde los DTEs de BD."""
+    """Construye el XML del Libro dinámicamente desde los DTEs de BD.
+
+    Si cod_aut_rec viene informado, la carátula se genera como RECTIFICA
+    con el tag <CodAutRec> — necesario cuando el período ya está cerrado
+    (estado LTC) y el SII exige un código de reemplazo para aceptar un
+    nuevo envío del mismo libro. Con cod_aut_rec=None el comportamiento
+    es EXACTAMENTE el mismo de siempre (ESPECIAL/TOTAL).
+    """
 
     tmst = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
@@ -133,22 +166,32 @@ def _construir_libro_xml(
     envio = etree.SubElement(root, f"{{{NS}}}EnvioLibro")
     envio.set("ID", tipo_envio_id)
 
+    # ── Carátula ──────────────────────────────────────────────
     car = etree.SubElement(envio, f"{{{NS}}}Caratula")
     _limpiar = lambda r: r.replace(".", "").strip() if r else r
     etree.SubElement(car, f"{{{NS}}}RutEmisorLibro").text    = _limpiar(emisor.rut)
+    # RutEnvia: RUT del firmante del certificado (puede diferir del emisor)
     rut_env = rut_envia or emisor.rut
     etree.SubElement(car, f"{{{NS}}}RutEnvia").text          = _limpiar(rut_env)
     etree.SubElement(car, f"{{{NS}}}PeriodoTributario").text = periodo
     etree.SubElement(car, f"{{{NS}}}FchResol").text          = fch_resol
     etree.SubElement(car, f"{{{NS}}}NroResol").text          = nro_resol
+    # TipoLibro: RECTIFICA solo si viene código de reemplazo del SII
+    tipo_libro_caratula = "RECTIFICA" if cod_aut_rec else "ESPECIAL"
     if es_guias:
-        etree.SubElement(car, f"{{{NS}}}TipoLibro").text = "ESPECIAL"
+        # LibroGuia: TipoLibro directo, sin TipoOperacion
+        etree.SubElement(car, f"{{{NS}}}TipoLibro").text = tipo_libro_caratula
     else:
+        # LibroCV: TipoOperacion → TipoLibro
         etree.SubElement(car, f"{{{NS}}}TipoOperacion").text = tipo_libro
-        etree.SubElement(car, f"{{{NS}}}TipoLibro").text     = "ESPECIAL"
+        etree.SubElement(car, f"{{{NS}}}TipoLibro").text     = tipo_libro_caratula
     etree.SubElement(car, f"{{{NS}}}TipoEnvio").text         = "TOTAL"
     etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = natencion
+    if cod_aut_rec:
+        # CodAutRec va al final de la carátula (después de FolioNotificacion)
+        etree.SubElement(car, f"{{{NS}}}CodAutRec").text = cod_aut_rec
 
+    # ── Convertir DTEs a dicts ────────────────────────────────
     docs = []
     for dte in dtes:
         fecha_raw = getattr(dte, 'fecha_emision', None) or getattr(dte, 'created_at', None)
@@ -168,6 +211,7 @@ def _construir_libro_xml(
             "anulado":        getattr(dte, 'anulado', False),
             "ind_traslado":   getattr(dte, 'ind_traslado', None),
             "tipo_despacho":  getattr(dte, 'tipo_despacho', None),
+            # Campos especiales IVA (LibroCompras)
             "tipo_especial":  getattr(dte, 'tipo_especial', ''),
             "iva_uso_comun":  getattr(dte, 'iva_uso_comun', 0),
             "fct_prop":       getattr(dte, 'fct_prop', '0.60'),
@@ -176,9 +220,11 @@ def _construir_libro_xml(
             "iva_ret_total":  getattr(dte, 'iva_ret_total', 0),
         })
 
+    # ── ResumenPeriodo ────────────────────────────────────────
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
 
     if es_guias:
+        # LibroGuia: totales directos en ResumenPeriodo
         guias_anuld  = [d for d in docs if d.get("anulado")]
         guias_vgtes  = [d for d in docs if not d.get("anulado")]
         guias_venta  = [d for d in guias_vgtes if (d.get("ind_traslado") or 1) == 1]
@@ -188,6 +234,7 @@ def _construir_libro_xml(
         etree.SubElement(resumen, f"{{{NS}}}TotGuiaVenta").text   = str(len(guias_venta))
         if tot_mnt_vta > 0:
             etree.SubElement(resumen, f"{{{NS}}}TotMntGuiaVta").text = str(tot_mnt_vta)
+        # Tabla no-ventas (traslados, devoluciones, etc.)
         no_vta_por_tipo = {}
         for g in guias_no_vta:
             tpo = g.get("ind_traslado") or 5
@@ -202,6 +249,7 @@ def _construir_libro_xml(
             if datos["monto"]:
                 etree.SubElement(nv, f"{{{NS}}}MntGuia").text = str(datos["monto"])
     else:
+        # LibroCV: TotalesPeriodo por tipo de documento
         for tipo_doc in sorted(set(d["tipo"] for d in docs)):
             docs_t = [d for d in docs if d["tipo"] == tipo_doc]
             tot = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
@@ -209,31 +257,50 @@ def _construir_libro_xml(
             etree.SubElement(tot, f"{{{NS}}}TotDoc").text      = str(len(docs_t))
             t_exe = sum(d["exe"] for d in docs_t)
             etree.SubElement(tot, f"{{{NS}}}TotMntExe").text   = str(t_exe)
-            etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text  = str(sum(d["neto"]  for d in docs_t))
-            # TotMntIVA debe coincidir con suma de MntIVA del detalle XML.
-            # Docs con tipo_especial tienen MntIVA=0 en el XML → excluir del total.
-            tot_mnt_iva = sum(d["iva"] for d in docs_t if not d.get("tipo_especial"))
+            etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text  = str(sum(d["neto"] for d in docs_t))
+
+            # ═══ FIX T46 (parte 1/2) ═══════════════════════════
+            # TotMntIVA = suma del MntIVA que efectivamente va en el detalle:
+            # - iva_uso_comun / iva_no_rec → MntIVA=0 en detalle
+            #   (validado por SII SIN reparo en envío 252601730) → se EXCLUYEN
+            # - iva_ret_total → MntIVA COMPLETO en detalle
+            #   (el SII exige MntIVA = neto × tasa) → se INCLUYE
+            # Antes se excluían TODOS los especiales → TotMntIVA=0 en T46
+            # → reparo "El Monto IVA No Cuadra"
+            tot_mnt_iva = sum(
+                d["iva"] for d in docs_t
+                if d.get("tipo_especial") not in ("iva_uso_comun", "iva_no_rec")
+            )
             etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text   = str(tot_mnt_iva)
+
+            # IVA No Recuperable
             t_nr = sum(d.get("iva_no_rec", 0) for d in docs_t)
             if t_nr:
                 inr = etree.SubElement(tot, f"{{{NS}}}TotIVANoRec")
                 etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text    = str(docs_t[0].get("cod_iva_no_rec", 9))
                 etree.SubElement(inr, f"{{{NS}}}TotOpIVANoRec").text  = str(sum(1 for d in docs_t if d.get("iva_no_rec", 0)))
                 etree.SubElement(inr, f"{{{NS}}}TotMntIVANoRec").text = str(t_nr)
+            # IVA Uso Común
             t_uc = sum(d.get("iva_uso_comun", 0) for d in docs_t)
             if t_uc:
                 fct = docs_t[0].get("fct_prop", "0.60")
                 etree.SubElement(tot, f"{{{NS}}}TotIVAUsoComun").text    = str(t_uc)
                 etree.SubElement(tot, f"{{{NS}}}FctProp").text            = fct
                 etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(fct)))
-            # Estructura oficial SII (ejemplo LibroCVS_v10): TotImpSinCredito,
-            # SIN TotOpIVARetTotal/TotIVARetTotal (campos exclusivos de Libro Ventas
-            # según anotación "(LV)" del XSD oficial)
+
+            # ═══ FIX T46 (parte 2/2) ═══════════════════════════
+            # La retención total se informa con TotOpIVARetTotal + TotIVARetTotal
+            # (estos tags pasaron el schema del SII en el envío 252601730,
+            # que fue LOK - Cuadrado). Se reemplaza TotImpSinCredito, que era
+            # parte de las combinaciones que el set rechazó.
             t_ret = sum(d.get("iva_ret_total", 0) for d in docs_t)
             if t_ret:
-                etree.SubElement(tot, f"{{{NS}}}TotImpSinCredito").text = str(t_ret)
+                etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in docs_t if d.get("iva_ret_total", 0)))
+                etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_ret)
+
             etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in docs_t))
 
+    # ── Detalle ───────────────────────────────────────────────
     for doc in docs:
         det = etree.SubElement(envio, f"{{{NS}}}Detalle")
 
@@ -272,19 +339,26 @@ def _construir_libro_xml(
             etree.SubElement(det, f"{{{NS}}}MntNeto").text = str(doc["neto"])
             te = doc.get("tipo_especial", "")
             if te == "iva_uso_comun":
+                # Validado por SII sin reparo: MntIVA=0, monto en IVAUsoComun
                 etree.SubElement(det, f"{{{NS}}}MntIVA").text      = "0"
                 etree.SubElement(det, f"{{{NS}}}IVAUsoComun").text = str(doc["iva_uso_comun"])
             elif te == "iva_no_rec":
+                # Validado por SII sin reparo: MntIVA=0, monto en IVANoRec
                 etree.SubElement(det, f"{{{NS}}}MntIVA").text = "0"
                 inr = etree.SubElement(det, f"{{{NS}}}IVANoRec")
                 etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc.get("cod_iva_no_rec", 9))
                 etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
             elif te == "iva_ret_total":
-                # Estructura oficial SII (ejemplo LibroCVS_v10): MntIVA=0,
-                # MntSinCred=IVA retenido, sin IVARetTotal (campo exclusivo Libro Ventas)
-                etree.SubElement(det, f"{{{NS}}}MntIVA").text     = "0"
-                etree.SubElement(det, f"{{{NS}}}MntSinCred").text = str(doc["iva_ret_total"])
+                # ═══ FIX T46 ═══════════════════════════════════
+                # El SII exige MntIVA = MntNeto × TasaImp SIEMPRE (reparo
+                # LBR-2 si va en 0). La retención se informa ADEMÁS en
+                # IVARetTotal. El MntTotal sigue siendo solo el neto
+                # (pasó sin reparo): el IVA se declara pero no se paga
+                # al proveedor porque el comprador lo retiene.
+                etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
+                etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
             else:
+                # Normal o T56/T61: siempre emitir MntIVA
                 if doc["iva"] != 0 or doc["tipo"] in (56, 61):
                     etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
             etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
@@ -299,6 +373,8 @@ def _construir_libro_xml(
     )
 
 
+# ── Endpoints ─────────────────────────────────────────────────
+
 @router.post("/generar-xml", summary="Genera libro (ventas/compras/guías) dinámico desde DTEs en BD")
 async def generar_libro_dinamico(
     emisor_id:  int,
@@ -307,6 +383,7 @@ async def generar_libro_dinamico(
     periodo:    Optional[str] = None,
     fch_resol:  Optional[str] = None,
     nro_resol:  Optional[str] = None,
+    cod_aut_rec: Optional[str] = None,   # Rectificación: código de reemplazo del SII
     db: AsyncSession = Depends(get_db),
 ):
     tipo_libro = tipo_libro.lower().strip()
@@ -352,6 +429,7 @@ async def generar_libro_dinamico(
         fch_resol  = fch_resol or "2026-04-19",
         nro_resol  = nro_resol or "0",
         rut_envia  = cert.rut_firmante or emisor.rut,
+        cod_aut_rec = cod_aut_rec,
     )
 
     firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
@@ -360,6 +438,7 @@ async def generar_libro_dinamico(
     except Exception as e:
         raise HTTPException(500, f"Error al firmar el libro: {e}")
 
+    # Validación XSD post-firma (informativa, no bloquea)
     try:
         from app.services.xsd_validator import validar_xml
         r_val = validar_xml(xml_firmado.encode("ISO-8859-1"))
@@ -390,6 +469,10 @@ async def generar_libro_dinamico(
 
 
 def _parsear_dtes_desde_xml(contenido: bytes) -> list[dict]:
+    """
+    Extrae los datos de cada DTE desde un EnvioDTE XML firmado.
+    Retorna lista de dicts con los campos que necesita _construir_libro_xml.
+    """
     NS = "http://www.sii.cl/SiiDte"
     try:
         root = etree.fromstring(contenido)
@@ -409,6 +492,7 @@ def _parsear_dtes_desde_xml(contenido: bytes) -> list[dict]:
         exe   = doc.findtext(f'.//{{{NS}}}MntExe')   or "0"
         total = doc.findtext(f'.//{{{NS}}}MntTotal')
 
+        # Campos específicos de Guías de Despacho — necesarios para LibroGuías
         ind_traslado   = doc.findtext(f'.//{{{NS}}}IndTraslado')
         tipo_despacho  = doc.findtext(f'.//{{{NS}}}TipoDespacho')
 
@@ -432,6 +516,7 @@ def _parsear_dtes_desde_xml(contenido: bytes) -> list[dict]:
 
 
 class _DTEFake:
+    """Objeto DTE liviano para pasar a _construir_libro_xml sin BD."""
     def __init__(self, d: dict):
         self.tipo_dte        = d["tipo_dte"]
         self.folio           = d["folio"]
@@ -442,13 +527,14 @@ class _DTEFake:
         self.monto_neto      = d.get("monto_neto",  0)
         self.monto_iva       = d.get("monto_iva",   0)
         self.monto_total     = d.get("monto_total", 0)
-        self.monto_exe       = d.get("monto_exe",   0)
+        self.monto_exe       = d.get("monto_exe",   0)   # exento real (no recalcular)
         self.estado          = "ACEPTADO"
         self.ambiente        = "certificacion"
         self.anulado         = bool(d.get("anulado", False))
         self.ind_traslado    = d.get("ind_traslado")
         self.tipo_despacho   = d.get("tipo_despacho")
-        self.tipo_especial   = d.get("tipo_especial", "")
+        # Campos especiales IVA para LibroCompras
+        self.tipo_especial   = d.get("tipo_especial", "")   # iva_uso_comun | iva_no_rec | iva_ret_total
         self.iva_uso_comun   = d.get("iva_uso_comun",  0)
         self.fct_prop        = d.get("fct_prop",  "0.60")
         self.iva_no_rec      = d.get("iva_no_rec",     0)
@@ -466,6 +552,7 @@ async def generar_libro_desde_xml(
     fch_resol:  str           = Form("2026-04-19"),
     nro_resol:  str           = Form("0"),
     folios_anulados: str      = Form(""),
+    cod_aut_rec: str          = Form(""),   # Rectificación: código de reemplazo del SII
     db: AsyncSession = Depends(get_db),
 ):
     if tipo_libro not in ("ventas", "compras", "guias"):
@@ -482,12 +569,14 @@ async def generar_libro_desde_xml(
     if not cert:
         raise HTTPException(400, "Sin certificado .p12 cargado")
 
+    # Parsear folios anulados (LibroGuías: "76,77" → {76, 77})
     folios_anulados_set: set[int] = set()
     for f in (folios_anulados or "").split(","):
         f = f.strip()
         if f.isdigit():
             folios_anulados_set.add(int(f))
 
+    # Parsear todos los XMLs subidos, deduplicando por (tipo, folio)
     todos_dtes: list[_DTEFake] = []
     folios_vistos: set = set()
 
@@ -532,6 +621,7 @@ async def generar_libro_desde_xml(
         fch_resol     = fch_resol,
         nro_resol     = nro_resol,
         rut_envia     = cert.rut_firmante or emisor.rut,
+        cod_aut_rec   = cod_aut_rec.strip() or None,
     )
 
     firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
@@ -559,14 +649,15 @@ async def generar_libro_desde_xml(
 class DTEManualInput(BaseModel):
     tipo_dte:        int
     folio:           int
-    fecha_emision:   str
+    fecha_emision:   str           # AAAA-MM-DD
     rut_receptor:    str   = "66666666-6"
     nombre_receptor: str   = "Proveedor"
     monto_neto:      int   = 0
     monto_iva:       int   = 0
     monto_total:     int   = 0
     monto_exe:       int   = 0
-    tipo_especial:   str   = ""
+    # Campos especiales de IVA para LibroCompras
+    tipo_especial:   str   = ""    # iva_uso_comun | iva_no_rec | iva_ret_total | ""
     iva_uso_comun:   int   = 0
     fct_prop:        str   = "0.60"
     iva_no_rec:      int   = 0
@@ -574,12 +665,15 @@ class DTEManualInput(BaseModel):
 
 class LibroManualRequest(BaseModel):
     emisor_id:  int
-    tipo_libro: str
+    tipo_libro: str          # ventas | compras | guias
     natencion:  str
-    periodo:    str
+    periodo:    str          # AAAA-MM
     dtes:       list[DTEManualInput]
     fch_resol:  str  = "2026-04-19"
     nro_resol:  str  = "0"
+    # Rectificación: si el período ya está cerrado (LTC), pedir el código
+    # de reemplazo en maullin.sii.cl e informarlo aquí → carátula RECTIFICA
+    cod_aut_rec: Optional[str] = None
 
 @router.post("/manual", summary="Genera libro desde datos manuales (para LibroCompras de certificación)")
 async def generar_libro_manual(
@@ -591,6 +685,7 @@ async def generar_libro_manual(
 
     emisor, cert = await _get_emisor_y_cert(body.emisor_id, db)
 
+    # Convertir DTEManualInput en _DTEFake para reutilizar _construir_libro_xml
     todos_dtes = []
     for d in body.dtes:
         fake = _DTEFake({
@@ -603,6 +698,7 @@ async def generar_libro_manual(
             "monto_iva":       d.monto_iva,
             "monto_total":     d.monto_total,
             "monto_exe":       d.monto_exe,
+            # Campos especiales IVA — críticos para LibroCompras
             "tipo_especial":   d.tipo_especial,
             "iva_uso_comun":   d.iva_uso_comun,
             "fct_prop":        d.fct_prop,
@@ -622,7 +718,8 @@ async def generar_libro_manual(
 
     logger.info(
         f"[LIBRO MANUAL] {label} emisor={emisor.rut} "
-        f"natencion={body.natencion} dtes={len(todos_dtes)}"
+        f"natencion={body.natencion} dtes={len(todos_dtes)} "
+        f"rectifica={'SI' if body.cod_aut_rec else 'NO'}"
     )
 
     xml_str = _construir_libro_xml(
@@ -635,6 +732,7 @@ async def generar_libro_manual(
         fch_resol     = body.fch_resol,
         nro_resol     = body.nro_resol,
         rut_envia     = cert.rut_firmante or emisor.rut,
+        cod_aut_rec   = body.cod_aut_rec,
     )
 
     firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
@@ -664,6 +762,7 @@ async def preview_libro_manual(
     body: LibroManualRequest,
     db: AsyncSession = Depends(get_db),
 ):
+    """Retorna XML sin firmar para inspección previa al envío."""
     emisor, cert = await _get_emisor_y_cert(body.emisor_id, db)
 
     todos_dtes = [_DTEFake({
@@ -671,6 +770,7 @@ async def preview_libro_manual(
         "fecha_emision": d.fecha_emision, "rut_receptor": d.rut_receptor,
         "nombre_receptor": d.nombre_receptor, "monto_neto": d.monto_neto,
         "monto_iva": d.monto_iva, "monto_total": d.monto_total, "monto_exe": d.monto_exe,
+        # Campos especiales IVA — críticos para LibroCompras
         "tipo_especial": d.tipo_especial, "iva_uso_comun": d.iva_uso_comun,
         "fct_prop": d.fct_prop, "iva_no_rec": d.iva_no_rec, "iva_ret_total": d.iva_ret_total,
     }) for d in body.dtes]
@@ -684,6 +784,7 @@ async def preview_libro_manual(
         natencion=body.natencion, periodo=body.periodo,
         fch_resol=body.fch_resol, nro_resol=body.nro_resol,
         rut_envia=cert.rut_firmante or emisor.rut,
+        cod_aut_rec=body.cod_aut_rec,
     )
 
     return Response(
@@ -703,6 +804,7 @@ async def preview_libro_xml(
     fch_resol:  str           = Form("2026-04-19"),
     nro_resol:  str           = Form("0"),
     folios_anulados: str      = Form(""),
+    cod_aut_rec: str          = Form(""),   # Rectificación: código de reemplazo del SII
     db: AsyncSession = Depends(get_db),
 ):
     if tipo_libro not in ("ventas", "compras", "guias"):
@@ -751,6 +853,7 @@ async def preview_libro_xml(
         fch_resol     = fch_resol,
         nro_resol     = nro_resol,
         rut_envia     = cert.rut_firmante or emisor.rut,
+        cod_aut_rec   = cod_aut_rec.strip() or None,
     )
 
     return Response(
