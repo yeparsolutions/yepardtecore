@@ -240,23 +240,26 @@ def _construir_libro_xml(
         if es_guias:
             etree.SubElement(det, f"{{{NS}}}Folio").text = str(doc["folio"])
             if doc.get("anulado"):
+                # Guía anulada: solo Folio + Anulado=2 + FchDoc, SIN montos
+                # (igual que el libro aprobado 4841547)
                 etree.SubElement(det, f"{{{NS}}}Anulado").text = "2"
+                etree.SubElement(det, f"{{{NS}}}FchDoc").text = doc["fecha"]
             else:
                 tpo_oper = doc.get("ind_traslado") or 1
                 etree.SubElement(det, f"{{{NS}}}TpoOper").text = str(tpo_oper)
-            etree.SubElement(det, f"{{{NS}}}FchDoc").text = doc["fecha"]
-            if doc["rut"]:
-                etree.SubElement(det, f"{{{NS}}}RUTDoc").text = doc["rut"]
-            if doc["razon"]:
-                etree.SubElement(det, f"{{{NS}}}RznSoc").text = doc["razon"]
-            if doc["neto"] != 0:
-                etree.SubElement(det, f"{{{NS}}}MntNeto").text = str(doc["neto"])
-            if doc["iva"] != 0:
-                etree.SubElement(det, f"{{{NS}}}TasaImp").text = "19"
-                etree.SubElement(det, f"{{{NS}}}IVA").text     = str(doc["iva"])
-            if doc["exe"] != 0:
-                etree.SubElement(det, f"{{{NS}}}MntExe").text  = str(doc["exe"])
-            etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
+                etree.SubElement(det, f"{{{NS}}}FchDoc").text = doc["fecha"]
+                if doc["rut"]:
+                    etree.SubElement(det, f"{{{NS}}}RUTDoc").text = doc["rut"]
+                if doc["razon"]:
+                    etree.SubElement(det, f"{{{NS}}}RznSoc").text = doc["razon"]
+                if doc["neto"] != 0:
+                    etree.SubElement(det, f"{{{NS}}}MntNeto").text = str(doc["neto"])
+                if doc["iva"] != 0:
+                    etree.SubElement(det, f"{{{NS}}}TasaImp").text = "19"
+                    etree.SubElement(det, f"{{{NS}}}IVA").text     = str(doc["iva"])
+                if doc["exe"] != 0:
+                    etree.SubElement(det, f"{{{NS}}}MntExe").text  = str(doc["exe"])
+                etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
         else:
             etree.SubElement(det, f"{{{NS}}}TpoDoc").text  = str(doc["tipo"])
             etree.SubElement(det, f"{{{NS}}}NroDoc").text  = str(doc["folio"])
