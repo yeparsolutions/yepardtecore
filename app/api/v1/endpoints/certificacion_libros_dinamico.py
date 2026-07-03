@@ -661,6 +661,8 @@ class DTEManualInput(BaseModel):
     iva_uso_comun:   int   = 0
     fct_prop:        str   = "0.60"
     iva_no_rec:      int   = 0
+    # Código de IVA no recuperable (4 = entrega gratuita recibida, 9 = otros)
+    cod_iva_no_rec:  int   = 9
     iva_ret_total:   int   = 0
 
 class LibroManualRequest(BaseModel):
@@ -703,6 +705,7 @@ async def generar_libro_manual(
             "iva_uso_comun":   d.iva_uso_comun,
             "fct_prop":        d.fct_prop,
             "iva_no_rec":      d.iva_no_rec,
+            "cod_iva_no_rec":  d.cod_iva_no_rec,
             "iva_ret_total":   d.iva_ret_total,
         })
         todos_dtes.append(fake)
@@ -772,7 +775,8 @@ async def preview_libro_manual(
         "monto_iva": d.monto_iva, "monto_total": d.monto_total, "monto_exe": d.monto_exe,
         # Campos especiales IVA — críticos para LibroCompras
         "tipo_especial": d.tipo_especial, "iva_uso_comun": d.iva_uso_comun,
-        "fct_prop": d.fct_prop, "iva_no_rec": d.iva_no_rec, "iva_ret_total": d.iva_ret_total,
+        "fct_prop": d.fct_prop, "iva_no_rec": d.iva_no_rec,
+        "cod_iva_no_rec": d.cod_iva_no_rec, "iva_ret_total": d.iva_ret_total,
     }) for d in body.dtes]
     todos_dtes.sort(key=lambda x: (x.tipo_dte, x.folio))
 
