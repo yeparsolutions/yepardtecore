@@ -45,6 +45,7 @@ DOCUMENTOS = [
 
     {"tipo": 46, "folio": 9, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
      "neto": 9474, "exe": 0, "iva": _iva(9474), "iva_ret_total": _iva(9474),
+     "otro_imp_cod": 40, "otro_imp_tasa": 19, "otro_imp_monto": _iva(9474),
      "total": 9474, "tipo_especial": "iva_ret_total"},
 
     {"tipo": 60, "folio": 211, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
@@ -131,15 +132,22 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
             etree.SubElement(tot, f"{{{NS}}}FctProp").text            = FCT_PROP
             etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(FCT_PROP)))
 
-        # FIX DEFINITIVO #2 (2026-07-06): el resumen usa el mismo campo
-        # (LV) que el detalle — TotIVARetTotal/TotOpIVARetTotal — porque
-        # el corrector del SII lo exige por nombre, pese a la anotación
-        # del XSD. Lo que corrigió el reparo de "Monto Total" fue dejar
-        # MntTotal=Neto en el detalle (arriba), no cambiar este campo.
+        # PRUEBA #5 (2026-07-06): igual que en el Detalle, declaramos la
+        # retención en el Resumen por AMBOS mecanismos a la vez —
+        # TotIVARetTotal/TotOpIVARetTotal (el que el corrector pide por
+        # nombre) Y TotOtrosImp código 40 (el mecanismo "(LC)" que anota
+        # el XSD para Compras).
         t_ret = sum(d.get("iva_ret_total", 0) for d in dt)
         if t_ret:
             etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in dt if d.get("iva_ret_total", 0)))
             etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_ret)
+
+        t_otro = sum(d.get("otro_imp_monto", 0) for d in dt if d.get("tipo_especial") == "iva_ret_total")
+        if t_otro:
+            toi = etree.SubElement(tot, f"{{{NS}}}TotOtrosImp")
+            etree.SubElement(toi, f"{{{NS}}}CodImp").text    = "40"
+            etree.SubElement(toi, f"{{{NS}}}TotMntImp").text = str(t_otro)
+            etree.SubElement(toi, f"{{{NS}}}TotCredImp").text = str(t_otro)
 
         etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in dt))
 
@@ -166,16 +174,19 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
             etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc["cod_iva_no_rec"])
             etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
         elif te == "iva_ret_total":
-            # FIX DEFINITIVO #2 (2026-07-06): probamos con <OtrosImp>
-            # código 40 pensando que <IVARetTotal> era exclusivo de Libro
-            # de Ventas (así lo anota el XSD oficial). Pero el corrector
-            # del SII sigue exigiendo textualmente "IVA Retenido Total" —
-            # sí quiere el campo <IVARetTotal>. Lo que faltaba corregir
-            # era solo el MntTotal (ver más abajo, doc["total"]=Neto),
-            # no cambiar de campo. MntIVA se declara completo (Campo 11);
-            # IVARetTotal informa, aparte, cuánto de eso fue retenido.
+            # PRUEBA #5 (2026-07-06): probamos <IVARetTotal> solo y
+            # <OtrosImp> código 40 solo, cada uno por separado — ambos
+            # dieron el MISMO reparo ("No Informa Adecuadamente IVA
+            # Retenido Total"). Ahora declaramos la retención por LOS DOS
+            # mecanismos A LA VEZ, por si el corrector del SII exige ambos
+            # (como un trámite que pide dos firmas, no una). MntIVA sigue
+            # completo (Campo 11); MntTotal (más abajo) sigue en Neto.
             etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
             etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
+            oi = etree.SubElement(det, f"{{{NS}}}OtrosImp")
+            etree.SubElement(oi, f"{{{NS}}}CodImp").text  = str(doc["otro_imp_cod"])
+            etree.SubElement(oi, f"{{{NS}}}TasaImp").text = str(doc["otro_imp_tasa"])
+            etree.SubElement(oi, f"{{{NS}}}MntImp").text  = str(doc["otro_imp_monto"])
         else:
             etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
 
