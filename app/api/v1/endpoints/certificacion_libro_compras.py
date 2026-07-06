@@ -44,8 +44,9 @@ DOCUMENTOS = [
      "total": 9826 + _iva(9826), "tipo_especial": "iva_no_rec"},
 
     {"tipo": 46, "folio": 9, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 9474, "exe": 0, "iva": _iva(9474), "iva_ret_total": _iva(9474),
-     "total": 9474 + _iva(9474), "tipo_especial": "iva_ret_total"},
+     "neto": 9474, "exe": 0, "iva": _iva(9474),
+     "otro_imp_cod": 40, "otro_imp_tasa": 19, "otro_imp_monto": _iva(9474),
+     "total": 9474, "tipo_especial": "iva_ret_total"},
 
     {"tipo": 60, "folio": 211, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
      "neto": 4030, "exe": 0, "iva": _iva(4030), "total": 4030 + _iva(4030), "tipo_especial": None},
@@ -131,14 +132,21 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
             etree.SubElement(tot, f"{{{NS}}}FctProp").text            = FCT_PROP
             etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(FCT_PROP)))
 
-        # FIX REPARO 2: TotIVARetTotal informa la retención por separado.
-        # (Actualizado 2026-07-06: TotMntIVA YA NO es 0 para estos docs —
-        # ver el cálculo de _tot_mnt_iva más arriba. TotIVARetTotal es
-        # solo la nota informativa de cuánto de ese IVA fue retenido.)
-        t_ret = sum(d.get("iva_ret_total", 0) for d in dt)
+        # FIX DEFINITIVO (2026-07-06): TotIVARetTotal/TotOpIVARetTotal son
+        # campos "(LV)" — no corresponden al Libro de Compras. El resumen
+        # equivalente para Compras es <TotOtrosImp>, con el mismo código
+        # (40) que usamos en el Detalle, agrupando el monto total y el
+        # crédito total de ese impuesto/retención.
+        t_ret = sum(d.get("otro_imp_monto", 0) for d in dt if d.get("tipo_especial") == "iva_ret_total")
         if t_ret:
-            etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in dt if d.get("iva_ret_total", 0)))
-            etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_ret)
+            toi = etree.SubElement(tot, f"{{{NS}}}TotOtrosImp")
+            etree.SubElement(toi, f"{{{NS}}}CodImp").text    = "40"
+            etree.SubElement(toi, f"{{{NS}}}TotMntImp").text = str(t_ret)
+            # TotCredImp: el crédito total de este impuesto. Como es una
+            # retención total (el comprador se queda con el 100% del IVA
+            # para enterarlo él mismo), el crédito reconocido es el mismo
+            # monto completo.
+            etree.SubElement(toi, f"{{{NS}}}TotCredImp").text = str(t_ret)
 
         etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in dt))
 
@@ -165,11 +173,18 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
             etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc["cod_iva_no_rec"])
             etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
         elif te == "iva_ret_total":
-            # El SII exige MntIVA = MntNeto*TasaImp SIEMPRE (no puede ir en 0).
-            # La retención se informa ADEMÁS en IVARetTotal. El comprador declara
-            # el IVA y a la vez registra que lo retuvo para enterarlo él.
-            etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
-            etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
+            # FIX DEFINITIVO (2026-07-06): <IVARetTotal> es un campo "(LV)"
+            # — Libro de VENTAS — según el propio XSD del SII. Para Libro
+            # de COMPRAS, la retención se declara en la estructura genérica
+            # <OtrosImp> con código 40 ("IVA Retenido Opcional").
+            # MntIVA sigue llevando el monto completo (Campo 11, no se
+            # toca); el código 40 es la forma correcta de decirle al SII
+            # "de ese IVA, esta parte fue retenida".
+            etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
+            oi = etree.SubElement(det, f"{{{NS}}}OtrosImp")
+            etree.SubElement(oi, f"{{{NS}}}CodImp").text  = str(doc["otro_imp_cod"])
+            etree.SubElement(oi, f"{{{NS}}}TasaImp").text = str(doc["otro_imp_tasa"])
+            etree.SubElement(oi, f"{{{NS}}}MntImp").text  = str(doc["otro_imp_monto"])
         else:
             etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
 
