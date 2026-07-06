@@ -94,9 +94,24 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
         etree.SubElement(tot, f"{{{NS}}}TotMntExe").text  = str(sum(d["exe"] for d in dt))
         etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text = str(sum(d["neto"] for d in dt))
 
-        # TotMntIVA debe coincidir con la suma de MntIVA de los detalles XML.
-        # Docs con tipo_especial tienen MntIVA=0 en el detalle → excluir del total.
-        _tot_mnt_iva = sum(d["iva"] for d in dt if not d.get("tipo_especial"))
+        # FIX REPARO LBR-3 (2026-07-06): TotMntIVA debe coincidir con la
+        # suma de MntIVA que REALMENTE aparece en cada Detalle — no con una
+        # regla genérica de "todo tipo_especial se excluye".
+        #
+        # Analogía: el Resumen es una caja que suma boleta por boleta; si
+        # una boleta cambia de monto, hay que sumarla de nuevo con el
+        # monto nuevo, no seguir tratándola como si aportara $0 porque
+        # antes aportaba $0.
+        #
+        # Solo DOS de los tres casos especiales llevan MntIVA=0 en el
+        # detalle (iva_uso_comun, iva_no_rec) → esos SÍ se excluyen.
+        # iva_ret_total (T46) ya NO va en 0 (fix del 2026-07-06: el SII
+        # exige MntIVA = Neto×19% siempre) → debe SUMARSE igual que un
+        # documento normal.
+        _tot_mnt_iva = sum(
+            d["iva"] for d in dt
+            if d.get("tipo_especial") not in ("iva_uso_comun", "iva_no_rec")
+        )
         etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text  = str(_tot_mnt_iva)
 
         # FIX REPARO 1: TotIVANoRec informa el IVA no recuperable por separado
@@ -116,7 +131,10 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
             etree.SubElement(tot, f"{{{NS}}}FctProp").text            = FCT_PROP
             etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(FCT_PROP)))
 
-        # FIX REPARO 2: TotIVARetTotal informa la retención; TotMntIVA ya es 0 para estos docs
+        # FIX REPARO 2: TotIVARetTotal informa la retención por separado.
+        # (Actualizado 2026-07-06: TotMntIVA YA NO es 0 para estos docs —
+        # ver el cálculo de _tot_mnt_iva más arriba. TotIVARetTotal es
+        # solo la nota informativa de cuánto de ese IVA fue retenido.)
         t_ret = sum(d.get("iva_ret_total", 0) for d in dt)
         if t_ret:
             etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in dt if d.get("iva_ret_total", 0)))
