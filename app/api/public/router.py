@@ -1798,15 +1798,22 @@ async def _generar_libro_compras_impl(
                         # MntIVA = MntNeto*TasaImp SIEMPRE, incluso con
                         # retención total. NUNCA en 0 — este caso NO es
                         # igual a iva_uso_comun/iva_no_rec (esos sí van en 0).
-                        # Analogía: el comprador retiene el IVA para el
-                        # fisco, pero el IVA existe y se declara completo;
-                        # la retención se informa APARTE en IVARetTotal.
-                        # MntTotal sigue siendo solo el neto (el IVA
-                        # retenido no se le paga al proveedor).
+                        #
+                        # FIX REPARO LBR-2 #2 (2026-07-06, MntTotal): al
+                        # corregir el MntIVA, el SII marcó un NUEVO reparo
+                        # sobre MntTotal. Corrección: MntTotal = Neto + IVA
+                        # (el total "impreso" del documento), NO solo el
+                        # neto. <IVARetTotal> es apenas una NOTA aparte que
+                        # dice "ese IVA ya se pagó directo al fisco, no al
+                        # proveedor" — es una forma de pago, no cambia el
+                        # total del documento. (La suposición anterior de
+                        # que Total=solo-neto venía de un ejemplo del SII
+                        # para Libro de VENTAS, no de Compras — no aplica
+                        # igual aquí; el propio validador del SII lo confirmó.)
                         doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": "2026-05-22",
                                "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
                                "neto": neto, "exe": exe, "iva": _iva(neto),
-                               "iva_ret_total": _iva(neto), "total": neto + exe,
+                               "iva_ret_total": _iva(neto), "total": neto + exe + _iva(neto),
                                "tipo_especial": "iva_ret_total"}
                     else:
                         doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": "2026-05-22",
