@@ -130,8 +130,16 @@ async def health():
     # cuando el frontend manda documentos_json (flujo real de producción, vía
     # Certificacion.jsx). El chequeo de arriba (fix_compras_*) solo mira
     # certificacion_libro_compras.py — un archivo distinto que NO es el que
-    # se ejecuta en este flujo. Por eso el bug T46/MntIVA=0 volvió a pasar
-    # el 2026-07-06 pese a que ese otro chequeo daba "true".
+    # se ejecuta en este flujo.
+    #
+    # NOTA (2026-07-06, revisión de set SRH #3): este chequeo verificaba
+    # antes que MntIVA NUNCA fuera 0 para iva_ret_total. Esa regla quedó en
+    # duda: dos intentos con MntIVA=Neto×19% (probando <OtrosImp> y luego
+    # <IVARetTotal>) recibieron el MISMO reparo del set de certificación
+    # ("No Informa Adecuadamente IVA Retenido Total"), así que ahora
+    # probamos MntIVA=0 de nuevo. Cambiamos el chequeo para verificar lo
+    # que SÍ sigue confirmado: que <IVARetTotal> existe y que MntTotal=Neto
+    # (sin sumar el IVA) — eso es lo que no debe volver a romperse.
     try:
         import sys as _sys
         import inspect as _insp3
@@ -146,8 +154,8 @@ async def health():
         _ini = src_router.rfind('elif te == "iva_ret_total":')
         _fin = src_router.find("else:", _ini) if _ini != -1 else -1
         _bloque_ret_total = src_router[_ini:_fin] if _ini != -1 and _fin != -1 else ""
-        checks["fix_router_t46_iva_calculado"] = '"iva": _iva(neto)' in _bloque_ret_total
-        checks["fix_router_t46_sin_iva_cero"]  = '"iva": 0' not in _bloque_ret_total
+        checks["fix_router_t46_tiene_ivarettotal"] = '"iva_ret_total": _iva(neto)' in _bloque_ret_total
+        checks["fix_router_t46_total_es_neto"]     = '"total": neto + exe,' in _bloque_ret_total
     except Exception as ex:
         checks["fix_router_t46_check"] = f"error: {ex}"
     # Verificar el fix del token de BOLETAS: enviar_sobre debe elegir el token
@@ -1810,32 +1818,34 @@ async def _generar_libro_compras_impl(
                                "cod_iva_no_rec": 4, "total": neto + _iva(neto) + exe,
                                "tipo_especial": "iva_no_rec"}
                     elif te == "iva_ret_total":
-                        # FIX REPARO LBR-2 (2026-07-06): el SII exige
-                        # MntIVA = MntNeto*TasaImp SIEMPRE, incluso con
-                        # retención total. NUNCA en 0 — este caso NO es
-                        # igual a iva_uso_comun/iva_no_rec (esos sí van en 0).
+                        # FIX REPARO LBR-2 (2026-07-06): en el primer intento
+                        # asumimos que este aviso era bloqueante, pero en
+                        # realidad el rechazo de ESE envío fue por LNC (el
+                        # período cerrado) — nunca confirmamos si el aviso
+                        # de MntIVA era real o solo una "nota al margen",
+                        # tal como luego SÍ confirmamos que pasa con el
+                        # aviso de MntTotal (el propio manual del SII trae
+                        # un envío Aceptado-Cuadrado con ese mismo aviso).
                         #
-                        # FIX MntTotal (2026-07-06, revisión de set SRH #1):
-                        # "El Monto Total No Cuadra" se resolvió dejando
-                        # MntTotal = Neto (sin sumar el IVA) — confirmado
-                        # porque ese reparo específico desapareció.
+                        # FIX MntTotal (revisión de set SRH #1): MntTotal =
+                        # Neto (sin sumar el IVA) — confirmado, ese reparo
+                        # específico desapareció y no volvió.
                         #
-                        # FIX DEFINITIVO (2026-07-06, revisión de set SRH #2):
-                        # Probamos reemplazar <IVARetTotal> por <OtrosImp>
-                        # código 40, pensando que <IVARetTotal> era solo
-                        # para Libro de Ventas (así lo anota el XSD). Pero
-                        # el corrector del SII sigue pidiendo explícitamente
-                        # "IVA Retenido Total" — es decir, SÍ quiere el
-                        # campo <IVARetTotal>, con su nombre tal cual.
-                        #
-                        # Analogía: el profesor no quería que cambiáramos
-                        # de casillero — quería el MISMO casillero
-                        # (IVARetTotal) con el número de al lado (MntTotal)
-                        # corregido. Volvemos a IVARetTotal, pero
-                        # conservando el MntTotal=Neto que ya confirmamos.
+                        # PRUEBA (revisión de set SRH #3): dos intentos con
+                        # MntIVA = Neto×19% (primero con <OtrosImp>, luego
+                        # con <IVARetTotal>) dieron el MISMO reparo exacto:
+                        # "No Informa Adecuadamente IVA Retenido Total".
+                        # Como cambiar el campo no cambió el resultado, el
+                        # problema probablemente no es el campo — es el
+                        # valor de MntIVA. Volvemos a MntIVA=0 (como venía
+                        # tu XML original, antes de cualquier fix nuestro)
+                        # ahora que el período y el MntTotal sí están
+                        # confirmados correctos. Si esto tampoco funciona,
+                        # sabremos con certeza que el problema está en otra
+                        # parte del Resumen, no en este documento.
                         doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": _hoy_str,
                                "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
-                               "neto": neto, "exe": exe, "iva": _iva(neto),
+                               "neto": neto, "exe": exe, "iva": 0,
                                "iva_ret_total": _iva(neto),
                                "total": neto + exe,
                                "tipo_especial": "iva_ret_total"}
