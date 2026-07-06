@@ -125,6 +125,31 @@ async def health():
         checks["fix_compras_funcion_importable"] = hasattr(_clc, "_construir_libro_xml")
     except Exception as ex:
         checks["fix_compras_check"] = f"error: {ex}"
+    # ⚠ Verificar el fix del LIBRO DE COMPRAS en ESTE MISMO archivo (router.py):
+    # generar_libro_compras_publico() arma su PROPIA copia de "docs_override"
+    # cuando el frontend manda documentos_json (flujo real de producción, vía
+    # Certificacion.jsx). El chequeo de arriba (fix_compras_*) solo mira
+    # certificacion_libro_compras.py — un archivo distinto que NO es el que
+    # se ejecuta en este flujo. Por eso el bug T46/MntIVA=0 volvió a pasar
+    # el 2026-07-06 pese a que ese otro chequeo daba "true".
+    try:
+        import sys as _sys
+        import inspect as _insp3
+        src_router = _insp3.getsource(_sys.modules[__name__])
+        # Aislar solo el bloque de la rama iva_ret_total (entre su "elif" y
+        # el siguiente "else:") para no depender de espacios/indentación
+        # exactos, y para no confundirlo con las otras ramas (iva_uso_comun,
+        # iva_no_rec) que sí llevan "iva": 0 correctamente.
+        # rfind (no find): la ÚLTIMA ocurrencia es la rama real del código;
+        # la primera es el propio texto de este chequeo, que si usáramos
+        # find() se encontraría a sí mismo y daría un falso negativo.
+        _ini = src_router.rfind('elif te == "iva_ret_total":')
+        _fin = src_router.find("else:", _ini) if _ini != -1 else -1
+        _bloque_ret_total = src_router[_ini:_fin] if _ini != -1 and _fin != -1 else ""
+        checks["fix_router_t46_iva_calculado"] = '"iva": _iva(neto)' in _bloque_ret_total
+        checks["fix_router_t46_sin_iva_cero"]  = '"iva": 0' not in _bloque_ret_total
+    except Exception as ex:
+        checks["fix_router_t46_check"] = f"error: {ex}"
     # Verificar el fix del token de BOLETAS: enviar_sobre debe elegir el token
     # de boletas (api.sii.cl) cuando el sobre es EnvioBOLETA, no el token DTE.
     try:
@@ -1769,10 +1794,18 @@ async def _generar_libro_compras_impl(
                                "cod_iva_no_rec": 4, "total": neto + _iva(neto) + exe,
                                "tipo_especial": "iva_no_rec"}
                     elif te == "iva_ret_total":
-                        # Vuelta a estructura del ejemplo oficial: MntIVA=0, MntTotal=neto
+                        # FIX REPARO LBR-2 (2026-07-06): el SII exige
+                        # MntIVA = MntNeto*TasaImp SIEMPRE, incluso con
+                        # retención total. NUNCA en 0 — este caso NO es
+                        # igual a iva_uso_comun/iva_no_rec (esos sí van en 0).
+                        # Analogía: el comprador retiene el IVA para el
+                        # fisco, pero el IVA existe y se declara completo;
+                        # la retención se informa APARTE en IVARetTotal.
+                        # MntTotal sigue siendo solo el neto (el IVA
+                        # retenido no se le paga al proveedor).
                         doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": "2026-05-22",
                                "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
-                               "neto": neto, "exe": exe, "iva": 0,
+                               "neto": neto, "exe": exe, "iva": _iva(neto),
                                "iva_ret_total": _iva(neto), "total": neto + exe,
                                "tipo_especial": "iva_ret_total"}
                     else:
