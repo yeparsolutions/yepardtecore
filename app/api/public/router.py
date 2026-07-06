@@ -1815,21 +1815,38 @@ async def _generar_libro_compras_impl(
                         # retención total. NUNCA en 0 — este caso NO es
                         # igual a iva_uso_comun/iva_no_rec (esos sí van en 0).
                         #
-                        # FIX REPARO LBR-2 #2 (2026-07-06, MntTotal): al
-                        # corregir el MntIVA, el SII marcó un NUEVO reparo
-                        # sobre MntTotal. Corrección: MntTotal = Neto + IVA
-                        # (el total "impreso" del documento), NO solo el
-                        # neto. <IVARetTotal> es apenas una NOTA aparte que
-                        # dice "ese IVA ya se pagó directo al fisco, no al
-                        # proveedor" — es una forma de pago, no cambia el
-                        # total del documento. (La suposición anterior de
-                        # que Total=solo-neto venía de un ejemplo del SII
-                        # para Libro de VENTAS, no de Compras — no aplica
-                        # igual aquí; el propio validador del SII lo confirmó.)
+                        # FIX DEFINITIVO (2026-07-06, revisión de set SRH):
+                        # Descubrimos que <IVARetTotal> está documentado en
+                        # el XSD oficial del SII como "(LV)" — es decir, es
+                        # un campo pensado para el LIBRO DE VENTAS, no para
+                        # Compras. Por eso el envío pasaba la validación
+                        # técnica del XML (LOK-Cuadrado) pero la REVISIÓN
+                        # DEL SET (que compara contra la respuesta esperada)
+                        # lo rechazó: "El Monto Total No Cuadra" + "No
+                        # Informa Adecuadamente IVA Retenido Total".
+                        #
+                        # Analogía: es un formulario de dos caras (Compras/
+                        # Ventas) que comparte casillas; usamos la casilla
+                        # "IVA Retenido" que en la letra chica dice que es
+                        # solo para el lado de Ventas. Para Compras, la
+                        # retención se declara en la casilla "Otro Impuesto
+                        # o Recargo" (OtrosImp), con código 40 = "IVA
+                        # Retenido Opcional" (los códigos 30-39 son por
+                        # rubro específico — legumbres, ganado, chatarra,
+                        # etc. — y este caso no es ninguno de esos).
+                        #
+                        # Con OtrosImp código 40, la fórmula oficial del SII
+                        # para Monto Total (Instrucciones de llenado,
+                        # Campo 29) indica que este ítem se RESTA cuando es
+                        # retención total — por eso MntTotal vuelve a ser
+                        # solo el Neto (el IVA se declara en MntIVA, pero se
+                        # anula con el mismo monto declarado como retención).
                         doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": _hoy_str,
                                "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
                                "neto": neto, "exe": exe, "iva": _iva(neto),
-                               "iva_ret_total": _iva(neto), "total": neto + exe + _iva(neto),
+                               "otro_imp_cod": 40, "otro_imp_tasa": 19,
+                               "otro_imp_monto": _iva(neto),
+                               "total": neto + exe,
                                "tipo_especial": "iva_ret_total"}
                     else:
                         doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": _hoy_str,
