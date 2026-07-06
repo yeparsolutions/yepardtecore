@@ -1818,35 +1818,33 @@ async def _generar_libro_compras_impl(
                                "cod_iva_no_rec": 4, "total": neto + _iva(neto) + exe,
                                "tipo_especial": "iva_no_rec"}
                     elif te == "iva_ret_total":
-                        # FIX REPARO LBR-2 (2026-07-06): en el primer intento
-                        # asumimos que este aviso era bloqueante, pero en
-                        # realidad el rechazo de ESE envío fue por LNC (el
-                        # período cerrado) — nunca confirmamos si el aviso
-                        # de MntIVA era real o solo una "nota al margen",
-                        # tal como luego SÍ confirmamos que pasa con el
-                        # aviso de MntTotal (el propio manual del SII trae
-                        # un envío Aceptado-Cuadrado con ese mismo aviso).
+                        # HISTORIAL DE PRUEBAS (2026-07-06) contra la
+                        # revisión de set SRH del SII — vamos dejando el
+                        # rastro para no repetir combinaciones ya probadas:
                         #
-                        # FIX MntTotal (revisión de set SRH #1): MntTotal =
-                        # Neto (sin sumar el IVA) — confirmado, ese reparo
-                        # específico desapareció y no volvió.
+                        #   #  MntIVA  Campo retención      MntTotal  Resultado
+                        #   1  1926    IVARetTotal           12063    Total no cuadra + IVA Ret. inadecuado
+                        #   2  1926    OtrosImp (cód 40)     10137    IVA Ret. inadecuado (Total ya OK)
+                        #   3  1926    IVARetTotal           10137    IVA Ret. inadecuado (igual que #2)
+                        #   4  0       IVARetTotal           10137    Monto IVA no cuadra (NUEVO) + IVA Ret. inadecuado
                         #
-                        # PRUEBA (revisión de set SRH #3): dos intentos con
-                        # MntIVA = Neto×19% (primero con <OtrosImp>, luego
-                        # con <IVARetTotal>) dieron el MISMO reparo exacto:
-                        # "No Informa Adecuadamente IVA Retenido Total".
-                        # Como cambiar el campo no cambió el resultado, el
-                        # problema probablemente no es el campo — es el
-                        # valor de MntIVA. Volvemos a MntIVA=0 (como venía
-                        # tu XML original, antes de cualquier fix nuestro)
-                        # ahora que el período y el MntTotal sí están
-                        # confirmados correctos. Si esto tampoco funciona,
-                        # sabremos con certeza que el problema está en otra
-                        # parte del Resumen, no en este documento.
+                        # Conclusiones firmes:
+                        #   - MntTotal=10137 (Neto) es correcto (#2 y #3 sin ese reparo).
+                        #   - MntIVA=1926 es obligatorio (en #4 volvió un reparo nuevo).
+                        #   - "IVA Retenido Total inadecuado" persiste sin importar
+                        #     qué campo se use — probamos IVARetTotal U OtrosImp,
+                        #     nunca los DOS a la vez. Analogía: quizás el trámite
+                        #     pide dos firmas (titular y testigo), y probamos cada
+                        #     una por separado en vez de juntas.
+                        #
+                        # PRUEBA #5: declarar la retención por AMBOS mecanismos
+                        # a la vez.
                         doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": _hoy_str,
                                "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
-                               "neto": neto, "exe": exe, "iva": 0,
+                               "neto": neto, "exe": exe, "iva": _iva(neto),
                                "iva_ret_total": _iva(neto),
+                               "otro_imp_cod": 40, "otro_imp_tasa": 19,
+                               "otro_imp_monto": _iva(neto),
                                "total": neto + exe,
                                "tipo_especial": "iva_ret_total"}
                     else:
