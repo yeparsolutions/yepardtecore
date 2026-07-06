@@ -44,8 +44,7 @@ DOCUMENTOS = [
      "total": 9826 + _iva(9826), "tipo_especial": "iva_no_rec"},
 
     {"tipo": 46, "folio": 9, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 9474, "exe": 0, "iva": _iva(9474),
-     "otro_imp_cod": 40, "otro_imp_tasa": 19, "otro_imp_monto": _iva(9474),
+     "neto": 9474, "exe": 0, "iva": _iva(9474), "iva_ret_total": _iva(9474),
      "total": 9474, "tipo_especial": "iva_ret_total"},
 
     {"tipo": 60, "folio": 211, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
@@ -132,21 +131,15 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
             etree.SubElement(tot, f"{{{NS}}}FctProp").text            = FCT_PROP
             etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(FCT_PROP)))
 
-        # FIX DEFINITIVO (2026-07-06): TotIVARetTotal/TotOpIVARetTotal son
-        # campos "(LV)" — no corresponden al Libro de Compras. El resumen
-        # equivalente para Compras es <TotOtrosImp>, con el mismo código
-        # (40) que usamos en el Detalle, agrupando el monto total y el
-        # crédito total de ese impuesto/retención.
-        t_ret = sum(d.get("otro_imp_monto", 0) for d in dt if d.get("tipo_especial") == "iva_ret_total")
+        # FIX DEFINITIVO #2 (2026-07-06): el resumen usa el mismo campo
+        # (LV) que el detalle — TotIVARetTotal/TotOpIVARetTotal — porque
+        # el corrector del SII lo exige por nombre, pese a la anotación
+        # del XSD. Lo que corrigió el reparo de "Monto Total" fue dejar
+        # MntTotal=Neto en el detalle (arriba), no cambiar este campo.
+        t_ret = sum(d.get("iva_ret_total", 0) for d in dt)
         if t_ret:
-            toi = etree.SubElement(tot, f"{{{NS}}}TotOtrosImp")
-            etree.SubElement(toi, f"{{{NS}}}CodImp").text    = "40"
-            etree.SubElement(toi, f"{{{NS}}}TotMntImp").text = str(t_ret)
-            # TotCredImp: el crédito total de este impuesto. Como es una
-            # retención total (el comprador se queda con el 100% del IVA
-            # para enterarlo él mismo), el crédito reconocido es el mismo
-            # monto completo.
-            etree.SubElement(toi, f"{{{NS}}}TotCredImp").text = str(t_ret)
+            etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in dt if d.get("iva_ret_total", 0)))
+            etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_ret)
 
         etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in dt))
 
@@ -173,18 +166,16 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
             etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc["cod_iva_no_rec"])
             etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
         elif te == "iva_ret_total":
-            # FIX DEFINITIVO (2026-07-06): <IVARetTotal> es un campo "(LV)"
-            # — Libro de VENTAS — según el propio XSD del SII. Para Libro
-            # de COMPRAS, la retención se declara en la estructura genérica
-            # <OtrosImp> con código 40 ("IVA Retenido Opcional").
-            # MntIVA sigue llevando el monto completo (Campo 11, no se
-            # toca); el código 40 es la forma correcta de decirle al SII
-            # "de ese IVA, esta parte fue retenida".
-            etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
-            oi = etree.SubElement(det, f"{{{NS}}}OtrosImp")
-            etree.SubElement(oi, f"{{{NS}}}CodImp").text  = str(doc["otro_imp_cod"])
-            etree.SubElement(oi, f"{{{NS}}}TasaImp").text = str(doc["otro_imp_tasa"])
-            etree.SubElement(oi, f"{{{NS}}}MntImp").text  = str(doc["otro_imp_monto"])
+            # FIX DEFINITIVO #2 (2026-07-06): probamos con <OtrosImp>
+            # código 40 pensando que <IVARetTotal> era exclusivo de Libro
+            # de Ventas (así lo anota el XSD oficial). Pero el corrector
+            # del SII sigue exigiendo textualmente "IVA Retenido Total" —
+            # sí quiere el campo <IVARetTotal>. Lo que faltaba corregir
+            # era solo el MntTotal (ver más abajo, doc["total"]=Neto),
+            # no cambiar de campo. MntIVA se declara completo (Campo 11);
+            # IVARetTotal informa, aparte, cuánto de eso fue retenido.
+            etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
+            etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
         else:
             etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
 
