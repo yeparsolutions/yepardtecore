@@ -132,22 +132,26 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
             etree.SubElement(tot, f"{{{NS}}}FctProp").text            = FCT_PROP
             etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(FCT_PROP)))
 
-        # PRUEBA #5 (2026-07-06): igual que en el Detalle, declaramos la
-        # retención en el Resumen por AMBOS mecanismos a la vez —
-        # TotIVARetTotal/TotOpIVARetTotal (el que el corrector pide por
-        # nombre) Y TotOtrosImp código 40 (el mecanismo "(LC)" que anota
-        # el XSD para Compras).
-        t_ret = sum(d.get("iva_ret_total", 0) for d in dt)
-        if t_ret:
-            etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in dt if d.get("iva_ret_total", 0)))
-            etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_ret)
-
+        # FIX ESQUEMA (2026-07-06): en XML, a diferencia de un diccionario
+        # de Python, el ORDEN de los elementos importa cuando el XSD define
+        # una <xs:sequence> — es como una fila para el banco: si te saltas
+        # el orden de los números, no importa que lleves el papel correcto,
+        # igual te rechazan. El XSD exige TotOtrosImp ANTES que
+        # TotOpIVARetTotal/TotIVARetTotal — nosotros los escribíamos al
+        # revés, y eso causó el rechazo "ESQUEMA INVALIDO".
         t_otro = sum(d.get("otro_imp_monto", 0) for d in dt if d.get("tipo_especial") == "iva_ret_total")
         if t_otro:
             toi = etree.SubElement(tot, f"{{{NS}}}TotOtrosImp")
             etree.SubElement(toi, f"{{{NS}}}CodImp").text    = "40"
             etree.SubElement(toi, f"{{{NS}}}TotMntImp").text = str(t_otro)
             etree.SubElement(toi, f"{{{NS}}}TotCredImp").text = str(t_otro)
+
+        # Va DESPUÉS de TotOtrosImp en la secuencia del XSD (confirmado
+        # arriba). Mismo dato, solo cambia dónde se escribe en el XML.
+        t_ret = sum(d.get("iva_ret_total", 0) for d in dt)
+        if t_ret:
+            etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in dt if d.get("iva_ret_total", 0)))
+            etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_ret)
 
         etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in dt))
 
@@ -174,19 +178,21 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
             etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc["cod_iva_no_rec"])
             etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
         elif te == "iva_ret_total":
-            # PRUEBA #5 (2026-07-06): probamos <IVARetTotal> solo y
-            # <OtrosImp> código 40 solo, cada uno por separado — ambos
-            # dieron el MISMO reparo ("No Informa Adecuadamente IVA
-            # Retenido Total"). Ahora declaramos la retención por LOS DOS
-            # mecanismos A LA VEZ, por si el corrector del SII exige ambos
-            # (como un trámite que pide dos firmas, no una). MntIVA sigue
-            # completo (Campo 11); MntTotal (más abajo) sigue en Neto.
-            etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
-            etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
+            # FIX ESQUEMA (2026-07-06): el envío volvió "RECHAZADO ESQUEMA
+            # INVALIDO". Revisando el XSD oficial línea por línea, el
+            # <xs:sequence> exige este orden exacto: ... Ley18211,
+            # OtrosImp, MntSinCred, IVARetTotal, IVARetParcial ... —
+            # es decir, <OtrosImp> va ANTES de <IVARetTotal>, y nosotros
+            # los escribíamos al revés. En XML el orden es parte del
+            # contrato (a diferencia de un dict en Python, donde el orden
+            # de las llaves no importa) — por eso pasaba de ser un
+            # "reparo de contenido" a un rechazo de forma.
+            etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
             oi = etree.SubElement(det, f"{{{NS}}}OtrosImp")
             etree.SubElement(oi, f"{{{NS}}}CodImp").text  = str(doc["otro_imp_cod"])
             etree.SubElement(oi, f"{{{NS}}}TasaImp").text = str(doc["otro_imp_tasa"])
             etree.SubElement(oi, f"{{{NS}}}MntImp").text  = str(doc["otro_imp_monto"])
+            etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
         else:
             etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
 
