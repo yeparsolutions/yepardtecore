@@ -1730,13 +1730,25 @@ async def _generar_libro_compras_impl(
     from app.services.firma_digital import FirmaDigital
     from datetime import datetime as _dt
 
-    # El período del libro de compras lo define la fecha de sus documentos
-    # (mayo del set), no el mes actual. Lo derivamos aquí para que el nombre del
-    # archivo y la respuesta sean consistentes con lo que va dentro del XML.
-    if _DOCS_COMPRA:
-        _f = _DOCS_COMPRA[0].get("fecha", "")
-        if len(_f) >= 7:
-            periodo = _f[:7]
+    # FIX PERIODO (2026-07-06): antes, esta línea REEMPLAZABA el período que
+    # manda el frontend (que ya calcula el mes actual correctamente) por la
+    # fecha de _DOCS_COMPRA[0] — un documento hardcodeado del PRIMER set
+    # (mayo), que ya fue rechazado. Por eso, aunque enviaras hoy, el XML
+    # seguía diciendo "2026-05": era un reloj pegado en la fecha del primer
+    # intento. Analogía: es como si tu impresora imprimiera siempre la fecha
+    # del primer documento que le diste, sin importar qué le pidas después.
+    #
+    # Regla correcta: el Período Tributario es el mes en que efectivamente
+    # se EMITEN/DECLARAN los documentos de ESTA ronda de certificación, no
+    # un dato fijo de un intento anterior. Si el SII te dio un set nuevo,
+    # los documentos de ese set se fechan y declaran en el período vigente
+    # (hoy), aunque el número de set/atención sea el mismo.
+    #
+    # Por eso: usamos SIEMPRE la fecha real de hoy, tanto para el detalle de
+    # cada documento como para el Período Tributario — nunca un valor
+    # hardcodeado de un archivo de un set anterior.
+    _hoy_str = _dt.now().strftime("%Y-%m-%d")   # ej: "2026-07-06"
+    periodo  = _hoy_str[:7]                      # ej: "2026-07"
 
     import base64 as _b64cert2
     if pfx_base64:
@@ -1768,6 +1780,10 @@ async def _generar_libro_compras_impl(
         rut_envia = _rut_env2
 
     # Documentos dinámicos si vienen del frontend (parseo del TXT del SII)
+    # FIX FECHA (2026-07-06): "fecha" de cada documento ya NO va hardcodeada
+    # a "2026-05-22" (fecha del primer set, rechazado). Usa _hoy_str, la
+    # fecha real del día en que se genera este libro — así FchDoc de cada
+    # detalle queda siempre coherente con el Período Tributario de arriba.
     _docs_override = None
     if documentos_json and documentos_json.strip() not in ("", "[]"):
         import json as _json
@@ -1782,13 +1798,13 @@ async def _generar_libro_compras_impl(
                     te   = d.get("tipo_especial")
                     if te == "iva_uso_comun":
                         # Revertido: MntIVA=0 funcionaba sin reparos
-                        doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": "2026-05-22",
+                        doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": _hoy_str,
                                "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
                                "neto": neto, "exe": exe, "iva": 0, "iva_uso_comun": _iva(neto),
                                "total": neto + _iva(neto) + exe, "tipo_especial": "iva_uso_comun"}
                     elif te == "iva_no_rec":
                         # Estructura oficial SII: MntIVA = neto*tasa COMPLETO (no 0)
-                        doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": "2026-05-22",
+                        doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": _hoy_str,
                                "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
                                "neto": neto, "exe": exe, "iva": _iva(neto), "iva_no_rec": _iva(neto),
                                "cod_iva_no_rec": 4, "total": neto + _iva(neto) + exe,
@@ -1810,13 +1826,13 @@ async def _generar_libro_compras_impl(
                         # que Total=solo-neto venía de un ejemplo del SII
                         # para Libro de VENTAS, no de Compras — no aplica
                         # igual aquí; el propio validador del SII lo confirmó.)
-                        doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": "2026-05-22",
+                        doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": _hoy_str,
                                "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
                                "neto": neto, "exe": exe, "iva": _iva(neto),
                                "iva_ret_total": _iva(neto), "total": neto + exe + _iva(neto),
                                "tipo_especial": "iva_ret_total"}
                     else:
-                        doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": "2026-05-22",
+                        doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": _hoy_str,
                                "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
                                "neto": neto, "exe": exe, "iva": _iva(neto),
                                "total": neto + _iva(neto) + exe, "tipo_especial": None}
