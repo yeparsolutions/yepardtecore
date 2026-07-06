@@ -8,7 +8,8 @@
 #   porque comparten el prefix "/certificacion-libros" y FastAPI solo
 #   sirve uno de los dos → los cambios "desaparecen".
 #
-# FIX T46 (2026-07-02) — Factura de Compra con retención total de IVA:
+# FIX T46 (2026-07-02, corregido 2026-07-06) — Factura de Compra con
+# retención total de IVA:
 #   El SII rechazó el set 4929133 con:
 #     "No Informa Adecuadamente IVA Retenido Total / El Monto IVA No Cuadra"
 #   y el reparo LBR-2: [MntIVA] distinto a [MntNeto]*[TasaImp].
@@ -19,6 +20,14 @@
 #   Analogía: el comprador es "cajero del fisco" — el IVA existe y se
 #   declara completo, solo que en vez de pagárselo al proveedor lo retiene
 #   y lo entera él mismo. Declarar MntIVA=0 es negar que hubo IVA.
+#
+#   ⚠ CAUSA RAÍZ ENCONTRADA EL 2026-07-06: el fix del 07-02 solo escribía
+#   str(doc["iva"]) en el XML, pero doc["iva"] viene de dte.monto_iva,
+#   que para estos DTE está guardado en 0 (el DTE original no le cobra
+#   IVA al proveedor, lo retiene). El "fix" nunca calculaba nada, solo
+#   repetía el 0 ya guardado → volvió a rechazarse el envío 252737990.
+#   Ahora se RECALCULA doc["iva"] = round(neto * 0.19) exclusivamente
+#   para el Libro, sin tocar el DTE original en la base de datos.
 #
 # Lo demás NO se toca: tipos 30/33/60, IVA uso común e IVA no recuperable
 # con MntIVA=0 pasaron SIN reparo en el envío 252601730 (LOK - Cuadrado).
@@ -219,6 +228,27 @@ def _construir_libro_xml(
             "cod_iva_no_rec": getattr(dte, 'cod_iva_no_rec', 9),
             "iva_ret_total":  getattr(dte, 'iva_ret_total', 0),
         })
+
+    # ═══ FIX T46 (parte 0/2) — RECALCULAR, no confiar en la BD ═══
+    # dte.monto_iva llega en 0 para las Facturas de Compra (T46) con
+    # retención total, porque así se guardó el DTE original (al
+    # proveedor no se le cobra el IVA, se lo retiene el comprador).
+    # El Libro de Compras es OTRO documento con OTRA regla: el SII
+    # exige que ahí el IVA "exista" (MntIVA = MntNeto × 19%), aunque
+    # el DTE de origen lo muestre en 0.
+    # Analogía: la boleta de sueldo muestra el líquido a pagar (post-
+    # descuentos), pero el certificado de renta para el SII exige
+    # mostrar el sueldo bruto completo. Son dos documentos, dos reglas.
+    # Por eso NO basta con leer dte.monto_iva: hay que recalcularlo
+    # aquí mismo para el Libro, sin tocar el DTE original.
+    for d in docs:
+        if d.get("tipo_especial") == "iva_ret_total":
+            iva_calculado = round(d["neto"] * 0.19)
+            d["iva"] = iva_calculado
+            # Si iva_ret_total tampoco venía informado (0), usamos
+            # el mismo cálculo — deben ser siempre iguales en este caso.
+            if not d.get("iva_ret_total"):
+                d["iva_ret_total"] = iva_calculado
 
     # ── ResumenPeriodo ────────────────────────────────────────
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
