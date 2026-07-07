@@ -1706,6 +1706,12 @@ async def generar_libro_compras_publico(
     fch_resol:    str          = Form("2026-04-19"),
     nro_resol:    str          = Form("0"),
     documentos:   str          = Form("[]"),
+    # FIX RECTIFICA (2026-07-07): cuando el SII ya cerró el período
+    # (Estado del Libro Tributario = "LTC - Libro Cerrado"), un envío
+    # normal se rechaza con LNC. Este campo, si el usuario lo completa
+    # con el código que el SII entrega para autorizar la corrección,
+    # hace que el libro se genere como RECTIFICA en vez de ESPECIAL.
+    cod_aut_rec:  str          = Form(""),
     emisor:       Emisor       = Depends(get_emisor_by_api_key),
     db:           AsyncSession = Depends(get_db),
 ):
@@ -1717,7 +1723,7 @@ async def generar_libro_compras_publico(
         return await _generar_libro_compras_impl(
             natencion, periodo, auto_enviar, ambiente, emisor, db,
             pfx_base64=pfx_base64, pfx_password=pfx_password, rut_firmante_ext=rut_firmante,
-            fch_resol=fch_resol, documentos_json=documentos)
+            fch_resol=fch_resol, documentos_json=documentos, cod_aut_rec=(cod_aut_rec or None))
     except HTTPException:
         raise
     except Exception as _e:
@@ -1733,6 +1739,7 @@ async def _generar_libro_compras_impl(
     emisor: Emisor, db: AsyncSession,
     pfx_base64: str = "", pfx_password: str = "", rut_firmante_ext: str = "",
     fch_resol: str = "2026-04-19", documentos_json: str = "",
+    cod_aut_rec: str | None = None,
 ):
     from app.api.v1.endpoints.certificacion_libro_compras import _construir_libro_xml, DOCUMENTOS as _DOCS_COMPRA
     from app.services.firma_digital import FirmaDigital
@@ -1859,7 +1866,8 @@ async def _generar_libro_compras_impl(
     try:
         xml_str = _construir_libro_xml(emisor, rut_envia, natencion, periodo, tmst,
                                         fch_resol=fch_resol,
-                                        docs_override=_docs_override)
+                                        docs_override=_docs_override,
+                                        cod_aut_rec=(cod_aut_rec or None))
     except Exception as e:
         logger.error(f"[LIBRO-COMPRAS] Error construyendo: {e}", exc_info=True)
         raise HTTPException(500, f"Error construyendo libro de compras: {e}")
