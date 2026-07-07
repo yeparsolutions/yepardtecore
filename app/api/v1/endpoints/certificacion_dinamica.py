@@ -1,260 +1,399 @@
-# app/api/v1/endpoints/certificacion_libro_compras.py
-# Libro de Compras con lógica especial: IVA uso común, no recuperable, retención
+# app/api/v1/endpoints/certificacion_dinamica.py
+# ══════════════════════════════════════════════════════════════
+# Endpoint DINÁMICO — recibe casos completos desde el admin
+# No tiene datos hardcodeados. Todo viene del body (JSON).
+#
+# POST /v1/certificacion-dinamica/generar-xml
+# POST /v1/certificacion-dinamica/enviar
+# ══════════════════════════════════════════════════════════════
 
 import logging
-from datetime import datetime
-from typing import Optional
+from datetime import date
+from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from lxml import etree
+from sqlalchemy import select
 
 from app.db.base import get_db
 from app.models.emisor import Emisor
 from app.models.certificado import Certificado
-from sqlalchemy import select
+from app.services.dte_service import DTEService
 from app.services.firma_digital import FirmaDigital
+from app.services.sii_sender import SIISender
 
-logger = logging.getLogger("yepardtecore.cert_libro_compras")
-router = APIRouter(prefix="/certificacion-libro-compras", tags=["Certificacion Libro Compras"])
-
-NS        = "http://www.sii.cl/SiiDte"
-RUT_PROV  = "76354771-K"
-FCT_PROP  = "0.60"
-
-def _iva(n): return round(n * 0.19)
-
-DOCUMENTOS = [
-    # Set 4919743. Montos exactos del TXT del SII.
-    {"tipo": 30, "folio": 234, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 18269, "exe": 0, "iva": _iva(18269), "total": 18269 + _iva(18269), "tipo_especial": None},
-
-    {"tipo": 33, "folio": 32, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 6059, "exe": 8674, "iva": _iva(6059), "total": 6059 + _iva(6059) + 8674, "tipo_especial": None},
-
-    {"tipo": 30, "folio": 781, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 29749, "exe": 0, "iva": 0, "iva_uso_comun": _iva(29749),
-     "total": 29749 + _iva(29749), "tipo_especial": "iva_uso_comun"},
-
-    {"tipo": 60, "folio": 451, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 2699, "exe": 0, "iva": _iva(2699), "total": 2699 + _iva(2699), "tipo_especial": None},
-
-    {"tipo": 33, "folio": 67, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 9826, "exe": 0, "iva": 0, "iva_no_rec": _iva(9826), "cod_iva_no_rec": 4,
-     "total": 9826 + _iva(9826), "tipo_especial": "iva_no_rec"},
-
-    {"tipo": 46, "folio": 9, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 9474, "exe": 0, "iva": _iva(9474), "iva_ret_total": _iva(9474),
-     "otro_imp_cod": 40, "otro_imp_tasa": 19, "otro_imp_monto": _iva(9474),
-     "total": 9474, "tipo_especial": "iva_ret_total"},
-
-    {"tipo": 60, "folio": 211, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
-     "neto": 4030, "exe": 0, "iva": _iva(4030), "total": 4030 + _iva(4030), "tipo_especial": None},
-]
-
-def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
-                          periodo: str, tmst: str, fch_resol: str = "2026-04-19",
-                          docs_override=None, cod_aut_rec: str | None = None) -> str:
-    # El período tributario DEBE corresponder al mes de los documentos del
-    # libro, no al mes en que se genera. Los documentos del set son de mayo
-    # (2026-05-22), así que derivamos el período de su fecha y NO del parámetro
-    # (que llega con el mes actual). Si el período del SII no calza con las
-    # fechas de los documentos, el libro se repara. Analogía: el libro de mayo
-    # lleva la fecha de mayo aunque lo armes en junio.
-    docs = docs_override if docs_override is not None else DOCUMENTOS
-    if docs:
-        fecha_doc = docs[0].get("fecha", "")
-        if len(fecha_doc) >= 7:
-            periodo = fecha_doc[:7]
-    root = etree.Element(f"{{{NS}}}LibroCompraVenta",
-        nsmap={None: NS, "xsi": "http://www.w3.org/2001/XMLSchema-instance"},
-        attrib={"version": "1.0",
-                "{http://www.w3.org/2001/XMLSchema-instance}schemaLocation":
-                    f"{NS} LibroCV_v10.xsd"})
-    envio = etree.SubElement(root, f"{{{NS}}}EnvioLibro")
-    envio.set("ID", "LibroCompras")
-
-    car = etree.SubElement(envio, f"{{{NS}}}Caratula")
-    _limpiar = lambda r: r.replace(".", "").strip() if r else r
-    etree.SubElement(car, f"{{{NS}}}RutEmisorLibro").text   = _limpiar(emisor.rut)
-    etree.SubElement(car, f"{{{NS}}}RutEnvia").text          = _limpiar(rut_envia)
-    etree.SubElement(car, f"{{{NS}}}PeriodoTributario").text = periodo
-    etree.SubElement(car, f"{{{NS}}}FchResol").text          = fch_resol
-    etree.SubElement(car, f"{{{NS}}}NroResol").text          = "0"
-    etree.SubElement(car, f"{{{NS}}}TipoOperacion").text     = "COMPRA"
-    # FIX RECTIFICA (2026-07-07): cuando el período ya está "Libro Cerrado"
-    # (LTC), el SII rechaza un envío normal (TipoLibro=ESPECIAL) con LNC —
-    # es como querer entrar de nuevo a una fila ya cerrada. La forma
-    # correcta de corregir un libro cerrado es marcarlo como RECTIFICA y
-    # traer el CodAutRec que el propio SII entrega para autorizar la
-    # reapertura. Si no viene cod_aut_rec, seguimos mandando ESPECIAL
-    # (para el primer envío del período, cuando aún no está cerrado).
-    etree.SubElement(car, f"{{{NS}}}TipoLibro").text = "RECTIFICA" if cod_aut_rec else "ESPECIAL"
-    etree.SubElement(car, f"{{{NS}}}TipoEnvio").text         = "TOTAL"
-    etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = natencion
-    if cod_aut_rec:
-        # CodAutRec va AL FINAL de la Carátula según el <xs:sequence> del
-        # XSD oficial (después de FolioNotificacion) — igual que con
-        # OtrosImp/IVARetTotal, el orden en XML es parte del contrato.
-        etree.SubElement(car, f"{{{NS}}}CodAutRec").text = cod_aut_rec
-
-    resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
-    for tipo_doc in sorted(set(d["tipo"] for d in docs)):
-        dt = [d for d in docs if d["tipo"] == tipo_doc]
-        tot = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
-        etree.SubElement(tot, f"{{{NS}}}TpoDoc").text     = str(tipo_doc)
-        etree.SubElement(tot, f"{{{NS}}}TotDoc").text     = str(len(dt))
-        etree.SubElement(tot, f"{{{NS}}}TotMntExe").text  = str(sum(d["exe"] for d in dt))
-        etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text = str(sum(d["neto"] for d in dt))
-
-        # FIX REPARO LBR-3 (2026-07-06): TotMntIVA debe coincidir con la
-        # suma de MntIVA que REALMENTE aparece en cada Detalle — no con una
-        # regla genérica de "todo tipo_especial se excluye".
-        #
-        # Analogía: el Resumen es una caja que suma boleta por boleta; si
-        # una boleta cambia de monto, hay que sumarla de nuevo con el
-        # monto nuevo, no seguir tratándola como si aportara $0 porque
-        # antes aportaba $0.
-        #
-        # Solo DOS de los tres casos especiales llevan MntIVA=0 en el
-        # detalle (iva_uso_comun, iva_no_rec) → esos SÍ se excluyen.
-        # iva_ret_total (T46) ya NO va en 0 (fix del 2026-07-06: el SII
-        # exige MntIVA = Neto×19% siempre) → debe SUMARSE igual que un
-        # documento normal.
-        _tot_mnt_iva = sum(
-            d["iva"] for d in dt
-            if d.get("tipo_especial") not in ("iva_uso_comun", "iva_no_rec")
-        )
-        etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text  = str(_tot_mnt_iva)
-
-        # FIX REPARO 1: TotIVANoRec informa el IVA no recuperable por separado
-        t_nr = sum(d.get("iva_no_rec", 0) for d in dt)
-        if t_nr:
-            inr = etree.SubElement(tot, f"{{{NS}}}TotIVANoRec")
-            # Código de IVA no recuperable del documento (4 = entrega gratuita
-            # recibida, para la factura 67 del set). Se toma del dict, no fijo.
-            cod_nr = next(d.get("cod_iva_no_rec", 1) for d in dt if d.get("iva_no_rec", 0))
-            etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text    = str(cod_nr)
-            etree.SubElement(inr, f"{{{NS}}}TotOpIVANoRec").text  = str(sum(1 for d in dt if d.get("iva_no_rec", 0)))
-            etree.SubElement(inr, f"{{{NS}}}TotMntIVANoRec").text = str(t_nr)
-
-        t_uc = sum(d.get("iva_uso_comun", 0) for d in dt)
-        if t_uc:
-            etree.SubElement(tot, f"{{{NS}}}TotIVAUsoComun").text    = str(t_uc)
-            etree.SubElement(tot, f"{{{NS}}}FctProp").text            = FCT_PROP
-            etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(FCT_PROP)))
-
-        # FIX ESQUEMA (2026-07-06): en XML, a diferencia de un diccionario
-        # de Python, el ORDEN de los elementos importa cuando el XSD define
-        # una <xs:sequence> — es como una fila para el banco: si te saltas
-        # el orden de los números, no importa que lleves el papel correcto,
-        # igual te rechazan. El XSD exige TotOtrosImp ANTES que
-        # TotOpIVARetTotal/TotIVARetTotal — nosotros los escribíamos al
-        # revés, y eso causó el rechazo "ESQUEMA INVALIDO".
-        t_otro = sum(d.get("otro_imp_monto", 0) for d in dt if d.get("tipo_especial") == "iva_ret_total")
-        if t_otro:
-            toi = etree.SubElement(tot, f"{{{NS}}}TotOtrosImp")
-            etree.SubElement(toi, f"{{{NS}}}CodImp").text    = "40"
-            etree.SubElement(toi, f"{{{NS}}}TotMntImp").text = str(t_otro)
-            etree.SubElement(toi, f"{{{NS}}}TotCredImp").text = str(t_otro)
-
-        # Va DESPUÉS de TotOtrosImp en la secuencia del XSD (confirmado
-        # arriba). Mismo dato, solo cambia dónde se escribe en el XML.
-        t_ret = sum(d.get("iva_ret_total", 0) for d in dt)
-        if t_ret:
-            etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in dt if d.get("iva_ret_total", 0)))
-            etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_ret)
-
-        etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in dt))
-
-    for doc in docs:
-        det = etree.SubElement(envio, f"{{{NS}}}Detalle")
-        etree.SubElement(det, f"{{{NS}}}TpoDoc").text  = str(doc["tipo"])
-        etree.SubElement(det, f"{{{NS}}}NroDoc").text  = str(doc["folio"])
-        etree.SubElement(det, f"{{{NS}}}TasaImp").text = "19"
-        etree.SubElement(det, f"{{{NS}}}FchDoc").text  = doc["fecha"]
-        etree.SubElement(det, f"{{{NS}}}RUTDoc").text  = doc["rut_doc"]
-        etree.SubElement(det, f"{{{NS}}}RznSoc").text  = doc["razon"][:50]
-        if doc["exe"]:
-            etree.SubElement(det, f"{{{NS}}}MntExe").text = str(doc["exe"])
-        etree.SubElement(det, f"{{{NS}}}MntNeto").text = str(doc["neto"])
-
-        te = doc.get("tipo_especial")
-        if te == "iva_uso_comun":
-            etree.SubElement(det, f"{{{NS}}}MntIVA").text      = "0"
-            etree.SubElement(det, f"{{{NS}}}IVAUsoComun").text = str(doc["iva_uso_comun"])
-        elif te == "iva_no_rec":
-            # FIX REPARO 1: MntIVA=0, el monto va en IVANoRec
-            etree.SubElement(det, f"{{{NS}}}MntIVA").text = "0"
-            inr = etree.SubElement(det, f"{{{NS}}}IVANoRec")
-            etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc["cod_iva_no_rec"])
-            etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
-        elif te == "iva_ret_total":
-            # FIX ESQUEMA (2026-07-06): el envío volvió "RECHAZADO ESQUEMA
-            # INVALIDO". Revisando el XSD oficial línea por línea, el
-            # <xs:sequence> exige este orden exacto: ... Ley18211,
-            # OtrosImp, MntSinCred, IVARetTotal, IVARetParcial ... —
-            # es decir, <OtrosImp> va ANTES de <IVARetTotal>, y nosotros
-            # los escribíamos al revés. En XML el orden es parte del
-            # contrato (a diferencia de un dict en Python, donde el orden
-            # de las llaves no importa) — por eso pasaba de ser un
-            # "reparo de contenido" a un rechazo de forma.
-            etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
-            oi = etree.SubElement(det, f"{{{NS}}}OtrosImp")
-            etree.SubElement(oi, f"{{{NS}}}CodImp").text  = str(doc["otro_imp_cod"])
-            etree.SubElement(oi, f"{{{NS}}}TasaImp").text = str(doc["otro_imp_tasa"])
-            etree.SubElement(oi, f"{{{NS}}}MntImp").text  = str(doc["otro_imp_monto"])
-            etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
-        else:
-            etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
-
-        etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
-
-    etree.SubElement(envio, f"{{{NS}}}TmstFirma").text = tmst
-    xml_bytes = etree.tostring(root, encoding="ISO-8859-1",
-                               xml_declaration=True, pretty_print=True)
-    return xml_bytes.decode("ISO-8859-1").replace(
-        "<?xml version='1.0' encoding='ISO-8859-1'?>",
-        '<?xml version="1.0" encoding="ISO-8859-1"?>'
-    )
+logger = logging.getLogger("yepardtecore.cert_dinamica")
+router = APIRouter(prefix="/certificacion-dinamica", tags=["Certificacion Dinamica"])
 
 
-@router.post("/generar-xml", summary="Genera Libro de Compras N° Atención 4841545")
-async def generar_libro_compras(
-    emisor_id: int,
-    natencion: Optional[str] = "4919743",
-    periodo:   Optional[str] = "2026-05",
-    db: AsyncSession = Depends(get_db),
-):
+# ── Schemas de entrada ────────────────────────────────────────
+
+class ItemInput(BaseModel):
+    nombre:          str
+    descripcion:     str = ""
+    cantidad:        float = 1.0
+    precio_unitario: float = 0.0
+    descuento_pct:   float = 0.0
+    exento:          bool  = False
+    codigo:          str   = ""      # VlrCodigo (codigo interno)
+    unidad:          str   = "UN"    # UnmdItem
+
+class ReferenciaInput(BaseModel):
+    tipo_doc_ref: str | int   # "SET" o numero tipo DTE
+    folio_ref:    int
+    fecha_ref:    str         # YYYY-MM-DD
+    cod_ref:      int | None  = None   # 1=anula, 2=corrige giro, 3=corrige montos
+    razon_ref:    str         = ""
+    # num_caso_ref: caso del MISMO set al que apunta esta referencia
+    # Si está presente, el backend lo resuelve al folio real DESPUÉS de generarlos todos
+    num_caso_ref: int | None  = None
+
+class ReceptorInput(BaseModel):
+    rut:          str = "66666666-6"
+    razon_social: str = "Consumidor Final"
+    giro:         str = ""
+    direccion:    str = ""
+    comuna:       str = ""
+    ciudad:       str = ""
+    correo:       str = ""
+
+class CasoInput(BaseModel):
+    numero_caso:         int
+    tipo_dte:            int
+    receptor:            ReceptorInput = Field(default_factory=ReceptorInput)
+    items:               List[ItemInput] = []
+    referencias:         List[ReferenciaInput] = []
+    descuento_global_pct: float = 0.0
+    forma_pago:          int   = 1
+    indicador_traslado:  int   = 0
+    indicador_despacho:  int   = 0
+    forzar_monto_cero:   bool  = False
+    fecha_emision:       str   = ""    # vacío → fecha de hoy
+
+class SetInput(BaseModel):
+    natencion:     str
+    label:         str = ""
+    casos:         List[CasoInput]
+    fecha_emision: str = ""            # vacío → fecha de hoy
+
+class GenerarXMLRequest(BaseModel):
+    emisor_id: int
+    sets:      List[SetInput]          # uno o más sets del mismo archivo .txt
+    set_key:   str = ""                # "basico2", "exentas", "guias", etc. (informativo)
+
+
+# ── Helpers ───────────────────────────────────────────────────
+
+async def _get_emisor_y_cert(emisor_id: int, db: AsyncSession):
     emisor = await db.get(Emisor, emisor_id)
     if not emisor:
         raise HTTPException(404, f"Emisor {emisor_id} no encontrado")
-
-    res = await db.execute(
-        select(Certificado).where(Certificado.emisor_id == emisor_id).limit(1)
+    cert_result = await db.execute(
+        select(Certificado).where(
+            Certificado.emisor_id == emisor_id,
+            Certificado.activo == True,
+        ).limit(1)
     )
-    cert = res.scalar_one_or_none()
+    cert = cert_result.scalar_one_or_none()
     if not cert or not cert.certificado_p12:
-        raise HTTPException(400, "Sin certificado .p12")
+        raise HTTPException(400, "Sin certificado .p12 cargado")
+    return emisor, cert
 
-    rut_envia = cert.rut_firmante or emisor.rut
-    tmst      = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+def _caso_a_datos(caso: CasoInput, fecha: str) -> dict:
+    """Convierte un CasoInput del admin al formato que espera DTEService."""
+    fecha_caso = caso.fecha_emision or fecha
+
+    return {
+        "tipo_dte":            caso.tipo_dte,
+        "fecha_emision":       fecha_caso,
+        "forzar_monto_cero":   caso.forzar_monto_cero,
+        "forma_pago":          caso.forma_pago,
+        "indicador_traslado":  caso.indicador_traslado,
+        "indicador_despacho":  caso.indicador_despacho,
+        "descuento_global_pct": caso.descuento_global_pct,
+        "receptor": {
+            "rut":          caso.receptor.rut,
+            "razon_social": caso.receptor.razon_social,
+            "giro":         caso.receptor.giro,
+            "direccion":    caso.receptor.direccion,
+            "comuna":       caso.receptor.comuna,
+            "ciudad":       caso.receptor.ciudad,
+            "correo":       caso.receptor.correo,
+        },
+        "items": [
+            {
+                "nombre":          it.nombre,
+                "cantidad":        it.cantidad,
+                "precio_unitario": it.precio_unitario,
+                "descuento_pct":   it.descuento_pct,
+                "exento":          it.exento,
+                "codigo":          it.codigo,
+                "unidad":          it.unidad,
+            }
+            for it in caso.items
+        ],
+        "referencias": [
+            {
+                "tipo_doc_ref": ref.tipo_doc_ref,
+                "folio_ref":    ref.folio_ref,
+                "fecha_ref":    ref.fecha_ref or fecha_caso,
+                "cod_ref":      ref.cod_ref or 0,
+                "razon_ref":    ref.razon_ref,
+            }
+            for ref in caso.referencias
+        ],
+    }
+
+
+async def _emitir_casos(
+    casos: List[CasoInput],
+    fecha: str,
+    service: DTEService,
+    emisor_id: int,
+    natencion: str,
+) -> tuple[list, dict, list]:
+    """
+    Emite todos los casos de un set dinámicamente.
+
+    TWO-PASS para referencias cruzadas correctas:
+    - Pass 1: pre-asignar folios a cada caso (peek del CAF sin consumir)
+    - Pass 2: generar DTEs con folio_ref actualizado al folio real de cada caso
+
+    Esto resuelve REF-3-750 causado por folio_ref desactualizado del frontend.
+    """
+    xmls_firmados: list[str] = []
+    folios: dict[int, int] = {}
+    errores: list[str] = []
+
+    # ── Pass 1: pre-asignar folios ───────────────────────────────────────────
+    # Obtenemos el folio_actual de cada tipo de DTE y simulamos la secuencia
+    # para saber qué folio recibirá cada caso, sin consumirlos aún.
+    # Esto permite actualizar las referencias cruzadas antes de generar.
+    from app.models.caf import CAF
+
+    tipo_next: dict[int, int] = {}     # {tipo_dte: proximo_folio_disponible}
+    folio_por_caso: dict[int, int] = {}  # {numero_caso: folio_predicho}
+
+    for caso in casos:
+        tipo = caso.tipo_dte
+        if tipo not in tipo_next:
+            try:
+                resultado = await service.db.execute(
+                    select(CAF).where(
+                        CAF.emisor_id == emisor_id,
+                        CAF.tipo_dte  == tipo,
+                        CAF.activo    == True,
+                        CAF.ambiente  == "certificacion",
+                    ).order_by(CAF.folio_desde.asc())
+                )
+                cafs = resultado.scalars().all()
+                caf_disp = next((c for c in cafs if not c.esta_agotado), None)
+                tipo_next[tipo] = caf_disp.folio_actual if caf_disp else 0
+            except Exception:
+                tipo_next[tipo] = 0
+        if tipo_next[tipo]:
+            folio_por_caso[caso.numero_caso] = tipo_next[tipo]
+            tipo_next[tipo] += 1
+
+    logger.info(
+        f"[CERT DIN] Pass1 N°{natencion}: folios previstos por caso → {folio_por_caso}"
+    )
+
+    # ── Pass 2: generar DTEs con referencias resueltas ───────────────────────
+    for caso in casos:
+        for ref in caso.referencias:
+            tpo = str(ref.tipo_doc_ref).upper()
+            if tpo == "SET":
+                # Referencia al set (auto-referencia): folio = el propio DTE
+                # El frontend envía el valor predicho en asignarFolios() que puede
+                # estar desfasado si el CAF avanzó entre la carga y la generación.
+                # Lo corregimos aquí con el folio_actual real leído en Pass 1.
+                if caso.numero_caso in folio_por_caso:
+                    ref.folio_ref = folio_por_caso[caso.numero_caso]
+                    logger.info(
+                        f"[CERT DIN] Caso {caso.numero_caso} SET FolioRef corregido → {ref.folio_ref}"
+                    )
+            elif ref.num_caso_ref and ref.num_caso_ref in folio_por_caso:
+                # Referencia cruzada a otro caso del set
+                logger.info(
+                    f"[CERT DIN] Caso {caso.numero_caso} ref→caso {ref.num_caso_ref} "
+                    f"folio_ref resuelto a {folio_por_caso[ref.num_caso_ref]}"
+                )
+                ref.folio_ref = folio_por_caso[ref.num_caso_ref]
+
+        datos = _caso_a_datos(caso, fecha)
+        try:
+            r = await service.emitir(
+                emisor_id=emisor_id,
+                datos={**datos, "emisor_id": emisor_id},
+                auto_enviar=False,
+            )
+            xmls_firmados.append(r["xml_firmado"])
+            folios[caso.numero_caso] = r["folio"]
+            logger.info(
+                f"[CERT DIN] N°{natencion} caso {caso.numero_caso} OK "
+                f"T{caso.tipo_dte} folio={r['folio']} total=${r['monto_total']:,.0f}"
+            )
+        except Exception as e:
+            errores.append(f"Caso {caso.numero_caso}: {e}")
+            logger.error(f"[CERT DIN] Error caso {caso.numero_caso}: {e}", exc_info=True)
+
+    return xmls_firmados, folios, errores
+
+
+# ── Endpoint principal ────────────────────────────────────────
+
+@router.post(
+    "/generar-xml",
+    summary="Genera EnvioDTE dinámico desde datos del admin",
+    description="""
+Recibe los casos editados en el admin y genera el EnvioDTE firmado.
+No tiene datos hardcodeados — todo viene del body.
+
+Un request puede contener múltiples sets (basico, exentas, guias).
+Cada set genera su propio EnvioDTE independiente (un archivo por set).
+El response contiene el primer set generado.
+Para múltiples sets, llamar este endpoint una vez por set.
+    """,
+)
+async def generar_xml_dinamico(
+    body: GenerarXMLRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    emisor, cert = await _get_emisor_y_cert(body.emisor_id, db)
+    fecha_global = date.today().isoformat()
+    service      = DTEService(db)
+
+    # Procesar solo el primer set (llamar una vez por set desde el admin)
+    if not body.sets:
+        raise HTTPException(400, "No hay sets en el request")
+
+    set_data = body.sets[0]
+    fecha    = set_data.fecha_emision or fecha_global
+    natencion = set_data.natencion
+
+    xmls_firmados, folios, errores = await _emitir_casos(
+        casos     = set_data.casos,
+        fecha     = fecha,
+        service   = service,
+        emisor_id = body.emisor_id,
+        natencion = natencion,
+    )
+
+    if not xmls_firmados:
+        raise HTTPException(500,
+            f"No se generó ningún documento. Errores: {'; '.join(errores)}")
+
+    firma  = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
+    # Obtener resolución del emisor según su ambiente — dinámico por cliente
+    nro_resol, fch_resol = emisor.get_resolucion(emisor.ambiente)
+    sender = SIISender(
+        ambiente  = emisor.ambiente,
+        fch_resol = fch_resol,
+        nro_resol = nro_resol,
+    )
 
     try:
-        xml_str = _construir_libro_xml(emisor, rut_envia, natencion, periodo, tmst)
+        sobre_xml = await sender.construir_sobre(
+            dtes_xml     = xmls_firmados,
+            rut_emisor   = emisor.rut,
+            rut_enviador = firma.rut_certificado or emisor.rut,
+            firma_service= firma,
+        )
     except Exception as e:
-        raise HTTPException(500, f"Error construyendo libro: {e}")
-
-    firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
-    try:
-        xml_firmado = await firma.firmar_libro(xml_str)
-    except Exception as e:
-        raise HTTPException(500, f"Error firmando: {e}")
+        raise HTTPException(500, f"Error armando sobre: {e}")
 
     rut_limpio = emisor.rut.replace(".", "").replace("-", "")
-    nombre = f"LibroCompras_{natencion}_{rut_limpio}_{periodo}.xml"
-    return Response(
-        content    = xml_firmado.encode("ISO-8859-1"),
-        media_type = "application/octet-stream",
-        headers    = {"Content-Disposition": f'attachment; filename="{nombre}"'},
+    set_key    = body.set_key or "dinamico"
+    nombre     = f"EnvioDTE_{natencion}_{set_key}_{rut_limpio}_{fecha.replace('-','')}.xml"
+
+    logger.info(
+        f"[CERT DIN] Sobre N°{natencion} listo "
+        f"{len(xmls_firmados)}/{len(set_data.casos)} docs"
+        + (f" errores: {errores}" if errores else " ✓")
     )
+
+    return Response(
+        content    = sobre_xml.encode("ISO-8859-1"),
+        media_type = "application/octet-stream",
+        headers    = {
+            "Content-Disposition": f'attachment; filename="{nombre}"',
+            "X-Casos-Generados":   str(len(xmls_firmados)),
+            "X-Casos-Error":       str(len(errores)),
+            "X-Errores-Detalle":   " | ".join(errores) if errores else "",
+            "X-NroAtencion":       natencion,
+            "X-SetKey":            set_key,
+            "X-Folios":            str(folios),
+        },
+    )
+
+
+@router.post("/enviar", summary="Genera Y envía al SII dinámicamente")
+async def enviar_dinamico(
+    body: GenerarXMLRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    emisor, cert = await _get_emisor_y_cert(body.emisor_id, db)
+    fecha_global = date.today().isoformat()
+    service      = DTEService(db)
+
+    if not body.sets:
+        raise HTTPException(400, "No hay sets en el request")
+
+    set_data  = body.sets[0]
+    fecha     = set_data.fecha_emision or fecha_global
+    natencion = set_data.natencion
+
+    xmls_firmados, folios, errores = await _emitir_casos(
+        casos     = set_data.casos,
+        fecha     = fecha,
+        service   = service,
+        emisor_id = body.emisor_id,
+        natencion = natencion,
+    )
+
+    if not xmls_firmados:
+        raise HTTPException(500, f"No se generó ningún documento. Errores: {'; '.join(errores)}")
+
+    firma  = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
+    # Obtener resolución del emisor según su ambiente — dinámico por cliente
+    nro_resol, fch_resol = emisor.get_resolucion(emisor.ambiente)
+    sender = SIISender(
+        ambiente  = emisor.ambiente,
+        fch_resol = fch_resol,
+        nro_resol = nro_resol,
+    )
+
+    try:
+        sobre_xml = await sender.construir_sobre(
+            dtes_xml     = xmls_firmados,
+            rut_emisor   = emisor.rut,
+            rut_enviador = firma.rut_certificado or emisor.rut,
+            firma_service= firma,
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Error armando sobre: {e}")
+
+    try:
+        resultado = await sender.enviar_sobre(
+            sobre_xml    = sobre_xml,
+            rut_emisor   = emisor.rut,
+            rut_enviador = firma.rut_certificado or emisor.rut,
+            p12_bytes    = cert.certificado_p12,
+            password     = cert.certificado_password or "",
+            auth_p12_bytes = getattr(cert, "certificado_auth_p12", None),
+            auth_password  = getattr(cert, "certificado_auth_password", None),
+        )
+        return {
+            "estado":         resultado.get("estado"),
+            "track_id":       resultado.get("track_id"),
+            "mensaje":        resultado.get("mensaje"),
+            "natencion":      natencion,
+            "docs_generados": len(xmls_firmados),
+            "folios":         folios,
+            "errores":        errores,
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Error enviando al SII: {e}")
