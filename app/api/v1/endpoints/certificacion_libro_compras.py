@@ -54,7 +54,7 @@ DOCUMENTOS = [
 
 def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
                           periodo: str, tmst: str, fch_resol: str = "2026-04-19",
-                          docs_override=None) -> str:
+                          docs_override=None, cod_aut_rec: str | None = None) -> str:
     # El período tributario DEBE corresponder al mes de los documentos del
     # libro, no al mes en que se genera. Los documentos del set son de mayo
     # (2026-05-22), así que derivamos el período de su fecha y NO del parámetro
@@ -82,9 +82,21 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
     etree.SubElement(car, f"{{{NS}}}FchResol").text          = fch_resol
     etree.SubElement(car, f"{{{NS}}}NroResol").text          = "0"
     etree.SubElement(car, f"{{{NS}}}TipoOperacion").text     = "COMPRA"
-    etree.SubElement(car, f"{{{NS}}}TipoLibro").text         = "ESPECIAL"
+    # FIX RECTIFICA (2026-07-07): cuando el período ya está "Libro Cerrado"
+    # (LTC), el SII rechaza un envío normal (TipoLibro=ESPECIAL) con LNC —
+    # es como querer entrar de nuevo a una fila ya cerrada. La forma
+    # correcta de corregir un libro cerrado es marcarlo como RECTIFICA y
+    # traer el CodAutRec que el propio SII entrega para autorizar la
+    # reapertura. Si no viene cod_aut_rec, seguimos mandando ESPECIAL
+    # (para el primer envío del período, cuando aún no está cerrado).
+    etree.SubElement(car, f"{{{NS}}}TipoLibro").text = "RECTIFICA" if cod_aut_rec else "ESPECIAL"
     etree.SubElement(car, f"{{{NS}}}TipoEnvio").text         = "TOTAL"
     etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = natencion
+    if cod_aut_rec:
+        # CodAutRec va AL FINAL de la Carátula según el <xs:sequence> del
+        # XSD oficial (después de FolioNotificacion) — igual que con
+        # OtrosImp/IVARetTotal, el orden en XML es parte del contrato.
+        etree.SubElement(car, f"{{{NS}}}CodAutRec").text = cod_aut_rec
 
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
     for tipo_doc in sorted(set(d["tipo"] for d in docs)):
