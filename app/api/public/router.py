@@ -1858,7 +1858,12 @@ async def _generar_libro_compras_impl(
                         doc = {"tipo": d["tipo"], "folio": d["folio"], "fecha": _hoy_str,
                                "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
                                "neto": neto, "exe": exe, "iva": _iva(neto),
-                               "total": neto + _iva(neto) + exe, "tipo_especial": None}
+                               "total": neto + _iva(neto) + exe, "tipo_especial": None,
+                               # FIX DOCREF (2026-07-08): si el frontend mandó a qué
+                               # documento se refiere esta Nota de Crédito (viene del
+                               # parseo de la observación del set), lo propagamos.
+                               "tipo_doc_ref": d.get("tipo_doc_ref"),
+                               "folio_doc_ref": d.get("folio_doc_ref")}
                     _docs_override.append(doc)
         except Exception as _je:
             logger.warning(f"[LIBRO-COMPRAS] Error parseando documentos_json: {_je}")
