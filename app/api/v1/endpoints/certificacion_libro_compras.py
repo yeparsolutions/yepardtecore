@@ -82,14 +82,15 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
     etree.SubElement(car, f"{{{NS}}}FchResol").text          = fch_resol
     etree.SubElement(car, f"{{{NS}}}NroResol").text          = "0"
     etree.SubElement(car, f"{{{NS}}}TipoOperacion").text     = "COMPRA"
-    # FIX RECTIFICA (2026-07-07): cuando el período ya está "Libro Cerrado"
-    # (LTC), el SII rechaza un envío normal (TipoLibro=ESPECIAL) con LNC —
-    # es como querer entrar de nuevo a una fila ya cerrada. La forma
-    # correcta de corregir un libro cerrado es marcarlo como RECTIFICA y
-    # traer el CodAutRec que el propio SII entrega para autorizar la
-    # reapertura. Si no viene cod_aut_rec, seguimos mandando ESPECIAL
-    # (para el primer envío del período, cuando aún no está cerrado).
-    etree.SubElement(car, f"{{{NS}}}TipoLibro").text = "RECTIFICA" if cod_aut_rec else "ESPECIAL"
+    # FIX REEMPLAZO (2026-07-07): la propia confirmación del SII al
+    # entregar el CodAutRec dice literalmente "Tipo: ESPECIAL" — el
+    # código de reemplazo NO cambia el TipoLibro a RECTIFICA, solo
+    # autoriza reenviar un libro ESPECIAL que ya está "Cuadrado". Es
+    # como un duplicado de entrada al cine: sigue siendo la misma
+    # función (ESPECIAL), solo trae un sello de reemplazo (CodAutRec)
+    # pegado encima. TipoLibro se mantiene ESPECIAL siempre; lo único
+    # que cambia es si <CodAutRec> viene o no.
+    etree.SubElement(car, f"{{{NS}}}TipoLibro").text = "ESPECIAL"
     etree.SubElement(car, f"{{{NS}}}TipoEnvio").text         = "TOTAL"
     etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = natencion
     if cod_aut_rec:
