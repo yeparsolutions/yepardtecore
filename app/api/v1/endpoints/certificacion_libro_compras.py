@@ -100,8 +100,31 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
         etree.SubElement(car, f"{{{NS}}}CodAutRec").text = cod_aut_rec
 
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
-    for tipo_doc in sorted(set(d["tipo"] for d in docs)):
-        dt = [d for d in docs if d["tipo"] == tipo_doc]
+    # FIX REPARO "Numero de Lineas de Resumen No Cuadra" (2026-07-07):
+    # antes agrupábamos SOLO por Tipo de Documento, mezclando en una
+    # misma línea de resumen documentos normales con documentos de casos
+    # especiales del MISMO tipo (ej: Folio 234, Factura normal Tipo 30,
+    # se sumaba junto con Folio 781, Factura CON IVA Uso Común, también
+    # Tipo 30). El problema: el "Factor de Proporcionalidad" del IVA Uso
+    # Común aplica solo a ESA porción — mezclarla con una factura normal
+    # en la misma línea de resumen no tiene sentido matemático.
+    #
+    # Analogía: es como sumar en una sola casilla del balance las ventas
+    # "de contado" y las "a crédito con descuento" solo porque ambas son
+    # facturas — cada una necesita su propia fila, aunque compartan el
+    # mismo tipo de documento.
+    #
+    # Ahora agrupamos por (tipo, tipo_especial): cada caso especial recibe
+    # su PROPIA línea de resumen, separada de los documentos normales del
+    # mismo tipo. El orden de clasificación pone primero los "normales"
+    # (tipo_especial=None) y luego los especiales, para mantener un orden
+    # estable y predecible.
+    claves = sorted(
+        set((d["tipo"], d.get("tipo_especial")) for d in docs),
+        key=lambda k: (k[0], k[1] or "")
+    )
+    for tipo_doc, te_grupo in claves:
+        dt = [d for d in docs if d["tipo"] == tipo_doc and d.get("tipo_especial") == te_grupo]
         tot = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
         etree.SubElement(tot, f"{{{NS}}}TpoDoc").text     = str(tipo_doc)
         etree.SubElement(tot, f"{{{NS}}}TotDoc").text     = str(len(dt))
