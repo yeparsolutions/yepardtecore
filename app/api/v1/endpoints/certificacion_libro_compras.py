@@ -199,6 +199,16 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
         etree.SubElement(det, f"{{{NS}}}FchDoc").text  = doc["fecha"]
         etree.SubElement(det, f"{{{NS}}}RUTDoc").text  = doc["rut_doc"]
         etree.SubElement(det, f"{{{NS}}}RznSoc").text  = doc["razon"][:50]
+        # FIX DOCREF (2026-07-08): <TpoDocRef>/<FolioDocRef> van EXACTAMENTE
+        # aquí según la secuencia del XSD (después de RznSoc, antes de los
+        # montos) — verificado línea por línea contra LibroCV_v10.xsd.
+        # Sirven para que una Nota de Crédito diga a qué factura descuenta
+        # (ej. Folio 451 descuenta la Factura 234). Son opcionales
+        # (minOccurs=0): si el documento no referencia nada, simplemente
+        # no se escriben, sin afectar la validez del esquema.
+        if doc.get("tipo_doc_ref") and doc.get("folio_doc_ref"):
+            etree.SubElement(det, f"{{{NS}}}TpoDocRef").text   = str(doc["tipo_doc_ref"])
+            etree.SubElement(det, f"{{{NS}}}FolioDocRef").text = str(doc["folio_doc_ref"])
         if doc["exe"]:
             etree.SubElement(det, f"{{{NS}}}MntExe").text = str(doc["exe"])
         etree.SubElement(det, f"{{{NS}}}MntNeto").text = str(doc["neto"])
