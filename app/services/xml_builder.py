@@ -61,9 +61,30 @@ class ItemDTE:
         return bruto - bruto * (self.descuento_pct / 100)
 
     @property
+    def descuento_monto_int(self) -> int:
+        """Descuento redondeado para el XML (DescuentoMonto)."""
+        bruto = self.cantidad * self.precio_unitario
+        return _round_half_up(bruto * self.descuento_pct / 100)
+
+    @property
     def monto_item_int(self) -> int:
-        """Monto redondeado para el XML (MontoItem)."""
-        return _round_half_up(self.monto_item)
+        """Monto redondeado para el XML (MontoItem).
+
+        FIX REDONDEO (2026-07-14): antes esto se calculaba con su PROPIO
+        redondeo independiente — _round_half_up(bruto - bruto*pct/100) —
+        en vez de restar el DescuentoMonto YA redondeado. Cuando el
+        descuento cae justo en .5 (ej. 1207.5), el complemento también
+        cae en .5 (39042.5), y "redondear hacia arriba" a los DOS lados
+        de una división que debe sumar el total exacto SIEMPRE se pasa
+        por 1 (1208 + 39043 = 40251, uno más que el bruto real 40250).
+        Es como repartir una torta redondeando cada mitad hacia arriba:
+        terminas con más torta de la que existía.
+        Ahora MontoItem se calcula por RESTA del bruto entero menos el
+        descuento ya redondeado — así SIEMPRE suman exacto, sin
+        importar en qué punto caiga el redondeo.
+        """
+        bruto_int = _round_half_up(self.cantidad * self.precio_unitario)
+        return bruto_int - self.descuento_monto_int
 
 
 @dataclass
@@ -411,9 +432,7 @@ class XMLBuilder:
 
         if item.descuento_pct > 0:
             etree.SubElement(det, f"{{{NS}}}DescuentoPct").text   = f"{item.descuento_pct:.2f}"
-            etree.SubElement(det, f"{{{NS}}}DescuentoMonto").text = str(
-                _round_half_up(item.cantidad * item.precio_unitario * item.descuento_pct / 100)
-            )
+            etree.SubElement(det, f"{{{NS}}}DescuentoMonto").text = str(item.descuento_monto_int)
 
         etree.SubElement(det, f"{{{NS}}}MontoItem").text = str(item.monto_item_int)
 
