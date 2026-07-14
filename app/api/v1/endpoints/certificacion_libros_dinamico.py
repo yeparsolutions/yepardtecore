@@ -337,10 +337,22 @@ def _construir_libro_xml(
         if es_guias:
             etree.SubElement(det, f"{{{NS}}}Folio").text = str(doc["folio"])
             if doc.get("anulado"):
-                # Guía anulada: solo Folio + Anulado=2 + FchDoc, SIN montos
-                # (igual que el libro aprobado 4841547)
+                # FIX (2026-07-14): el comentario anterior decía "igual que
+                # el libro aprobado 4841547", pero al comparar ambos XML
+                # lado a lado, el libro REALMENTE aprobado SÍ incluía
+                # RUTDoc y RznSoc en su guía anulada (Folio 76) — el que
+                # generamos ahora los omitía. Es la diferencia estructural
+                # exacta entre el envío aceptado y el rechazado.
+                # El manual oficial (formato_lgd.pdf) solo exime "el resto
+                # de los campos" para Anulado=1 (anulado ANTES de enviar al
+                # SII); para Anulado=2 (nuestro caso, posterior al envío)
+                # no hay esa excepción.
                 etree.SubElement(det, f"{{{NS}}}Anulado").text = "2"
                 etree.SubElement(det, f"{{{NS}}}FchDoc").text = doc["fecha"]
+                if doc.get("rut"):
+                    etree.SubElement(det, f"{{{NS}}}RUTDoc").text = doc["rut"]
+                if doc.get("razon"):
+                    etree.SubElement(det, f"{{{NS}}}RznSoc").text = doc["razon"]
             else:
                 tpo_oper = doc.get("ind_traslado") or 1
                 etree.SubElement(det, f"{{{NS}}}TpoOper").text = str(tpo_oper)
