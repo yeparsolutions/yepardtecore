@@ -100,31 +100,28 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
         etree.SubElement(car, f"{{{NS}}}CodAutRec").text = cod_aut_rec
 
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
-    # FIX REPARO "Numero de Lineas de Resumen No Cuadra" (2026-07-07):
-    # antes agrupábamos SOLO por Tipo de Documento, mezclando en una
-    # misma línea de resumen documentos normales con documentos de casos
-    # especiales del MISMO tipo (ej: Folio 234, Factura normal Tipo 30,
-    # se sumaba junto con Folio 781, Factura CON IVA Uso Común, también
-    # Tipo 30). El problema: el "Factor de Proporcionalidad" del IVA Uso
-    # Común aplica solo a ESA porción — mezclarla con una factura normal
-    # en la misma línea de resumen no tiene sentido matemático.
+    # FIX REPARO "Libro no debe incluir Resumenes de Documento(s) -
+    # Repetido(s) TipoDoc:[X]" (2026-07-14):
     #
-    # Analogía: es como sumar en una sola casilla del balance las ventas
-    # "de contado" y las "a crédito con descuento" solo porque ambas son
-    # facturas — cada una necesita su propia fila, aunque compartan el
-    # mismo tipo de documento.
+    # El 2026-07-07 probamos separar cada caso especial en su propia línea
+    # de resumen (agrupando por tipo+tipo_especial), pensando que resolvía
+    # el reparo "Numero de Lineas de Resumen No Cuadra". El SII ahora nos
+    # corrige explícitamente lo contrario: el Libro NO debe tener más de
+    # una línea de resumen por (TipoDoc, TipoImp) — es decir, agrupar por
+    # tipo_especial estaba MAL. Volvemos a agrupar solo por TipoDoc.
     #
-    # Ahora agrupamos por (tipo, tipo_especial): cada caso especial recibe
-    # su PROPIA línea de resumen, separada de los documentos normales del
-    # mismo tipo. El orden de clasificación pone primero los "normales"
-    # (tipo_especial=None) y luego los especiales, para mantener un orden
-    # estable y predecible.
-    claves = sorted(
-        set((d["tipo"], d.get("tipo_especial")) for d in docs),
-        key=lambda k: (k[0], k[1] or "")
-    )
-    for tipo_doc, te_grupo in claves:
-        dt = [d for d in docs if d["tipo"] == tipo_doc and d.get("tipo_especial") == te_grupo]
+    # Analogía: es como un balance contable que exige una sola fila por
+    # cuenta —"Facturas Tipo 30"— sin importar si alguna de esas facturas
+    # tiene una condición especial adentro; la condición especial se
+    # informa con sub-campos DENTRO de esa misma fila (TotIVAUsoComun,
+    # TotIVANoRec, etc.), no abriendo una fila nueva.
+    #
+    # Los campos especiales (t_nr, t_uc más abajo) ya estaban preparados
+    # para sumar sobre el grupo completo sin problema — un documento
+    # normal simplemente aporta 0 a esos campos, así que fusionar el
+    # grupo no requiere tocar esa lógica.
+    for tipo_doc in sorted(set(d["tipo"] for d in docs)):
+        dt = [d for d in docs if d["tipo"] == tipo_doc]
         tot = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
         etree.SubElement(tot, f"{{{NS}}}TpoDoc").text     = str(tipo_doc)
         etree.SubElement(tot, f"{{{NS}}}TotDoc").text     = str(len(dt))
