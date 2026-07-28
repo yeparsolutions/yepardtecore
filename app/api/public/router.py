@@ -1850,7 +1850,12 @@ async def _generar_libro_compras_impl(
                                "rut_doc": "76354771-K", "razon": "PROVEEDOR SA",
                                "neto": neto, "exe": exe, "iva": _iva(neto),
                                "iva_ret_total": _iva(neto),
-                               "otro_imp_cod": 40, "otro_imp_tasa": 19,
+                               # CodImp=15 = "IVA retenido total" (código oficial SII
+                               # para retención total del IVA en factura de compra 45/46).
+                               # Antes estaba en 40, que NO existe en la tabla de códigos
+                               # del SII → causaba "IVA Retenido Total inadecuado" y, al
+                               # tratarlo como impuesto adicional, el reparo LBR-2 de MntTotal.
+                               "otro_imp_cod": 15, "otro_imp_tasa": 19,
                                "otro_imp_monto": _iva(neto),
                                "total": neto + exe,
                                "tipo_especial": "iva_ret_total"}
