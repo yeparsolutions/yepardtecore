@@ -45,7 +45,7 @@ DOCUMENTOS = [
 
     {"tipo": 46, "folio": 9, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
      "neto": 9474, "exe": 0, "iva": _iva(9474), "iva_ret_total": _iva(9474),
-     "otro_imp_cod": 40, "otro_imp_tasa": 19, "otro_imp_monto": _iva(9474),
+     "otro_imp_cod": 15, "otro_imp_tasa": 19, "otro_imp_monto": _iva(9474),
      "total": 9474, "tipo_especial": "iva_ret_total"},
 
     {"tipo": 60, "folio": 211, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
@@ -175,7 +175,10 @@ def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
         t_otro = sum(d.get("otro_imp_monto", 0) for d in dt if d.get("tipo_especial") == "iva_ret_total")
         if t_otro:
             toi = etree.SubElement(tot, f"{{{NS}}}TotOtrosImp")
-            etree.SubElement(toi, f"{{{NS}}}CodImp").text    = "40"
+            # CodImp=15 = "IVA retenido total" (código oficial SII). El 40 no
+            # existe en la tabla de códigos → reparo. Debe coincidir con el
+            # CodImp del detalle (doc["otro_imp_cod"]).
+            etree.SubElement(toi, f"{{{NS}}}CodImp").text    = "15"
             etree.SubElement(toi, f"{{{NS}}}TotMntImp").text = str(t_otro)
             etree.SubElement(toi, f"{{{NS}}}TotCredImp").text = str(t_otro)
 
