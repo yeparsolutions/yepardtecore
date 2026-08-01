@@ -966,56 +966,75 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
     # Tipos de DTE presentes en el set (ej. {33, 61, 56})
     tipos_set = {c.tipo_dte for c in datos.casos}
 
-    # Mapa tipo → datos de su CAF. Si cafs_por_tipo trae el tipo, se usa ese;
-    # si no, se cae al caf_base64 (compatibilidad con sets de un solo tipo).
-    caf_por_tipo = {}        # tipo → caf_xml_str
-    folio_actual_por_tipo = {}  # tipo → próximo folio a usar (contador vivo)
-    folio_max_por_tipo = {}   # tipo → último folio autorizado del CAF
+    # Mapa tipo → LISTA de CAFs (para poder abarcar VARIOS CAF del mismo tipo).
+    # cafs_por_tipo[tipo] puede venir como:
+    #   - un string base64 (formato antiguo: un solo CAF)          → lista de 1
+    #   - una lista de {caf_base64, folio_actual} (formato nuevo)  → varios CAF
+    # Cada CAF aporta sus folios disponibles; si uno no alcanza para todos los
+    # casos del tipo, se sigue con el siguiente. Cada documento se timbra con el
+    # CAF que CONTIENE su folio (clave: el TED se firma con la llave de ese CAF).
+    # Analogía: si una chequera se queda sin cheques a mitad del pago, se sigue
+    # con la siguiente chequera de la MISMA cuenta.
+    folio_stream_por_tipo = {}  # tipo → [(folio, caf_str), ...] en orden ascendente
     es_multitipo = len(tipos_set) > 1
+
+    def _folios_disponibles_caf(desde, hasta, actual):
+        """Folios usables de un CAF: desde folio_actual (si es válido) hasta hasta."""
+        start = int(actual) if (actual and desde <= int(actual) <= hasta) else desde
+        return range(start, hasta + 1)
+
     try:
+        folios_act = datos.folios_actuales_por_tipo or {}
         for tipo in tipos_set:
             cafs_in = datos.cafs_por_tipo or {}
-            b64_tipo = cafs_in.get(str(tipo)) or cafs_in.get(tipo)
-            if b64_tipo:
-                caf_str, f_desde, f_hasta = _parsear_caf_b64(b64_tipo)
+            entrada = cafs_in.get(str(tipo))
+            if entrada is None:
+                entrada = cafs_in.get(tipo)
+            folio_act_tipo = folios_act.get(str(tipo)) or folios_act.get(tipo)
+
+            # Normalizar la entrada a una lista de dicts {caf_base64, folio_actual}
+            if isinstance(entrada, list):
+                lista_cafs = list(entrada)
+            elif isinstance(entrada, str) and entrada:
+                lista_cafs = [{"caf_base64": entrada, "folio_actual": folio_act_tipo}]
             elif es_multitipo:
-                # Set con varios tipos pero falta el CAF de ESTE tipo. NO caer
-                # al caf_base64 (el del tipo principal) porque eso quemaría
-                # folios del tipo equivocado en silencio — el bug que veíamos.
-                # Mejor fallar claro para que se cargue el CAF correcto.
+                # Falta el CAF de ESTE tipo. NO caer al caf_base64 (el del tipo
+                # principal) porque quemaría folios del tipo equivocado.
                 raise HTTPException(400,
                     f"Falta el CAF del tipo {tipo} para este set. El sistema no "
                     f"puede usar el CAF de otro tipo. Verifica que tengas CAF de "
                     f"certificación cargado para el tipo {tipo}.")
             else:
-                # Set de un solo tipo: usar el CAF principal (compatibilidad)
-                caf_str, f_desde, f_hasta = _parsear_caf_b64(datos.caf_base64)
-            caf_por_tipo[tipo] = caf_str
-            # Folio inicial: si el cliente nos dice su folio_actual para este
-            # tipo (su contador vivo), partimos de ahí. Si no, del inicio del
-            # CAF. Esto evita reusar folios ya enviados al SII.
-            folios_act = datos.folios_actuales_por_tipo or {}
-            folio_act_tipo = folios_act.get(str(tipo)) or folios_act.get(tipo)
-            if folio_act_tipo and f_desde <= int(folio_act_tipo) <= f_hasta:
-                folio_actual_por_tipo[tipo] = int(folio_act_tipo)
-            else:
-                folio_actual_por_tipo[tipo] = f_desde
-            folio_max_por_tipo[tipo] = f_hasta
+                # Set de un solo tipo sin cafs_por_tipo: usar el CAF principal
+                lista_cafs = [{"caf_base64": datos.caf_base64, "folio_actual": folio_act_tipo}]
+
+            # Construir el stream de (folio, caf_str) del tipo, recorriendo los CAF.
+            stream = []
+            for cafd in lista_cafs:
+                b64 = cafd.get("caf_base64") if isinstance(cafd, dict) else cafd
+                actual = cafd.get("folio_actual") if isinstance(cafd, dict) else None
+                caf_str, f_desde, f_hasta = _parsear_caf_b64(b64)
+                for f in _folios_disponibles_caf(f_desde, f_hasta, actual):
+                    stream.append((f, caf_str))
+            # Garantizar orden ascendente por folio (los CAF pueden llegar
+            # desordenados; el timbre igual va con el caf_str de cada folio).
+            stream.sort(key=lambda t: t[0])
+            folio_stream_por_tipo[tipo] = stream
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(400, f"Error parseando CAF: {e}")
 
-    # Validar que cada tipo tenga folios suficientes para sus casos
+    # Validar que cada tipo tenga folios suficientes SUMANDO todos sus CAF
     casos_por_tipo = {}
     for c in datos.casos:
         casos_por_tipo[c.tipo_dte] = casos_por_tipo.get(c.tipo_dte, 0) + 1
     for tipo, n in casos_por_tipo.items():
-        disponibles = folio_max_por_tipo[tipo] - folio_actual_por_tipo[tipo] + 1
+        disponibles = len(folio_stream_por_tipo.get(tipo, []))
         if n > disponibles:
             raise HTTPException(400,
                 f"CAF del tipo {tipo} insuficiente: {n} casos pero solo "
-                f"{disponibles} folios disponibles")
+                f"{disponibles} folios disponibles (sumando todos los CAF del tipo)")
 
     fecha_str = datos.fecha or _hoy_chile()
     fecha_dt  = _date.fromisoformat(fecha_str)
@@ -1034,27 +1053,37 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
 
     xmls_timbrados = []
 
-    # ── Asignar el folio definitivo a cada caso, del CAF de SU tipo ──────────
+    # ── Asignar folio + CAF a cada caso, abarcando varios CAF si hace falta ──
     # Recorremos los casos en orden y a cada uno le damos el siguiente folio
-    # disponible de la chequera (CAF) de su tipo. Así el tipo 33 gasta folios
-    # del CAF 33, el 61 del CAF 61, etc., cada uno con su propia secuencia.
+    # disponible de su tipo, JUNTO con el CAF que lo contiene. Así un tipo puede
+    # consumir folios de varios CAF (el 1º hasta agotarlo, luego el 2º…), y cada
+    # documento queda ligado al CAF con que debe timbrarse.
     folio_de_caso = {}   # índice del caso → folio asignado
+    caf_de_caso   = {}   # índice del caso → CAF (str) que contiene ese folio
     folio_por_caso = {}  # numero_caso / sufijo → folio (para las referencias)
-    _contador = dict(folio_actual_por_tipo)  # copia para ir avanzando
+    _ptr = {tipo: 0 for tipo in tipos_set}  # puntero dentro del stream de cada tipo
     for j, c in enumerate(datos.casos):
-        folio_asignado = _contador[c.tipo_dte]
-        _contador[c.tipo_dte] += 1   # avanzar el contador SOLO de ese tipo
+        stream = folio_stream_por_tipo[c.tipo_dte]
+        folio_asignado, caf_de_este = stream[_ptr[c.tipo_dte]]
+        _ptr[c.tipo_dte] += 1
         folio_de_caso[j] = folio_asignado
+        caf_de_caso[j]   = caf_de_este
         folio_por_caso[str(c.numero_caso)] = folio_asignado
         folio_por_caso[str(j + 1)] = folio_asignado
 
-    # Resumen de folios usados por tipo (para la respuesta al cliente):
-    # cada tipo informa desde/hasta los folios que consumió de su CAF.
+    # Resumen de folios usados por tipo (para la respuesta al cliente). Como un
+    # tipo puede abarcar varios CAF, los folios pueden no ser contiguos: se
+    # informa el rango (min–max) y la lista exacta.
     folios_por_tipo = {}
+    _asignados_por_tipo = {}
+    for j, c in enumerate(datos.casos):
+        _asignados_por_tipo.setdefault(c.tipo_dte, []).append(folio_de_caso[j])
     for tipo in tipos_set:
-        ini = folio_actual_por_tipo[tipo]
-        fin = _contador[tipo] - 1   # último folio efectivamente asignado
-        folios_por_tipo[str(tipo)] = {"desde": ini, "hasta": fin}
+        fs = sorted(_asignados_por_tipo.get(tipo, []))
+        folios_por_tipo[str(tipo)] = (
+            {"desde": fs[0], "hasta": fs[-1], "folios": fs} if fs
+            else {"desde": None, "hasta": None, "folios": []}
+        )
 
     def _resolver_ref(caso_obj, folio_actual, _natencion="SET"):
         """Construye las referencias del documento. Siempre la referencia al
@@ -1154,12 +1183,12 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
         return 0
 
     for i, caso in enumerate(datos.casos):
-        folio = folio_de_caso[i]   # folio del CAF de SU tipo (33→CAF33, 61→CAF61...)
+        folio = folio_de_caso[i]   # folio asignado (puede venir de cualquier CAF del tipo)
 
         tipo_dte = caso.tipo_dte
         es_boleta = tipo_dte in TIPOS_BOLETA
-        # CAF correspondiente al tipo de este caso (cada tipo su chequera)
-        caf_xml_str = caf_por_tipo[tipo_dte]
+        # CAF que CONTIENE este folio — cada documento se timbra con SU CAF.
+        caf_xml_str = caf_de_caso[i]
 
         rut_recep = _norm_rut(caso.rut_receptor or "66666666-6")
         nom_recep = caso.nombre_receptor or "Consumidor Final"
