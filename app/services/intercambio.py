@@ -210,8 +210,14 @@ def generar_acuse_recibo(info, rut_responde, contacto, nombre_envio,
         etree.SubElement(rd, f"{{{NS_SII}}}RUTEmisor").text = d["rut_emisor"]
         etree.SubElement(rd, f"{{{NS_SII}}}RUTRecep").text  = d["rut_recep"]
         etree.SubElement(rd, f"{{{NS_SII}}}MntTotal").text  = d["mnt_total"]
-        etree.SubElement(rd, f"{{{NS_SII}}}EstadoRecepDTE").text = "0"
-        etree.SubElement(rd, f"{{{NS_SII}}}RecepDTEGlosa").text  = "DTE recibido conforme"
+        # Estado por DTE: 0 = recibido OK; 3 = RUT receptor no corresponde (el
+        # DTE viene dirigido a otro RUT, no al nuestro → hay que rechazarlo).
+        if d["rut_recep"] == rut_responde:
+            estado, glosa = "0", "DTE Recibido OK"
+        else:
+            estado, glosa = "3", "DTE No Recibido - Error en RUT Receptor"
+        etree.SubElement(rd, f"{{{NS_SII}}}EstadoRecepDTE").text = estado
+        etree.SubElement(rd, f"{{{NS_SII}}}RecepDTEGlosa").text  = glosa
 
     firmar_elemento(root, res, "Respuesta", priv, cert, cert_b64)
     return _serializar(root)
