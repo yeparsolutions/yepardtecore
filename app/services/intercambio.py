@@ -34,6 +34,14 @@ DECLARACION_LEY_19983 = (
 )
 
 
+def _norm_rut(r: str) -> str:
+    """RUT en formato SII: sin puntos, con guión, DV en mayúscula. El SII exige
+    el patrón [0-9]+-([0-9]|K) — cualquier punto lo rechaza."""
+    if not r:
+        return r
+    return r.replace(".", "").replace(" ", "").upper()
+
+
 # ─── Firma genérica (enveloped, RSA-SHA1) ────────────────────────────────────
 def _cargar_cert(p12_bytes: bytes, password: str):
     priv, cert, _ = pkcs12.load_key_and_certificates(
@@ -134,13 +142,13 @@ def parsear_envio_recibido(xml_bytes: bytes) -> dict:
             "tipo":       _t(idd, "TipoDTE"),
             "folio":      _t(idd, "Folio"),
             "fch_emis":   _t(idd, "FchEmis"),
-            "rut_emisor": _t(emi, "RUTEmisor"),
-            "rut_recep":  _t(rec, "RUTRecep"),
+            "rut_emisor": _norm_rut(_t(emi, "RUTEmisor")),
+            "rut_recep":  _norm_rut(_t(rec, "RUTRecep")),
             "mnt_total":  _t(tot, "MntTotal"),
         })
     return {
-        "rut_emisor_envio":   _c("RutEmisor"),
-        "rut_receptor_envio": _c("RutReceptor"),
+        "rut_emisor_envio":   _norm_rut(_c("RutEmisor")),
+        "rut_receptor_envio": _norm_rut(_c("RutReceptor")),
         "set_id":  set_id,
         "digest":  digest_set,
         "dtes":    dtes,
@@ -149,6 +157,12 @@ def parsear_envio_recibido(xml_bytes: bytes) -> dict:
 
 def _now():
     return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _norm_rut(r: str) -> str:
+    """RUT sin puntos, con guión y DV en mayúscula (como exige el esquema SII:
+    patrón [0-9]+-[0-9K]). La empresa puede tenerlo guardado con puntos."""
+    return (r or "").replace(".", "").replace(" ", "").strip().upper()
 
 
 def _caratula_resp(parent, rut_responde, rut_recibe, contacto, n_detalles, id_resp="1"):
@@ -272,6 +286,7 @@ def generar_resultado(info, rut_responde, contacto, p12_bytes, password) -> str:
 
 def generar_las_tres(xml_recibido: bytes, rut_responde, contacto, nombre_envio,
                      recinto, p12_bytes, password) -> dict:
+    rut_responde = _norm_rut(rut_responde)   # sin puntos (empresa puede tenerlo con puntos)
     info = parsear_envio_recibido(xml_recibido)
     return {
         "acuse_recibo": generar_acuse_recibo(info, rut_responde, contacto, nombre_envio, p12_bytes, password),
