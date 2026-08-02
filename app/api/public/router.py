@@ -1557,6 +1557,7 @@ async def generar_libro_desde_xml_publico(
     fch_resol:       str             = Form("2026-04-19"),
     nro_resol:       str             = Form("0"),
     folios_anulados: str             = Form(""),    # LibroGuías: folios anulados "76,77"
+    cod_aut_rec:     str             = Form(""),    # Código de reemplazo (rectificar período cerrado)
     auto_enviar:     bool            = Form(False), # True = enviar al SII; False = solo generar
     ambiente:        str             = Form("certificacion"),
     pfx_base64:      str             = Form(""),    # Certificado en base64 (stateless)
@@ -1653,6 +1654,7 @@ async def generar_libro_desde_xml_publico(
         fch_resol     = fch_resol,
         nro_resol     = nro_resol,
         rut_envia     = _rut_firmante_cert,
+        cod_aut_rec   = (cod_aut_rec or None),
     )
 
     firma = FirmaDigital(_p12_bytes, _p12_pwd)
@@ -2172,4 +2174,52 @@ async def generar_consumo_folios(
         "track_id": (resultado_envio or {}).get("track_id"),
         "estado":   (resultado_envio or {}).get("estado"),
         "mensaje":  (resultado_envio or {}).get("mensaje"),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  INTERCAMBIO DE INFORMACIÓN (certificación — paso posterior a la simulación)
+#  Recibe el EnvioDTE que mandó el SII y devuelve las TRES respuestas firmadas:
+#  acuse de recibo, recibo de mercaderías (Ley 19.983) y resultado comercial.
+# ═══════════════════════════════════════════════════════════════════════════
+@router.post("/intercambio/responder")
+async def intercambio_responder(
+    archivo:        UploadFile = File(...),          # XML EnvioDTE recibido del SII
+    pfx_base64:     str = Form(...),                 # certificado (stateless)
+    pfx_password:   str = Form(...),
+    rut_responde:   str = Form(...),                 # RUT de la empresa (receptor)
+    nombre_contacto: str = Form(""),
+    mail_contacto:  str = Form(""),
+    fono_contacto:  str = Form(""),
+    recinto:        str = Form("Casa Matriz"),       # recinto de recepción (Recibos)
+):
+    import base64 as _b64
+    from app.services import intercambio as _inter
+
+    xml_recibido = await archivo.read()
+    p12_bytes = _b64.b64decode(pfx_base64)
+    contacto = {"nombre": nombre_contacto, "mail": mail_contacto, "fono": fono_contacto}
+
+    try:
+        res = _inter.generar_las_tres(
+            xml_recibido   = xml_recibido,
+            rut_responde   = rut_responde,
+            contacto       = contacto,
+            nombre_envio   = archivo.filename or "ENVIO_DTE.xml",
+            recinto        = recinto,
+            p12_bytes      = p12_bytes,
+            password       = pfx_password,
+        )
+    except Exception as e:
+        raise HTTPException(400, f"Error generando respuestas de intercambio: {e}")
+
+    def _b64x(s): return _b64.b64encode(s.encode("ISO-8859-1")).decode()
+    return {
+        "acuse_recibo_xml":  res["acuse_recibo"],
+        "recibos_xml":       res["recibos"],
+        "resultado_xml":     res["resultado"],
+        "acuse_recibo_b64":  _b64x(res["acuse_recibo"]),
+        "recibos_b64":       _b64x(res["recibos"]),
+        "resultado_b64":     _b64x(res["resultado"]),
+        "dtes":              res["dtes"],
     }
