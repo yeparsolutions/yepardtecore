@@ -155,14 +155,14 @@ def _caratula_resp(parent, rut_responde, rut_recibe, contacto, n_detalles, id_re
     car = etree.SubElement(parent, f"{{{NS_SII}}}Caratula", version="1.0")
     etree.SubElement(car, f"{{{NS_SII}}}RutResponde").text = rut_responde
     etree.SubElement(car, f"{{{NS_SII}}}RutRecibe").text   = rut_recibe
+    etree.SubElement(car, f"{{{NS_SII}}}IdRespuesta").text = id_resp
+    etree.SubElement(car, f"{{{NS_SII}}}NroDetalles").text = str(n_detalles)
     if contacto.get("nombre"):
         etree.SubElement(car, f"{{{NS_SII}}}NmbContacto").text = contacto["nombre"]
     if contacto.get("fono"):
         etree.SubElement(car, f"{{{NS_SII}}}FonoContacto").text = contacto["fono"]
     if contacto.get("mail"):
         etree.SubElement(car, f"{{{NS_SII}}}MailContacto").text = contacto["mail"]
-    etree.SubElement(car, f"{{{NS_SII}}}IdRespuesta").text = id_resp
-    etree.SubElement(car, f"{{{NS_SII}}}NroDetalles").text = str(n_detalles)
     etree.SubElement(car, f"{{{NS_SII}}}TmstFirmaResp").text = _now()
 
 
@@ -216,7 +216,11 @@ def generar_recibos(info, rut_responde, contacto, recinto, p12_bytes, password) 
     etree.SubElement(car, f"{{{NS_SII}}}RutRecibe").text   = rut_recibe
     if contacto.get("nombre"):
         etree.SubElement(car, f"{{{NS_SII}}}NmbContacto").text = contacto["nombre"]
-    etree.SubElement(car, f"{{{NS_SII}}}FchResp").text = _now()
+    if contacto.get("fono"):
+        etree.SubElement(car, f"{{{NS_SII}}}FonoContacto").text = contacto["fono"]
+    if contacto.get("mail"):
+        etree.SubElement(car, f"{{{NS_SII}}}MailContacto").text = contacto["mail"]
+    etree.SubElement(car, f"{{{NS_SII}}}TmstFirmaEnv").text = _now()
 
     for i, d in enumerate(info["dtes"], start=1):
         recibo = etree.SubElement(setr, f"{{{NS_SII}}}Recibo", version="1.0")
