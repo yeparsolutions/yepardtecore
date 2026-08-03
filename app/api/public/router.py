@@ -2022,7 +2022,6 @@ class ConsumoFoliosIn(BaseModel):
 @router.post("/generar-consumo-folios")
 async def generar_consumo_folios(
     datos:  ConsumoFoliosIn,
-    emisor: Emisor = Depends(get_emisor_by_api_key),
     db:     AsyncSession = Depends(get_db),
 ):
     """Genera y opcionalmente envía el Reporte de Consumo de Folios al SII.
