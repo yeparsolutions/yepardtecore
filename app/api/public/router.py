@@ -1557,9 +1557,10 @@ async def enviar_sobre_directo(datos: EnviarSobreInput):
 @router.post("/generar-libro-desde-xml")
 async def generar_libro_desde_xml_publico(
     tipo_libro:      str             = Form(...),   # ventas | guias
-    natencion:       str             = Form(...),   # N° atención del libro (del .txt SII)
+    natencion:       str             = Form(""),    # N° atención (solo certificación; vacío en producción)
     periodo:         str             = Form(...),   # AAAA-MM
-    archivos:        list[UploadFile] = File(...),  # XML(s) de EnvioDTE aprobados
+    archivos:        list[UploadFile] = File(None),  # XML(s) de EnvioDTE aprobados (certificación)
+    documentos:      str             = Form(""),    # JSON de documentos (producción, sin XML)
     fch_resol:       str             = Form("2026-04-19"),
     nro_resol:       str             = Form("0"),
     folios_anulados: str             = Form(""),    # LibroGuías: folios anulados "76,77"
@@ -1606,24 +1607,42 @@ async def generar_libro_desde_xml_publico(
         if f.isdigit():
             folios_anulados_set.add(int(f))
 
-    # Parsear todos los XML subidos, sin duplicar folios
     todos_dtes = []
-    folios_vistos = set()
-    for archivo in archivos:
-        contenido = await archivo.read()
+    if archivos:
+        # ── Modo certificación: parsear los XML de EnvioDTE subidos ──────────
+        folios_vistos = set()
+        for archivo in archivos:
+            contenido = await archivo.read()
+            try:
+                dtes_xml = _parsear_dtes_desde_xml(contenido)
+            except ValueError as e:
+                raise HTTPException(400, f"Error en {archivo.filename}: {e}")
+            for d in dtes_xml:
+                key = (d["tipo_dte"], d["folio"])
+                if key not in folios_vistos:
+                    folios_vistos.add(key)
+                    d["anulado"] = d["folio"] in folios_anulados_set
+                    todos_dtes.append(_DTEFake(d))
+    elif documentos:
+        # ── Modo producción: documentos ya conocidos (de la BD del cliente),
+        # sin necesidad de re-parsear XML. Mismo _DTEFake, mismos campos.
+        import json as _json
         try:
-            dtes_xml = _parsear_dtes_desde_xml(contenido)
-        except ValueError as e:
-            raise HTTPException(400, f"Error en {archivo.filename}: {e}")
-        for d in dtes_xml:
-            key = (d["tipo_dte"], d["folio"])
+            docs_list = _json.loads(documentos)
+        except Exception as e:
+            raise HTTPException(400, f"documentos no es JSON válido: {e}")
+        folios_vistos = set()
+        for d in docs_list:
+            key = (int(d["tipo_dte"]), int(d["folio"]))
             if key not in folios_vistos:
                 folios_vistos.add(key)
-                d["anulado"] = d["folio"] in folios_anulados_set
+                d["anulado"] = bool(d.get("anulado")) or (d["folio"] in folios_anulados_set)
                 todos_dtes.append(_DTEFake(d))
+    else:
+        raise HTTPException(400, "Debes enviar 'archivos' (XML) o 'documentos' (JSON)")
 
     if not todos_dtes:
-        raise HTTPException(404, "No se encontraron DTEs válidos en los XML subidos")
+        raise HTTPException(404, "No se encontraron DTEs válidos para el libro")
 
     todos_dtes.sort(key=lambda x: (x.tipo_dte, x.folio))
 
