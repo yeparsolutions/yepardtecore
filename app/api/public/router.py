@@ -2067,7 +2067,7 @@ async def generar_consumo_folios(
     _e_b64 = _b64cf.b64encode(_nums.e.to_bytes((_nums.e.bit_length()+7)//8,"big")).decode()
 
     # Construir árbol XML completo con lxml
-    _nsmap = {None: NS_SII, "ds": NS_DS, "xsi": NS_XSI}
+    _nsmap = {None: NS_SII, "xsi": NS_XSI}
     _root  = _etree.Element(f"{{{NS_SII}}}ConsumoFolios", nsmap=_nsmap)
     _root.set("version", "1.0")
     _root.set(f"{{{NS_XSI}}}schemaLocation", NS_SII + " ConsumoFolio_v10.xsd")
@@ -2104,47 +2104,14 @@ async def generar_consumo_folios(
         _etree.SubElement(_rango, f"{{{NS_SII}}}Inicial").text = str(_r.desde)
         _etree.SubElement(_rango, f"{{{NS_SII}}}Final").text   = str(_r.hasta)
 
-    # Calcular digest del DocumentoConsumoFolios (en contexto del root)
-    _doc_c14n = _etree.tostring(_doc, method="c14n", exclusive=False)
-    _digest   = _b64cf.b64encode(_hs.sha1(_doc_c14n).digest()).decode()
-
-    # Construir SignedInfo
-    _si_str = (
-        "<ds:SignedInfo xmlns:ds=" + chr(34) + NS_DS + chr(34) + ">"
-        + "<ds:CanonicalizationMethod Algorithm=" + chr(34) + "http://www.w3.org/TR/2001/REC-xml-c14n-20010315" + chr(34) + "/>"
-        + "<ds:SignatureMethod Algorithm=" + chr(34) + "http://www.w3.org/2000/09/xmldsig#rsa-sha1" + chr(34) + "/>"
-        + "<ds:Reference URI=" + chr(34) + "#" + doc_id + chr(34) + ">"
-        + "<ds:Transforms><ds:Transform Algorithm=" + chr(34) + "http://www.w3.org/2000/09/xmldsig#enveloped-signature" + chr(34) + "/></ds:Transforms>"
-        + "<ds:DigestMethod Algorithm=" + chr(34) + "http://www.w3.org/2000/09/xmldsig#sha1" + chr(34) + "/>"
-        + "<ds:DigestValue>" + _digest + "</ds:DigestValue>"
-        + "</ds:Reference></ds:SignedInfo>"
-    )
-    # Agregar firma al árbol PRIMERO, luego calcular c14n del SignedInfo en contexto
-    _sig = _etree.SubElement(_root, f"{{{NS_DS}}}Signature")
-    _si_node = _etree.fromstring(_si_str.encode())
-    _sig.append(_si_node)
-
-    # SignatureValue placeholder
-    _sv = _etree.SubElement(_sig, f"{{{NS_DS}}}SignatureValue")
-    _sv.text = "PLACEHOLDER"
-
-    # Calcular c14n del SignedInfo YA INSERTADO en el árbol (prefijos pueden cambiar)
-    _si_in_tree = _sig.find(f"{{{NS_DS}}}SignedInfo")
-    _si_c14n = _etree.tostring(_si_in_tree, method="c14n", exclusive=False)
-    _sval    = _b64cf.b64encode(_priv.sign(_si_c14n, _pad.PKCS1v15(), _hashes.SHA1())).decode()
-    _sv.text = _sval
-    _ki = _etree.SubElement(_sig, f"{{{NS_DS}}}KeyInfo")
-    _kv = _etree.SubElement(_ki, f"{{{NS_DS}}}KeyValue")
-    _rsa = _etree.SubElement(_kv, f"{{{NS_DS}}}RSAKeyValue")
-    _etree.SubElement(_rsa, f"{{{NS_DS}}}Modulus").text  = _n_b64
-    _etree.SubElement(_rsa, f"{{{NS_DS}}}Exponent").text = _e_b64
-    _x5d = _etree.SubElement(_ki, f"{{{NS_DS}}}X509Data")
-    _etree.SubElement(_x5d, f"{{{NS_DS}}}X509Certificate").text = _cert_b64
-
-    xml_firmado = (
+    # Firma con el firmador Java PROBADO (el mismo de facturas y libros que el
+    # SII acepta), modo firmar-cof. Se construye el XML sin firma y firmar_cof
+    # cuelga la <Signature> correcta sobre el DocumentoConsumoFolios.
+    _unsigned = (
         '<?xml version="1.0" encoding="ISO-8859-1"?>\n'
         + _etree.tostring(_root, encoding="unicode")
     )
+    xml_firmado = await _firma_tmp.firmar_cof(_unsigned)
 
     xml_b64 = _b64cf.b64encode(xml_firmado.encode("ISO-8859-1")).decode()
 
