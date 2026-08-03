@@ -1196,10 +1196,16 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
         if es_boleta:
             items_b = []
             for it in caso.items:
-                # Para boletas el precio viene CON IVA, convertir a neto
-                # XMLBuilderBoleta espera precio_unitario = precio CON IVA (bruto)
-                # El builder internamente divide por 1.19 para obtener MntNeto
-                precio_bruto = it.precio_con_iva if it.precio_con_iva else round((it.precio_neto or 0) * 1.19)
+                # Para boletas AFECTAS el precio viene CON IVA, convertir a
+                # neto (el builder internamente divide por 1.19 para MntNeto).
+                # Para ítems EXENTOS no hay IVA que agregar ni quitar: el
+                # monto que llega en precio_con_iva/precio_neto YA es el
+                # final. Multiplicarlo por 1.19 (como se hacía antes, igual
+                # que a un afecto) inflaba el exento en un 19% de más.
+                if it.exento:
+                    precio_bruto = it.precio_con_iva or it.precio_neto or 0
+                else:
+                    precio_bruto = it.precio_con_iva if it.precio_con_iva else round((it.precio_neto or 0) * 1.19)
                 items_b.append(ItemBoleta(
                     nombre=it.nombre, cantidad=it.cantidad,
                     precio_unitario=precio_bruto,
