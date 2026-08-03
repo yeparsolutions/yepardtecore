@@ -195,7 +195,11 @@ def _construir_libro_xml(
         etree.SubElement(car, f"{{{NS}}}TipoOperacion").text = tipo_libro
         etree.SubElement(car, f"{{{NS}}}TipoLibro").text     = tipo_libro_caratula
     etree.SubElement(car, f"{{{NS}}}TipoEnvio").text         = "TOTAL"
-    etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = natencion
+    if natencion:
+        # FolioNotificacion: N° de atención — solo aplica a los sets de
+        # certificación (donde el SII te notifica y da un folio de
+        # atención). En producción, el envío mensual normal no lo tiene.
+        etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = natencion
     if cod_aut_rec:
         # CodAutRec va al final de la carátula (después de FolioNotificacion)
         etree.SubElement(car, f"{{{NS}}}CodAutRec").text = cod_aut_rec
