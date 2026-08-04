@@ -8,9 +8,19 @@ from datetime import datetime, timezone
 from app.db.base import get_db
 from app.models.emisor import Emisor
 from app.models.certificado import Certificado  # <-- Importar el modelo correcto
+from app.core.security import validar_api_key
 import re
 
 router = APIRouter(prefix="/certificados", tags=["Certificados Digitales"])
+
+def _verificar_dueno(emisor_id: int, emisor_autenticado: Emisor) -> None:
+    """Un emisor solo puede subir/ver SU PROPIO certificado — nunca el de otro.
+    Antes cualquiera sin autenticar podía SOBREESCRIBIR el certificado de
+    firma de cualquier empresa (emisor_id adivinable), lo que le habría
+    permitido firmar DTEs en su nombre. Es el hallazgo más grave de la
+    revisión de hoy."""
+    if emisor_autenticado.id != emisor_id:
+        raise HTTPException(status_code=403, detail="No autorizado para este emisor")
 
 def _extraer_rut_subject(subject_str: str) -> str:
     """Extrae el RUT del subject del certificado."""
@@ -27,8 +37,10 @@ async def subir_certificado(
     emisor_id: int,
     password: str = Form(...),
     archivo: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    emisor_auth: Emisor = Depends(validar_api_key),
 ):
+    _verificar_dueno(emisor_id, emisor_auth)
     # 1. Verificar que el emisor existe
     emisor = await db.get(Emisor, emisor_id)
     if not emisor:
@@ -84,7 +96,12 @@ async def subir_certificado(
     }
 
 @router.get("/{emisor_id}/info")
-async def info_certificado(emisor_id: int, db: AsyncSession = Depends(get_db)):
+async def info_certificado(
+    emisor_id: int,
+    db: AsyncSession = Depends(get_db),
+    emisor_auth: Emisor = Depends(validar_api_key),
+):
+    _verificar_dueno(emisor_id, emisor_auth)
     stmt = select(Certificado).where(Certificado.emisor_id == emisor_id)
     result = await db.execute(stmt)
     cert = result.scalar_one_or_none()
@@ -106,7 +123,8 @@ async def subir_certificado_auth(
     emisor_id: int,
     password: str = Form(...),
     archivo: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    emisor_auth: Emisor = Depends(validar_api_key),
 ):
     """
     Sube el certificado de AUTENTICACION SII separado del de firma.
@@ -114,6 +132,7 @@ async def subir_certificado_auth(
     por el SII para autenticarse, pero sí para firmar DTEs.
     Ejemplo: subir E-Sign aquí y Firmadox en /subir.
     """
+    _verificar_dueno(emisor_id, emisor_auth)
     emisor = await db.get(Emisor, emisor_id)
     if not emisor:
         raise HTTPException(status_code=404, detail="Emisor no encontrado")
