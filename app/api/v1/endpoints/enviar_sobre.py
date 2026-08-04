@@ -12,6 +12,7 @@ from app.models.emisor import Emisor
 from app.models.certificado import Certificado
 from app.services.sii_sender import SIISender
 from app.services.firma_digital import FirmaDigital
+from app.core.security import validar_api_key
 
 router = APIRouter(prefix="/enviar-sobre", tags=["Enviar Sobre"])
 
@@ -35,12 +36,21 @@ class EnviarSobreRequest(BaseModel):
 async def enviar_sobre_directo(
     body: EnviarSobreRequest,
     db:   AsyncSession = Depends(get_db),
+    emisor_auth: Emisor = Depends(validar_api_key),
 ):
     """Recibe un sobre XML firmado y lo envía directamente al SII.
     
     Modo stateful: usa emisor_id para buscar datos en BD.
     Modo stateless: recibe pfx_base64 + pfx_password + rut_emisor directamente.
     """
+    # Ambos modos usan body.emisor_id — en modo stateful para leer el
+    # certificado GUARDADO de ese emisor (riesgo de firmar/enviar en su
+    # nombre si no coincide), y en modo stateless para el cache del token
+    # de boleta (riesgo de contaminar el cache de otro emisor). Una sola
+    # verificación al inicio cubre los dos casos.
+    if emisor_auth.id != body.emisor_id:
+        raise HTTPException(status_code=403, detail="No autorizado para este emisor")
+
     import base64
 
     # ── Modo stateless: certificado viene en el request ───────────────────────
