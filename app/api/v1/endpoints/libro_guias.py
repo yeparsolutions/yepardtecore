@@ -36,6 +36,7 @@ from app.db.base import get_db
 from app.models.emisor import Emisor
 from app.models.certificado import Certificado
 from app.services.firma_digital import FirmaDigital
+from app.core.security import validar_api_key
 
 logger = logging.getLogger("yepardtecore.libro_guias")
 router = APIRouter(prefix="/libro-guias", tags=["Libro Guías"])
@@ -207,11 +208,14 @@ def _xml_libro_guias(emisor_rut: str, rut_envia: str,
 async def generar_libro_guias(
     req: LibroGuiasRequest,
     db: AsyncSession = Depends(get_db),
+    emisor_auth: Emisor = Depends(validar_api_key),
 ):
     """
     Genera el LibroGuia XML firmado según formato_lgd.pdf del SII.
     No lee DTEs de la BD — solo usa las guías del body.
     """
+    if emisor_auth.id != req.emisor_id:
+        raise HTTPException(status_code=403, detail="No autorizado para este emisor")
     emisor = await db.get(Emisor, req.emisor_id)
     if not emisor:
         raise HTTPException(404, f"Emisor {req.emisor_id} no encontrado")
