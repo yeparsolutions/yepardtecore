@@ -461,6 +461,7 @@ class FirmarYEnviarInput(BaseModel):
     referencias:  list[ReferenciaStateless] = []
     ambiente:     Optional[str] = None  # None → usa el del emisor; "certificacion" | "produccion"
     auto_enviar:  bool = True
+    observacion:  str = ""   # motivo de la Guía de Despacho (tipo 52) — determina IndTraslado/TipoDespacho
     folio_actual: Optional[int] = None  # Folio a usar (el contador lo lleva
                                         # el cliente). Si no viene, se usa el
                                         # inicio del rango del CAF. El CAF
@@ -617,6 +618,14 @@ async def firmar_y_enviar(
                 items         = items_input,
                 referencias   = refs_input,
                 ambiente      = datos.ambiente,
+                # Guía de Despacho (tipo 52): IndTraslado/TipoDespacho se
+                # derivan del motivo, igual que en el set de certificación.
+                # Para el resto de los tipos estos campos simplemente no
+                # se escriben en el XML (ver _build_encabezado: solo aplica
+                # si tipo_dte == 52), así que es seguro pasarlos siempre.
+                observacion           = datos.observacion,
+                indicador_traslado    = _ind_traslado(datos.observacion or ""),
+                indicador_despacho    = _ind_despacho(datos.observacion or ""),
             )
             builder = XMLBuilder(input_dte)
 
