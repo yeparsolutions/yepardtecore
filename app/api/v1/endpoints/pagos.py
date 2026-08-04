@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.db.base import get_db
 from app.models.emisor import Emisor
+from app.core.security import verificar_token
 
 logger = logging.getLogger("yepardtecore.pagos")
 router = APIRouter(prefix="/pagos", tags=["Pagos"])
@@ -308,15 +309,36 @@ async def buscar_por_email(
 
 # ── Consultar estado de pago ──────────────────────────────────
 
+def _verificar_jwt_emisor(request: Request, emisor_id: int) -> None:
+    """
+    estado_pago y dashboard devuelven la API key del emisor en la
+    respuesta — sin esto, cualquiera que supiera un emisor_id pagado
+    podía pedir su API key sin ninguna credencial (el hallazgo más
+    grave de la revisión, incluso peor que subir un certificado ajeno,
+    porque la API key es la llave maestra para todo lo demás).
+    Usa el mismo JWT que el desarrollador ya recibió al registrarse
+    (registro_desarrollador) — no rompe el flujo, el frontend ya lo
+    guarda desde el paso 1.
+    """
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Falta el token de sesión (Authorization: Bearer ...)")
+    payload = verificar_token(auth[len("Bearer "):])
+    if not payload or payload.get("emisor_id") != emisor_id:
+        raise HTTPException(status_code=403, detail="No autorizado para este emisor")
+
+
 @router.get("/estado/{emisor_id}")
 async def estado_pago(
     emisor_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """
     El frontend consulta este endpoint después de que MP redirige
     al usuario de vuelta al sitio. Si está pagado, devuelve la API key.
     """
+    _verificar_jwt_emisor(request, emisor_id)
     emisor = await db.get(Emisor, emisor_id)
     if not emisor:
         raise HTTPException(404, "Cuenta no encontrada")
@@ -342,12 +364,14 @@ async def estado_pago(
 @router.get("/dashboard/{emisor_id}")
 async def dashboard(
     emisor_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """
     Datos completos para el dashboard del desarrollador.
     Incluye: info de la cuenta, suscripción, métricas de uso y API key.
     """
+    _verificar_jwt_emisor(request, emisor_id)
     from app.models.dte import DTE
     from sqlalchemy import func, case
     from datetime import datetime, timezone
