@@ -689,6 +689,7 @@ async def firmar_y_enviar(
     # ── Enviar al SII ─────────────────────────────────────────────────────────
     track_id   = None
     estado_sii = "FIRMADO"
+    mensaje_sii = None
 
     if datos.auto_enviar:
         try:
@@ -775,10 +776,12 @@ async def firmar_y_enviar(
             )
             track_id   = resultado.get("track_id")
             estado_sii = resultado.get("estado", "ENVIADO")
-            logger.info(f"[STATELESS] track_id={track_id} estado={estado_sii}")
+            mensaje_sii = resultado.get("mensaje")
+            logger.info(f"[STATELESS] track_id={track_id} estado={estado_sii} mensaje={mensaje_sii}")
         except Exception as ex:
             logger.error(f"[STATELESS] Error enviando: {ex}", exc_info=True)
-            estado_sii = "ERROR_ENVIO"
+            estado_sii  = "ERROR_ENVIO"
+            mensaje_sii = str(ex)
 
     tipo_label = {
         33:"Factura Electrónica", 34:"Factura Exenta",
@@ -792,6 +795,7 @@ async def firmar_y_enviar(
         "xml_firmado": xml_firmado,
         "track_id":    track_id,
         "estado":      estado_sii,
+        "mensaje":     mensaje_sii,
         "ambiente":    datos.ambiente,
         "fecha":       fecha_str,
     }
