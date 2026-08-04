@@ -34,7 +34,16 @@ router = APIRouter(prefix="/dte", tags=["DTE — Documentos Tributarios"])
 class ItemInput(BaseModel):
     nombre:          str
     cantidad:        float = 1.0
-    precio_unitario: float
+    precio_unitario: float = Field(
+        ...,
+        description=(
+            "IMPORTANTE — la base cambia según tipo_dte: "
+            "para Boletas (39/41) va el precio CON IVA incluido (bruto), "
+            "el motor lo desglosa internamente. "
+            "Para Facturas/Guías/NC/ND (33/34/52/56/61) va el precio NETO "
+            "(sin IVA) — el motor lo agrega al calcular el total."
+        ),
+    )
     descuento_pct:   float = 0.0
     codigo:          str   = ""
     unidad:          str   = "UN"
