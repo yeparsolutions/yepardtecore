@@ -197,17 +197,23 @@ class SIISender:
             return {"track_id": None, "estado": "ERROR",
                     "mensaje": f"[etapa TOKEN] {e}"}
 
-        # Todos los documentos —incluidas las boletas— se envían al DTEUpload
-        # de maullin (cert) / palena (prod). Este es el endpoint que el SII
-        # aceptó históricamente para EnvioBOLETA (dio TrackID en certificación).
-        # El endpoint REST api.sii.cl/boleta.electronica.envio devolvía
-        # "Acceso Denegado (from client)", así que NO se usa.
-        # Para boletas: usar proxy LightNode si está configurado (Railway no alcanza maullin directamente)
+        # Boletas van por la plataforma REST DESACOPLADA del SII
+        # (boleta.electronica.envio) — el token de boleta obtenido arriba
+        # SOLO es válido ahí, no en el DTEUpload de facturas (por eso el
+        # intento anterior dio STATUS 5 "no autenticado" contra palena).
+        # El comentario viejo decía que esta API REST daba "Acceso Denegado",
+        # pero eso fue probado sin el flujo de token REST correcto (el de
+        # arriba); ahora que el token SÍ se obtiene bien, se usa la puerta
+        # que corresponde. SII_BOLETA_PROXY_URL queda como override manual
+        # por si hiciera falta (ej. un proxy en Chile), pero ya no es la
+        # única forma de llegar al endpoint de boletas.
         import os
         _proxy_url = os.environ.get("SII_BOLETA_PROXY_URL", "").strip()
         if es_boleta and _proxy_url:
             url_envio = _proxy_url
             logger.info(f"[SII ENVIO] Usando proxy boleta: {_proxy_url}")
+        elif es_boleta:
+            url_envio = SII_BOLETA_ENVIO_CERT if self.ambiente == "certificacion" else SII_BOLETA_ENVIO_PROD
         else:
             url_envio = self.url_upload
         rut_limpio  = self.limpiar_rut(rut_emisor)
@@ -227,6 +233,8 @@ class SIISender:
             "User-Agent": "Mozilla/4.0 (compatible; PROG 1.0; Windows NT 5.0; YeparDTEcore)",
             "Cookie":     f"TOKEN={token}",
         }
+        if es_boleta and not _proxy_url:
+            headers["Accept"] = "application/json"
         files = {
             "rutSender":  (None, env_num),
             "dvSender":   (None, dv_sender),
@@ -276,6 +284,10 @@ class SIISender:
 
             # Maullin/palena responden XML con <TRACKID> para todos los tipos
             # (DTE y boletas). Se parsea igual para ambos.
+            # La API REST de boletas responde JSON; el proxy (si se usa)
+            # sigue hablando el formato XML clásico de DTEUpload.
+            if es_boleta and not _proxy_url:
+                return self._parsear_respuesta_boleta_rest(response.text)
             return self._parsear_respuesta_upload(response.text)
 
         except httpx.TimeoutException:
