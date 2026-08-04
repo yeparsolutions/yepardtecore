@@ -26,14 +26,16 @@ SII_UPLOAD_CERT = "https://maullin.sii.cl/cgi_dte/UPL/DTEUpload"
 SII_UPLOAD_PROD = "https://palena.sii.cl/cgi_dte/UPL/DTEUpload"
 
 # Las BOLETAS se envían por una plataforma DESACOPLADA de la de facturas
-# (así lo exige el SII por el volumen de boletas). El endpoint es la API REST
-# de boletas, NO el DTEUpload de maullin/palena:
-#   Certificación: apicert.sii.cl/recursos/v1/boleta.electronica.envio
-#   Producción:    api.sii.cl/recursos/v1/boleta.electronica.envio
-# Enviar una boleta a palena (endpoint de facturas) da STATUS 5 aunque el
-# token sea válido — es la "puerta equivocada".
-SII_BOLETA_ENVIO_CERT = "https://apicert.sii.cl/recursos/v1/boleta.electronica.envio"
-SII_BOLETA_ENVIO_PROD = "https://api.sii.cl/recursos/v1/boleta.electronica.envio"
+# (así lo exige el SII por el volumen de boletas). Es la API REST de
+# boletas — PERO el token y el envío viven en DOS HOSTS DISTINTOS, no el
+# mismo (esto costó dos rondas de pruebas en producción descubrirlo):
+#   Token de boleta:  apicert.sii.cl (cert)  / api.sii.cl (prod)
+#   Envío de boleta:  pangal.sii.cl  (cert)  / rahue.sii.cl (prod)
+# Usar 'api'/'apicert' para el envío (en vez de 'rahue'/'pangal') da
+# HTTP 500 "Acceso Denegado (from client)" — no es un tema de autorización
+# de cuenta, es la puerta equivocada, igual que enviar una boleta a palena.
+SII_BOLETA_ENVIO_CERT = "https://pangal.sii.cl/recursos/v1/boleta.electronica.envio"
+SII_BOLETA_ENVIO_PROD = "https://rahue.sii.cl/recursos/v1/boleta.electronica.envio"
 
 SII_NS     = "http://www.sii.cl/SiiDte"
 XSI_NS     = "http://www.w3.org/2001/XMLSchema-instance"
