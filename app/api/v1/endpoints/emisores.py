@@ -11,7 +11,8 @@ from datetime import datetime, timedelta, timezone
 from app.db.base import get_db
 from app.models.emisor import Emisor
 from app.models.usuario import Usuario
-from app.core.security import hash_password, crear_access_token
+from app.core.security import hash_password, crear_access_token, validar_api_key
+from app.core.config import settings
 from app.services.email_service import enviar_email, email_verificacion
 import random
 from pydantic import BaseModel, EmailStr
@@ -53,15 +54,42 @@ class EmisorRespuesta(BaseModel):
         from_attributes = True
 
 
+# ── Autenticación ─────────────────────────────────────────────
+def _verificar_admin(request: Request) -> None:
+    """
+    Protege endpoints operativos (crear/listar emisores) — mismo secreto
+    que ya usas para /admin. Sin esto, cualquiera sin autenticar podía
+    crear emisores gratis (saltándose registro-desarrollador, que sí
+    cobra) y listar todas las empresas registradas en la plataforma.
+    """
+    secret = request.headers.get("X-Admin-Secret", "")
+    if secret != settings.MP_WEBHOOK_SECRET:
+        raise HTTPException(status_code=403, detail="No autorizado")
+
+
+def _verificar_dueno(emisor_id: int, emisor_autenticado: Emisor) -> None:
+    """
+    Un emisor solo puede ver/editar SUS PROPIOS datos — nunca los de otro.
+    Antes obtener_emisor/actualizar_emisor/actualizar_resolucion/folios no
+    pedían ninguna credencial: cualquiera podía consultar o incluso MODIFICAR
+    los datos de resolución SII de cualquier empresa con solo adivinar su ID.
+    """
+    if emisor_autenticado.id != emisor_id:
+        raise HTTPException(status_code=403, detail="No autorizado para este emisor")
+
+
 # ── Endpoints ─────────────────────────────────────────────────
 
 @router.post("/", response_model=EmisorRespuesta, status_code=status.HTTP_201_CREATED)
-async def crear_emisor(datos: EmisorCrear, db: AsyncSession = Depends(get_db)):
+async def crear_emisor(datos: EmisorCrear, request: Request, db: AsyncSession = Depends(get_db)):
     """
     Registra una nueva empresa emisora en YeparDTEcore.
     Genera automáticamente una API key única para que el emisor
     pueda autenticarse al llamar a la API.
+    Uso interno/operativo — el alta self-service de un desarrollador
+    externo pasa por /emisores/registro-desarrollador, no por aquí.
     """
+    _verificar_admin(request)
     # Verificar que el RUT no esté ya registrado
     resultado = await db.execute(select(Emisor).where(Emisor.rut == datos.rut))
     existente = resultado.scalar_one_or_none()
@@ -96,15 +124,21 @@ async def crear_emisor(datos: EmisorCrear, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/", response_model=list[EmisorRespuesta])
-async def listar_emisores(db: AsyncSession = Depends(get_db)):
-    """Lista todos los emisores registrados."""
+async def listar_emisores(request: Request, db: AsyncSession = Depends(get_db)):
+    """Lista todos los emisores registrados. Solo para operación interna."""
+    _verificar_admin(request)
     resultado = await db.execute(select(Emisor).where(Emisor.activo == True))
     return resultado.scalars().all()
 
 
 @router.get("/{emisor_id}", response_model=EmisorRespuesta)
-async def obtener_emisor(emisor_id: int, db: AsyncSession = Depends(get_db)):
-    """Obtiene los datos de un emisor por ID."""
+async def obtener_emisor(
+    emisor_id: int,
+    db: AsyncSession = Depends(get_db),
+    emisor_auth: Emisor = Depends(validar_api_key),
+):
+    """Obtiene los datos de un emisor por ID — solo el propio dueño puede verlos."""
+    _verificar_dueno(emisor_id, emisor_auth)
     resultado = await db.execute(select(Emisor).where(Emisor.id == emisor_id))
     emisor = resultado.scalar_one_or_none()
     if not emisor:
@@ -113,11 +147,16 @@ async def obtener_emisor(emisor_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{emisor_id}/folios")
-async def folios_disponibles(emisor_id: int, db: AsyncSession = Depends(get_db)):
+async def folios_disponibles(
+    emisor_id: int,
+    db: AsyncSession = Depends(get_db),
+    emisor_auth: Emisor = Depends(validar_api_key),
+):
     """
     Muestra cuántos folios quedan disponibles por tipo de DTE.
     Útil para saber cuándo hay que pedir un nuevo CAF al SII.
     """
+    _verificar_dueno(emisor_id, emisor_auth)
     from app.models.caf import CAF
     resultado = await db.execute(
         select(CAF).where(
@@ -166,11 +205,13 @@ async def actualizar_emisor(
     emisor_id: int,
     datos: EmisorUpdate,
     db: AsyncSession = Depends(get_db),
+    emisor_auth: Emisor = Depends(validar_api_key),
 ):
     """
     Actualiza los datos generales del emisor.
     Solo actualiza los campos que vienen en el body (PATCH semántico).
     """
+    _verificar_dueno(emisor_id, emisor_auth)
     emisor = await db.get(Emisor, emisor_id)
     if not emisor:
         raise HTTPException(404, "Emisor no encontrado")
@@ -205,10 +246,12 @@ async def actualizar_resolucion(
     emisor_id: int,
     datos: ResolucionUpdate,
     db: AsyncSession = Depends(get_db),
+    emisor_auth: Emisor = Depends(validar_api_key),
 ):
     """
     Actualiza los datos de resolución SII del emisor para cada ambiente.
     """
+    _verificar_dueno(emisor_id, emisor_auth)
     emisor = await db.get(Emisor, emisor_id)
     if not emisor:
         raise HTTPException(404, "Emisor no encontrado")
@@ -403,12 +446,14 @@ async def registro_desarrollador(
 async def liberar_app(
     emisor_id: int,
     db: AsyncSession = Depends(get_db),
+    emisor_auth: Emisor = Depends(validar_api_key),
 ):
     """
     Libera la vinculación de dominio de la API key.
     Después de esto, la key se puede usar desde otro dominio
     (se vinculará al nuevo en la primera llamada).
     """
+    _verificar_dueno(emisor_id, emisor_auth)
     emisor = await db.get(Emisor, emisor_id)
     if not emisor:
         raise HTTPException(404, "Emisor no encontrado")
