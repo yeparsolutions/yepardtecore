@@ -15,9 +15,19 @@ from pydantic import BaseModel
 
 from app.db.base import get_db
 from app.models.caf import CAF
+from app.models.emisor import Emisor
 from app.services.caf_service import CAFService
+from app.core.security import validar_api_key
 
 router = APIRouter(prefix="/caf", tags=["CAF — Códigos de Autorización de Folios"])
+
+
+def _verificar_dueno(emisor_id: int, emisor_autenticado: Emisor) -> None:
+    """Un emisor solo puede cargar/ver SUS PROPIOS CAF — nunca los de otro.
+    Antes cualquiera sin autenticar podía subir un CAF para cualquier
+    emisor_id, o ver el estado de sus folios."""
+    if emisor_autenticado.id != emisor_id:
+        raise HTTPException(status_code=403, detail="No autorizado para este emisor")
 
 
 # ── Schemas ───────────────────────────────────────────────────
@@ -40,7 +50,11 @@ class CAFCargarInput(BaseModel):
 # ── Endpoints ─────────────────────────────────────────────────
 
 @router.post("/cargar", status_code=201)
-async def cargar_caf(datos: CAFCargarInput, db: AsyncSession = Depends(get_db)):
+async def cargar_caf(
+    datos: CAFCargarInput,
+    db: AsyncSession = Depends(get_db),
+    emisor_auth: Emisor = Depends(validar_api_key),
+):
     """
     Carga un CAF (Código de Autorización de Folios) del SII.
 
@@ -55,6 +69,7 @@ async def cargar_caf(datos: CAFCargarInput, db: AsyncSession = Depends(get_db)):
     4. Descargar el XML del CAF
     5. Pegarlo en este endpoint
     """
+    _verificar_dueno(datos.emisor_id, emisor_auth)
     if datos.ambiente not in ("certificacion", "produccion"):
         raise HTTPException(status_code=400, detail="ambiente debe ser 'certificacion' o 'produccion'")
 
@@ -90,12 +105,14 @@ async def cargar_caf_archivo(
     emisor_id: int  = Form(...),
     ambiente:  str  = Form("certificacion"),
     archivo:   UploadFile = File(..., description="Archivo XML del CAF"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    emisor_auth: Emisor = Depends(validar_api_key),
 ):
     """
     Carga un CAF desde un archivo XML subido directamente.
     Alternativa a /cargar para cuando el frontend sube el archivo.
     """
+    _verificar_dueno(emisor_id, emisor_auth)
     if not archivo.filename.endswith(".xml"):
         raise HTTPException(status_code=400, detail="El archivo debe ser .xml")
 
@@ -141,8 +158,13 @@ async def validar_caf(datos: dict):
 
 
 @router.get("/emisor/{emisor_id}")
-async def listar_cafs(emisor_id: int, db: AsyncSession = Depends(get_db)):
+async def listar_cafs(
+    emisor_id: int,
+    db: AsyncSession = Depends(get_db),
+    emisor_auth: Emisor = Depends(validar_api_key),
+):
     """Lista todos los CAFs de un emisor."""
+    _verificar_dueno(emisor_id, emisor_auth)
     resultado = await db.execute(
         select(CAF).where(CAF.emisor_id == emisor_id).order_by(CAF.tipo_dte, CAF.folio_desde)
     )
@@ -174,12 +196,14 @@ async def listar_cafs(emisor_id: int, db: AsyncSession = Depends(get_db)):
 async def folios_disponibles(
     emisor_id: int,
     ambiente: str = "certificacion",
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    emisor_auth: Emisor = Depends(validar_api_key),
 ):
     """
     Resumen rápido de folios disponibles por tipo de DTE.
     Úsalo para mostrar en el dashboard cuántos folios quedan.
     """
+    _verificar_dueno(emisor_id, emisor_auth)
     service = CAFService(db)
     estado  = await service.estado_folios(emisor_id, ambiente)
 
