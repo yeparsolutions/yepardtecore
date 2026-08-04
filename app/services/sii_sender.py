@@ -166,8 +166,17 @@ class SIISender:
         #
         # BOLETAS: usan su propio token (rahue/maullin2, persistido en BD). Si
         # se usara el token DTE → STATUS 7. Por eso ramificamos según es_boleta.
+        #
+        # FIX: el comentario ya decía esto, pero el código de abajo llamaba
+        # SIEMPRE a self._obtener_token() (el token DTE estándar), incluso
+        # para boletas — nunca se ejecutaba la rama de boleta. Por eso las
+        # boletas de producción venían recibiendo un token DTE normal y el
+        # SII las rechazaba con STATUS 7 / SCH-00001 "Invalid Schema Name".
         async def _pedir_token():
-            # Token DTE estándar (palena/maullin) para todos los tipos
+            if es_boleta:
+                return await self._obtener_token_boleta(
+                    token_p12, token_pwd, db=db, emisor_id=emisor_id,
+                )
             return await self._obtener_token(token_p12, token_pwd)
 
         try:
@@ -544,7 +553,8 @@ class SIISender:
         return "prueba"
 
     async def _obtener_token_boleta(self, p12_bytes: bytes = None,
-                                    password: str = None) -> str:
+                                    password: str = None,
+                                    db=None, emisor_id: int = None) -> str:
         """
         Token específico para boletas electrónicas.
         Usa maullin2.sii.cl (cert) o rahue.sii.cl (prod) — endpoint REST.
@@ -552,6 +562,8 @@ class SIISender:
         """
         if p12_bytes and password:
             from app.services.sii_auth import obtener_token_boleta_cached
-            return await obtener_token_boleta_cached(p12_bytes, password, self.ambiente)
+            return await obtener_token_boleta_cached(
+                p12_bytes, password, self.ambiente, db=db, emisor_id=emisor_id,
+            )
         logger.warning("[SII AUTH BOLETA] Usando token 'prueba' — sin certificado")
         return "prueba"
