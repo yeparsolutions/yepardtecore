@@ -185,8 +185,22 @@ def _construir_libro_xml(
     etree.SubElement(car, f"{{{NS}}}PeriodoTributario").text = periodo
     etree.SubElement(car, f"{{{NS}}}FchResol").text          = fch_resol
     etree.SubElement(car, f"{{{NS}}}NroResol").text          = nro_resol
-    # TipoLibro: RECTIFICA solo si viene código de reemplazo del SII
-    tipo_libro_caratula = "RECTIFICA" if cod_aut_rec else "ESPECIAL"
+    # TipoLibro, según la documentación oficial del SII (formato_iecv.pdf):
+    #   MENSUAL  = libro regular del período, el que se envía cada mes.
+    #   ESPECIAL = archivo que el SII pidió por notificación (ej. un set
+    #              de certificación con N° de atención) — NO es lo mismo
+    #              que la declaración mensual normal, aunque durante mucho
+    #              tiempo este código usó "ESPECIAL" para ambos casos.
+    #   RECTIFICA = reemplaza un envío anterior, con CodAutRec.
+    # `natencion` ya distingue los dos mundos sin agregar un parámetro
+    # nuevo: certificación siempre manda un N° de atención real; producción
+    # (el envío mensual normal) lo manda vacío.
+    if cod_aut_rec:
+        tipo_libro_caratula = "RECTIFICA"
+    elif natencion:
+        tipo_libro_caratula = "ESPECIAL"
+    else:
+        tipo_libro_caratula = "MENSUAL"
     if es_guias:
         # LibroGuia: TipoLibro directo, sin TipoOperacion
         etree.SubElement(car, f"{{{NS}}}TipoLibro").text = tipo_libro_caratula
