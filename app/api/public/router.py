@@ -1669,7 +1669,7 @@ async def generar_libro_desde_xml_publico(
 
     logger.warning(
         f"[LIBRO-PUB] {tipo_libro} emisor={emisor.rut} natencion={natencion} "
-        f"archivos={len(archivos)} dtes={len(todos_dtes)}"
+        f"archivos={len(archivos) if archivos else 0} dtes={len(todos_dtes)}"
     )
 
     # Extraer RUT empresa y RUT firmante del certificado
