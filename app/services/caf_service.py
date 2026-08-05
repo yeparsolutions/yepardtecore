@@ -232,17 +232,30 @@ class CAFService:
                 "Solicita un nuevo CAF al SII en sii.cl."
             )
 
-        # Tomar folio actual y avanzar contador (UPDATE atómico)
-        folio_asignado = caf_disponible.folio_actual
-
-        await self.db.execute(
+        # Tomar el folio y avanzar el contador en UNA sola sentencia atómica.
+        # FIX CONCURRENCIA: antes, folio_asignado se leía de
+        # caf_disponible.folio_actual — el valor cargado en memoria por el
+        # SELECT de arriba. El UPDATE de abajo sí era atómico a nivel de
+        # base de datos, pero eso no importaba: si dos requests llegaban
+        # casi al mismo tiempo, AMBOS leían el mismo folio de memoria antes
+        # de que cualquiera alcanzara a incrementarlo, y los dos terminaban
+        # emitiendo el mismo folio (el contador en la tabla quedaba
+        # correcto igual, el problema era el valor que se USABA).
+        # Ahora el folio asignado sale del RETURNING de este mismo UPDATE
+        # — Postgres bloquea la fila durante la transacción, así que dos
+        # requests concurrentes jamás pueden llevarse el mismo valor.
+        resultado_update = await self.db.execute(
             update(CAF)
             .where(CAF.id == caf_disponible.id)
             .values(folio_actual=CAF.folio_actual + 1)
+            .returning(CAF.folio_actual)
         )
+        folio_actual_nuevo = resultado_update.scalar_one()
+        folio_asignado     = folio_actual_nuevo - 1
 
-        # Calcular folios restantes después de este
-        folios_restantes = caf_disponible.folios_disponibles - 1
+        # Calcular folios restantes con el valor real devuelto por la BD,
+        # no con el que estaba cargado en memoria antes del UPDATE.
+        folios_restantes = caf_disponible.folio_hasta - folio_actual_nuevo + 1
 
         # Alerta de folios bajos
         if folios_restantes <= UMBRAL_ALERTA_FOLIOS:
@@ -251,8 +264,8 @@ class CAFService:
                 f"tipo={tipo_dte} quedan={folios_restantes} folios"
             )
 
-        # Desactivar si se agotó
-        if caf_disponible.folio_actual >= caf_disponible.folio_hasta:
+        # Desactivar si se agotó (con el valor real post-UPDATE)
+        if folio_actual_nuevo > caf_disponible.folio_hasta:
             await self.db.execute(
                 update(CAF)
                 .where(CAF.id == caf_disponible.id)
