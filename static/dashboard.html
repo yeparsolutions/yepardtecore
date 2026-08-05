@@ -1284,7 +1284,10 @@ async function cargar() {
     if (!emisorId) { window.location.href = '/onboarding'; return; }
 
     try {
-        const res = await fetch(`/v1/pagos/dashboard/${emisorId}`);
+        const token = localStorage.getItem('yepar_access_token');
+        const res = await fetch(`/v1/pagos/dashboard/${emisorId}`, {
+            headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        });
         if (!res.ok) { window.location.href = '/onboarding'; return; }
         render(await res.json());
     } catch(e) {
@@ -1432,7 +1435,7 @@ async function renovar() {
 }
 
 function logout() {
-    ['yepar_emisor_id','yepar_email','yepar_dev_nombre'].forEach(k => localStorage.removeItem(k));
+    ['yepar_emisor_id','yepar_email','yepar_dev_nombre','yepar_access_token'].forEach(k => localStorage.removeItem(k));
     window.location.href = '/onboarding';
 }
 
