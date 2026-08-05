@@ -148,7 +148,11 @@ async def login(datos: LoginInput, db: AsyncSession = Depends(get_db)):
     usuario.ultimo_login = datetime.now(timezone.utc)
     await db.commit()
 
-    token = crear_access_token({"sub": str(usuario.id), "email": usuario.email})
+    token = crear_access_token({
+        "sub":       str(usuario.id),
+        "email":     usuario.email,
+        "emisor_id": usuario.emisor_id,
+    })
 
     return {
         "access_token": token,
