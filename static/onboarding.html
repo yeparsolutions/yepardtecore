@@ -649,6 +649,10 @@ async function doLogin() {
         const data = await api('/v1/auth/login', { email, password: pass });
         state.email       = email;
         state.accessToken = data.access_token;
+        // Sin esto, dashboard.html no tiene forma de mandar el token que
+        // ahora exigen /v1/pagos/dashboard y /v1/pagos/estado — se perdía
+        // al navegar a otra página (la variable de JS no sobrevive el salto).
+        localStorage.setItem('yepar_access_token', data.access_token);
         hideLoader();
 
         if (!data.verificado) {
@@ -807,6 +811,13 @@ async function doRegistrar() {
         localStorage.setItem('yepar_emisor_id', data.emisor_id);
         localStorage.setItem('yepar_dev_nombre', v('u_nombre').trim());
         localStorage.setItem('yepar_email', v('u_email').trim().toLowerCase());
+        // El token también — sin esto, al volver de Mercado Pago
+        // (una salida real del sitio, no sobrevive ninguna variable de JS)
+        // no hay forma de autenticar la consulta de estado de pago.
+        if (data.access_token) {
+            state.accessToken = data.access_token;
+            localStorage.setItem('yepar_access_token', data.access_token);
+        }
 
         hideLoader();
 
@@ -977,7 +988,10 @@ async function esperarConfirmacion(emisorId, maxIntentos = 6) {
     for (let i = 0; i < maxIntentos; i++) {
         await new Promise(r => setTimeout(r, 3000));
         try {
-            const res = await fetch(`/v1/pagos/estado/${emisorId}`);
+            const token = localStorage.getItem('yepar_access_token');
+            const res = await fetch(`/v1/pagos/estado/${emisorId}`, {
+                headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+            });
             const data = await res.json();
             if (data.pagado) {
                 state.apiKey = data.api_key;
