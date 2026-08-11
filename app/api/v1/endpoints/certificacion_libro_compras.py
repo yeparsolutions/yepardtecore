@@ -1,326 +1,294 @@
-# app/api/v1/endpoints/libro_compras.py
-# ═══════════════════════════════════════════════════════════════════
-# Endpoint LIMPIO para Libro de Compras
-#
-# POST /v1/libro-compras
-# Body: { emisor_id, natencion, periodo, documentos: [...] }
-#
-# Orden correcto en ResumenPeriodo (LibroCV_v10.xsd):
-#   TotMntExe → TotMntNeto → TotMntIVA → TotIVANoRec → TotIVAUsoComun
-#   → FctProp → TotCredIVAUsoComun → TotOpIVARetTotal → TotIVARetTotal
-#   → TotMntTotal
-# ═══════════════════════════════════════════════════════════════════
+# app/api/v1/endpoints/certificacion_libro_compras.py
+# Libro de Compras con lógica especial: IVA uso común, no recuperable, retención
 
 import logging
 from datetime import datetime
-from typing import List
-
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
-from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from lxml import etree
 
 from app.db.base import get_db
 from app.models.emisor import Emisor
 from app.models.certificado import Certificado
+from sqlalchemy import select
 from app.services.firma_digital import FirmaDigital
-from app.core.security import validar_api_key
 
-logger = logging.getLogger("yepardtecore.libro_compras")
-router = APIRouter(prefix="/libro-compras", tags=["Libro Compras"])
+logger = logging.getLogger("yepardtecore.cert_libro_compras")
+router = APIRouter(prefix="/certificacion-libro-compras", tags=["Certificacion Libro Compras"])
 
-NS = "http://www.sii.cl/SiiDte"
+NS        = "http://www.sii.cl/SiiDte"
+RUT_PROV  = "76354771-K"
+FCT_PROP  = "0.60"
 
+def _iva(n): return round(n * 0.19)
 
-# ── Modelos ───────────────────────────────────────────────────────────────────
+DOCUMENTOS = [
+    # Set 4919743. Montos exactos del TXT del SII.
+    {"tipo": 30, "folio": 234, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
+     "neto": 18269, "exe": 0, "iva": _iva(18269), "total": 18269 + _iva(18269), "tipo_especial": None},
 
-class DocumentoCompra(BaseModel):
-    tipo: int
-    folio: int
-    fecha: str
-    rut: str = "66666666-6"
-    razon: str = ""
-    exe: int = 0
-    neto: int = 0
-    iva: int = 0
-    tipo_especial: str = ""
-    iva_uso_comun: int = 0
-    fct_prop: str = "0.60"
-    iva_no_rec: int = 0
-    cod_iva_no_rec: int = 9
-    iva_ret_total: int = 0
-    total: int = 0
+    {"tipo": 33, "folio": 32, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
+     "neto": 6059, "exe": 8674, "iva": _iva(6059), "total": 6059 + _iva(6059) + 8674, "tipo_especial": None},
 
+    {"tipo": 30, "folio": 781, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
+     "neto": 29749, "exe": 0, "iva": 0, "iva_uso_comun": _iva(29749),
+     "total": 29749 + _iva(29749), "tipo_especial": "iva_uso_comun"},
 
-class LibroComprasRequest(BaseModel):
-    emisor_id: int
-    natencion: str
-    periodo: str = "2026-05"
-    fch_resol: str = "2026-04-19"
-    nro_resol: str = "0"
-    tipo_libro: str = "ESPECIAL"
-    tipo_envio: str = "TOTAL"
-    cod_aut_rec: str = ""
-    documentos: List[DocumentoCompra]
-    totales_periodo: list = []
+    {"tipo": 60, "folio": 451, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
+     "neto": 2699, "exe": 0, "iva": _iva(2699), "total": 2699 + _iva(2699), "tipo_especial": None},
 
+    {"tipo": 33, "folio": 67, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
+     "neto": 9826, "exe": 0, "iva": 0, "iva_no_rec": _iva(9826), "cod_iva_no_rec": 4,
+     "total": 9826 + _iva(9826), "tipo_especial": "iva_no_rec"},
 
-# ── Constructor XML ───────────────────────────────────────────────────────────
+    {"tipo": 46, "folio": 9, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
+     "neto": 9474, "exe": 0, "iva": _iva(9474), "iva_ret_total": _iva(9474),
+     "otro_imp_cod": 15, "otro_imp_tasa": 19, "otro_imp_monto": _iva(9474),
+     "total": 9474, "tipo_especial": "iva_ret_total"},
 
-def _xml_libro_compras(emisor_rut: str, rut_envia: str,
-                       req: LibroComprasRequest) -> str:
-    tmst = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    docs = [d.model_dump() for d in req.documentos]
+    {"tipo": 60, "folio": 211, "fecha": "2026-05-22", "rut_doc": RUT_PROV, "razon": "PROVEEDOR SA",
+     "neto": 4030, "exe": 0, "iva": _iva(4030), "total": 4030 + _iva(4030), "tipo_especial": None},
+]
 
-    root = etree.Element(
-        f"{{{NS}}}LibroCompraVenta",
+def _construir_libro_xml(emisor: Emisor, rut_envia: str, natencion: str,
+                          periodo: str, tmst: str, fch_resol: str = "2026-04-19",
+                          docs_override=None, cod_aut_rec: str | None = None) -> str:
+    # El período tributario DEBE corresponder al mes de los documentos del
+    # libro, no al mes en que se genera. Los documentos del set son de mayo
+    # (2026-05-22), así que derivamos el período de su fecha y NO del parámetro
+    # (que llega con el mes actual). Si el período del SII no calza con las
+    # fechas de los documentos, el libro se repara. Analogía: el libro de mayo
+    # lleva la fecha de mayo aunque lo armes en junio.
+    docs = docs_override if docs_override is not None else DOCUMENTOS
+    if docs:
+        fecha_doc = docs[0].get("fecha", "")
+        if len(fecha_doc) >= 7:
+            periodo = fecha_doc[:7]
+    root = etree.Element(f"{{{NS}}}LibroCompraVenta",
         nsmap={None: NS, "xsi": "http://www.w3.org/2001/XMLSchema-instance"},
-        attrib={
-            "version": "1.0",
-            "{http://www.w3.org/2001/XMLSchema-instance}schemaLocation":
-                f"{NS} LibroCV_v10.xsd",
-        },
-    )
+        attrib={"version": "1.0",
+                "{http://www.w3.org/2001/XMLSchema-instance}schemaLocation":
+                    f"{NS} LibroCV_v10.xsd"})
     envio = etree.SubElement(root, f"{{{NS}}}EnvioLibro")
     envio.set("ID", "LibroCompras")
 
-    # ── Carátula ─────────────────────────────────────────────────────────────
     car = etree.SubElement(envio, f"{{{NS}}}Caratula")
-    etree.SubElement(car, f"{{{NS}}}RutEmisorLibro").text    = emisor_rut
-    etree.SubElement(car, f"{{{NS}}}RutEnvia").text          = rut_envia
-    etree.SubElement(car, f"{{{NS}}}PeriodoTributario").text = req.periodo
-    etree.SubElement(car, f"{{{NS}}}FchResol").text          = req.fch_resol
-    etree.SubElement(car, f"{{{NS}}}NroResol").text          = req.nro_resol
+    _limpiar = lambda r: r.replace(".", "").strip() if r else r
+    etree.SubElement(car, f"{{{NS}}}RutEmisorLibro").text   = _limpiar(emisor.rut)
+    etree.SubElement(car, f"{{{NS}}}RutEnvia").text          = _limpiar(rut_envia)
+    etree.SubElement(car, f"{{{NS}}}PeriodoTributario").text = periodo
+    etree.SubElement(car, f"{{{NS}}}FchResol").text          = fch_resol
+    etree.SubElement(car, f"{{{NS}}}NroResol").text          = "0"
     etree.SubElement(car, f"{{{NS}}}TipoOperacion").text     = "COMPRA"
-    etree.SubElement(car, f"{{{NS}}}TipoLibro").text         = req.tipo_libro
-    etree.SubElement(car, f"{{{NS}}}TipoEnvio").text         = req.tipo_envio
-    etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = req.natencion
-    if req.cod_aut_rec:
-        etree.SubElement(car, f"{{{NS}}}CodAutRec").text     = req.cod_aut_rec
+    # FIX REEMPLAZO (2026-07-07): la propia confirmación del SII al
+    # entregar el CodAutRec dice literalmente "Tipo: ESPECIAL" — el
+    # código de reemplazo NO cambia el TipoLibro a RECTIFICA, solo
+    # autoriza reenviar un libro ESPECIAL que ya está "Cuadrado". Es
+    # como un duplicado de entrada al cine: sigue siendo la misma
+    # función (ESPECIAL), solo trae un sello de reemplazo (CodAutRec)
+    # pegado encima. TipoLibro se mantiene ESPECIAL siempre; lo único
+    # que cambia es si <CodAutRec> viene o no.
+    etree.SubElement(car, f"{{{NS}}}TipoLibro").text = "ESPECIAL"
+    etree.SubElement(car, f"{{{NS}}}TipoEnvio").text         = "TOTAL"
+    etree.SubElement(car, f"{{{NS}}}FolioNotificacion").text = natencion
+    if cod_aut_rec:
+        # CodAutRec va AL FINAL de la Carátula según el <xs:sequence> del
+        # XSD oficial (después de FolioNotificacion) — igual que con
+        # OtrosImp/IVARetTotal, el orden en XML es parte del contrato.
+        etree.SubElement(car, f"{{{NS}}}CodAutRec").text = cod_aut_rec
 
-    # ── ResumenSegmento — obligatorio en AJUSTE ──────────────────────────────
-    if req.tipo_envio == "AJUSTE":
-        resumen_seg = etree.SubElement(envio, f"{{{NS}}}ResumenSegmento")
-        for tipo_doc in sorted(set(d["tipo"] for d in docs)):
-            grp = [d for d in docs if d["tipo"] == tipo_doc]
-            tot = etree.SubElement(resumen_seg, f"{{{NS}}}TotalesSegmento")
-            etree.SubElement(tot, f"{{{NS}}}TpoDoc").text     = str(tipo_doc)
-            etree.SubElement(tot, f"{{{NS}}}TotDoc").text     = str(len(grp))
-            etree.SubElement(tot, f"{{{NS}}}TotMntExe").text  = str(sum(d["exe"]  for d in grp))
-            etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text = str(sum(d["neto"] for d in grp))
-            # Para iva_ret_total: TotMntIVA=0 (no es crédito fiscal)
-            tot_iva_grp = sum(d["iva"] for d in grp if d.get("tipo_especial") != "iva_ret_total")
-            etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text  = str(tot_iva_grp)
-            t_nr = sum(d["iva_no_rec"] for d in grp)
-            if t_nr:
-                cod = next(d["cod_iva_no_rec"] for d in grp if d["iva_no_rec"])
-                inr = etree.SubElement(tot, f"{{{NS}}}TotIVANoRec")
-                etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text    = str(cod)
-                etree.SubElement(inr, f"{{{NS}}}TotOpIVANoRec").text  = str(sum(1 for d in grp if d["iva_no_rec"]))
-                etree.SubElement(inr, f"{{{NS}}}TotMntIVANoRec").text = str(t_nr)
-            t_uc = sum(d["iva_uso_comun"] for d in grp)
-            if t_uc:
-                etree.SubElement(tot, f"{{{NS}}}TotOpIVAUsoComun").text = str(sum(1 for d in grp if d["iva_uso_comun"]))
-                etree.SubElement(tot, f"{{{NS}}}TotIVAUsoComun").text   = str(t_uc)
-            t_rt = sum(d["iva_ret_total"] for d in grp)
-            if t_rt:
-                etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in grp if d["iva_ret_total"]))
-                etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_rt)
-            etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in grp))
-
-    # ── ResumenPeriodo ────────────────────────────────────────────────────────
     resumen = etree.SubElement(envio, f"{{{NS}}}ResumenPeriodo")
-
-    from collections import defaultdict
-    neto_por_tipo = defaultdict(lambda: {'count':0,'neto':0,'exe':0,'iva':0,'total':0,
-                                          'iva_nr':0,'iva_uc':0,'iva_ret':0})
-    for d in docs:
-        t = d["tipo"]
-        neto_por_tipo[t]['count'] += 1
-        neto_por_tipo[t]['neto']  += d["neto"]
-        neto_por_tipo[t]['exe']   += d["exe"]
-        # Para iva_ret_total: MntIVA se informa normalmente en el resumen
-        neto_por_tipo[t]['iva']   += d["iva"]
-        # Para iva_ret_total: MntTotal = neto + iva - iva_ret (según doc SII pág 37)
-        if d.get("tipo_especial") == "iva_ret_total":
-            neto_por_tipo[t]['total'] += d["neto"] + d["iva"] - d["iva_ret_total"]
-        else:
-            neto_por_tipo[t]['total'] += d["total"]
-        neto_por_tipo[t]['iva_nr'] += d["iva_no_rec"]
-        neto_por_tipo[t]['iva_uc'] += d["iva_uso_comun"]
-        neto_por_tipo[t]['iva_ret'] += d["iva_ret_total"]
-
-    # Si se pasan totales_periodo explícitos, usarlos directamente
-    if req.totales_periodo:
-        for tp in req.totales_periodo:
-            tot = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
-            etree.SubElement(tot, f"{{{NS}}}TpoDoc").text     = str(tp.get("tipo"))
-            etree.SubElement(tot, f"{{{NS}}}TotDoc").text     = str(tp.get("tot_doc", 0))
-            etree.SubElement(tot, f"{{{NS}}}TotMntExe").text  = str(tp.get("tot_exe", 0))
-            etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text = str(tp.get("tot_neto", 0))
-            etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text  = str(tp.get("tot_iva", 0))
-            t_nr = tp.get("iva_no_rec", 0)
-            if t_nr:
-                inr = etree.SubElement(tot, f"{{{NS}}}TotIVANoRec")
-                etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text    = str(tp.get("cod_iva_no_rec", 9))
-                etree.SubElement(inr, f"{{{NS}}}TotOpIVANoRec").text  = str(tp.get("tot_doc", 1))
-                etree.SubElement(inr, f"{{{NS}}}TotMntIVANoRec").text = str(t_nr)
-            t_uc = tp.get("iva_uso_comun", 0)
-            if t_uc:
-                fct = tp.get("fct_prop", "0.60")
-                etree.SubElement(tot, f"{{{NS}}}TotIVAUsoComun").text    = str(t_uc)
-                etree.SubElement(tot, f"{{{NS}}}FctProp").text            = fct
-                etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(fct)))
-            t_rt = tp.get("iva_ret_total", 0)
-            if t_rt:
-                etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(tp.get("tot_doc", 1))
-                etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_rt)
-            etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(tp.get("tot_total", 0))
-        tipos_periodo = []
-    else:
-        tipos_periodo = sorted(neto_por_tipo.keys())
-
-    for tipo_doc in tipos_periodo:
-        v = neto_por_tipo[tipo_doc]
-        tot_doc   = v['count']
-        tot_exe   = v['exe']
-        tot_neto  = v['neto']
-        tot_iva   = v['iva']   # ya excluye iva_ret_total
-        tot_total = v['total']
-        t_nr      = v['iva_nr']
-        t_uc      = v['iva_uc']
-        t_rt      = v['iva_ret']
-
-        grp_nr = [d for d in docs if d["tipo"] == tipo_doc and d["iva_no_rec"]]
-        cod_nr = grp_nr[0]["cod_iva_no_rec"] if grp_nr else 9
-        grp_uc = [d for d in docs if d["tipo"] == tipo_doc and d["iva_uso_comun"]]
-        fct_uc = grp_uc[0]["fct_prop"] if grp_uc else "0.60"
-
+    # FIX REPARO "Libro no debe incluir Resumenes de Documento(s) -
+    # Repetido(s) TipoDoc:[X]" (2026-07-14):
+    #
+    # El 2026-07-07 probamos separar cada caso especial en su propia línea
+    # de resumen (agrupando por tipo+tipo_especial), pensando que resolvía
+    # el reparo "Numero de Lineas de Resumen No Cuadra". El SII ahora nos
+    # corrige explícitamente lo contrario: el Libro NO debe tener más de
+    # una línea de resumen por (TipoDoc, TipoImp) — es decir, agrupar por
+    # tipo_especial estaba MAL. Volvemos a agrupar solo por TipoDoc.
+    #
+    # Analogía: es como un balance contable que exige una sola fila por
+    # cuenta —"Facturas Tipo 30"— sin importar si alguna de esas facturas
+    # tiene una condición especial adentro; la condición especial se
+    # informa con sub-campos DENTRO de esa misma fila (TotIVAUsoComun,
+    # TotIVANoRec, etc.), no abriendo una fila nueva.
+    #
+    # Los campos especiales (t_nr, t_uc más abajo) ya estaban preparados
+    # para sumar sobre el grupo completo sin problema — un documento
+    # normal simplemente aporta 0 a esos campos, así que fusionar el
+    # grupo no requiere tocar esa lógica.
+    for tipo_doc in sorted(set(d["tipo"] for d in docs)):
+        dt = [d for d in docs if d["tipo"] == tipo_doc]
         tot = etree.SubElement(resumen, f"{{{NS}}}TotalesPeriodo")
         etree.SubElement(tot, f"{{{NS}}}TpoDoc").text     = str(tipo_doc)
-        etree.SubElement(tot, f"{{{NS}}}TotDoc").text     = str(tot_doc)
-        etree.SubElement(tot, f"{{{NS}}}TotMntExe").text  = str(tot_exe)
-        etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text = str(tot_neto)
-        etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text  = str(tot_iva)
+        etree.SubElement(tot, f"{{{NS}}}TotDoc").text     = str(len(dt))
+        etree.SubElement(tot, f"{{{NS}}}TotMntExe").text  = str(sum(d["exe"] for d in dt))
+        etree.SubElement(tot, f"{{{NS}}}TotMntNeto").text = str(sum(d["neto"] for d in dt))
 
+        # FIX REPARO LBR-3 (2026-07-06): TotMntIVA debe coincidir con la
+        # suma de MntIVA que REALMENTE aparece en cada Detalle — no con una
+        # regla genérica de "todo tipo_especial se excluye".
+        #
+        # Analogía: el Resumen es una caja que suma boleta por boleta; si
+        # una boleta cambia de monto, hay que sumarla de nuevo con el
+        # monto nuevo, no seguir tratándola como si aportara $0 porque
+        # antes aportaba $0.
+        #
+        # Solo DOS de los tres casos especiales llevan MntIVA=0 en el
+        # detalle (iva_uso_comun, iva_no_rec) → esos SÍ se excluyen.
+        # iva_ret_total (T46) ya NO va en 0 (fix del 2026-07-06: el SII
+        # exige MntIVA = Neto×19% siempre) → debe SUMARSE igual que un
+        # documento normal.
+        _tot_mnt_iva = sum(
+            d["iva"] for d in dt
+            if d.get("tipo_especial") not in ("iva_uso_comun", "iva_no_rec")
+        )
+        etree.SubElement(tot, f"{{{NS}}}TotMntIVA").text  = str(_tot_mnt_iva)
+
+        # FIX REPARO 1: TotIVANoRec informa el IVA no recuperable por separado
+        t_nr = sum(d.get("iva_no_rec", 0) for d in dt)
         if t_nr:
             inr = etree.SubElement(tot, f"{{{NS}}}TotIVANoRec")
+            # Código de IVA no recuperable del documento (4 = entrega gratuita
+            # recibida, para la factura 67 del set). Se toma del dict, no fijo.
+            cod_nr = next(d.get("cod_iva_no_rec", 1) for d in dt if d.get("iva_no_rec", 0))
             etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text    = str(cod_nr)
-            etree.SubElement(inr, f"{{{NS}}}TotOpIVANoRec").text  = str(sum(1 for d in docs if d["tipo"] == tipo_doc and d["iva_no_rec"]))
+            etree.SubElement(inr, f"{{{NS}}}TotOpIVANoRec").text  = str(sum(1 for d in dt if d.get("iva_no_rec", 0)))
             etree.SubElement(inr, f"{{{NS}}}TotMntIVANoRec").text = str(t_nr)
 
+        t_uc = sum(d.get("iva_uso_comun", 0) for d in dt)
         if t_uc:
             etree.SubElement(tot, f"{{{NS}}}TotIVAUsoComun").text    = str(t_uc)
-            etree.SubElement(tot, f"{{{NS}}}FctProp").text            = fct_uc
-            etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(fct_uc)))
+            etree.SubElement(tot, f"{{{NS}}}FctProp").text            = FCT_PROP
+            etree.SubElement(tot, f"{{{NS}}}TotCredIVAUsoComun").text = str(round(t_uc * float(FCT_PROP)))
 
-        if t_rt:
-            etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in docs if d["tipo"] == tipo_doc and d["iva_ret_total"]))
-            etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_rt)
+        # FIX ESQUEMA (2026-07-06): en XML, a diferencia de un diccionario
+        # de Python, el ORDEN de los elementos importa cuando el XSD define
+        # una <xs:sequence> — es como una fila para el banco: si te saltas
+        # el orden de los números, no importa que lleves el papel correcto,
+        # igual te rechazan. El XSD exige TotOtrosImp ANTES que
+        # TotOpIVARetTotal/TotIVARetTotal — nosotros los escribíamos al
+        # revés, y eso causó el rechazo "ESQUEMA INVALIDO".
+        t_otro = sum(d.get("otro_imp_monto", 0) for d in dt if d.get("tipo_especial") == "iva_ret_total")
+        if t_otro:
+            toi = etree.SubElement(tot, f"{{{NS}}}TotOtrosImp")
+            # CodImp=15 = "IVA retenido total" (código oficial SII). El 40 no
+            # existe en la tabla de códigos → reparo. Debe coincidir con el
+            # CodImp del detalle (doc["otro_imp_cod"]).
+            etree.SubElement(toi, f"{{{NS}}}CodImp").text    = "15"
+            etree.SubElement(toi, f"{{{NS}}}TotMntImp").text = str(t_otro)
+            etree.SubElement(toi, f"{{{NS}}}TotCredImp").text = str(t_otro)
 
-        etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(tot_total)
+        # Va DESPUÉS de TotOtrosImp en la secuencia del XSD (confirmado
+        # arriba). Mismo dato, solo cambia dónde se escribe en el XML.
+        t_ret = sum(d.get("iva_ret_total", 0) for d in dt)
+        if t_ret:
+            etree.SubElement(tot, f"{{{NS}}}TotOpIVARetTotal").text = str(sum(1 for d in dt if d.get("iva_ret_total", 0)))
+            etree.SubElement(tot, f"{{{NS}}}TotIVARetTotal").text   = str(t_ret)
 
-    # ── Detalle ───────────────────────────────────────────────────────────────
+        etree.SubElement(tot, f"{{{NS}}}TotMntTotal").text = str(sum(d["total"] for d in dt))
+
     for doc in docs:
         det = etree.SubElement(envio, f"{{{NS}}}Detalle")
         etree.SubElement(det, f"{{{NS}}}TpoDoc").text  = str(doc["tipo"])
         etree.SubElement(det, f"{{{NS}}}NroDoc").text  = str(doc["folio"])
         etree.SubElement(det, f"{{{NS}}}TasaImp").text = "19"
         etree.SubElement(det, f"{{{NS}}}FchDoc").text  = doc["fecha"]
-        etree.SubElement(det, f"{{{NS}}}RUTDoc").text  = doc["rut"]
-        if doc["razon"]:
-            etree.SubElement(det, f"{{{NS}}}RznSoc").text = doc["razon"][:50]
+        etree.SubElement(det, f"{{{NS}}}RUTDoc").text  = doc["rut_doc"]
+        etree.SubElement(det, f"{{{NS}}}RznSoc").text  = doc["razon"][:50]
+        # FIX DOCREF (2026-07-08): <TpoDocRef>/<FolioDocRef> van EXACTAMENTE
+        # aquí según la secuencia del XSD (después de RznSoc, antes de los
+        # montos) — verificado línea por línea contra LibroCV_v10.xsd.
+        # Sirven para que una Nota de Crédito diga a qué factura descuenta
+        # (ej. Folio 451 descuenta la Factura 234). Son opcionales
+        # (minOccurs=0): si el documento no referencia nada, simplemente
+        # no se escriben, sin afectar la validez del esquema.
+        if doc.get("tipo_doc_ref") and doc.get("folio_doc_ref"):
+            etree.SubElement(det, f"{{{NS}}}TpoDocRef").text   = str(doc["tipo_doc_ref"])
+            etree.SubElement(det, f"{{{NS}}}FolioDocRef").text = str(doc["folio_doc_ref"])
         if doc["exe"]:
             etree.SubElement(det, f"{{{NS}}}MntExe").text = str(doc["exe"])
         etree.SubElement(det, f"{{{NS}}}MntNeto").text = str(doc["neto"])
 
-        te = doc["tipo_especial"]
+        te = doc.get("tipo_especial")
         if te == "iva_uso_comun":
             etree.SubElement(det, f"{{{NS}}}MntIVA").text      = "0"
             etree.SubElement(det, f"{{{NS}}}IVAUsoComun").text = str(doc["iva_uso_comun"])
         elif te == "iva_no_rec":
+            # FIX REPARO 1: MntIVA=0, el monto va en IVANoRec
             etree.SubElement(det, f"{{{NS}}}MntIVA").text = "0"
             inr = etree.SubElement(det, f"{{{NS}}}IVANoRec")
             etree.SubElement(inr, f"{{{NS}}}CodIVANoRec").text = str(doc["cod_iva_no_rec"])
             etree.SubElement(inr, f"{{{NS}}}MntIVANoRec").text = str(doc["iva_no_rec"])
         elif te == "iva_ret_total":
-            # MntIVA = IVA normal del doc; IVARetTotal informa la retención
-            etree.SubElement(det, f"{{{NS}}}MntIVA").text      = str(doc["iva"])
+            # FIX ESQUEMA (2026-07-06): el envío volvió "RECHAZADO ESQUEMA
+            # INVALIDO". Revisando el XSD oficial línea por línea, el
+            # <xs:sequence> exige este orden exacto: ... Ley18211,
+            # OtrosImp, MntSinCred, IVARetTotal, IVARetParcial ... —
+            # es decir, <OtrosImp> va ANTES de <IVARetTotal>, y nosotros
+            # los escribíamos al revés. En XML el orden es parte del
+            # contrato (a diferencia de un dict en Python, donde el orden
+            # de las llaves no importa) — por eso pasaba de ser un
+            # "reparo de contenido" a un rechazo de forma.
+            etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
+            oi = etree.SubElement(det, f"{{{NS}}}OtrosImp")
+            etree.SubElement(oi, f"{{{NS}}}CodImp").text  = str(doc["otro_imp_cod"])
+            etree.SubElement(oi, f"{{{NS}}}TasaImp").text = str(doc["otro_imp_tasa"])
+            etree.SubElement(oi, f"{{{NS}}}MntImp").text  = str(doc["otro_imp_monto"])
             etree.SubElement(det, f"{{{NS}}}IVARetTotal").text = str(doc["iva_ret_total"])
         else:
             etree.SubElement(det, f"{{{NS}}}MntIVA").text = str(doc["iva"])
 
-        # Para iva_ret_total: MntTotal = neto + iva - iva_ret (SII pág 37)
-        if doc.get("tipo_especial") == "iva_ret_total":
-            mnt_total = doc["neto"] + doc["iva"] - doc["iva_ret_total"]
-        else:
-            mnt_total = doc["total"]
-        etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(mnt_total)
+        etree.SubElement(det, f"{{{NS}}}MntTotal").text = str(doc["total"])
 
     etree.SubElement(envio, f"{{{NS}}}TmstFirma").text = tmst
-
-    raw = etree.tostring(root, encoding="ISO-8859-1",
-                         xml_declaration=True, pretty_print=True)
-    return raw.decode("ISO-8859-1").replace(
+    xml_bytes = etree.tostring(root, encoding="ISO-8859-1",
+                               xml_declaration=True, pretty_print=True)
+    return xml_bytes.decode("ISO-8859-1").replace(
         "<?xml version='1.0' encoding='ISO-8859-1'?>",
-        '<?xml version="1.0" encoding="ISO-8859-1"?>',
+        '<?xml version="1.0" encoding="ISO-8859-1"?>'
     )
 
 
-# ── Endpoint ──────────────────────────────────────────────────────────────────
-
-@router.post("/", summary="Genera Libro de Compras firmado")
+@router.post("/generar-xml", summary="Genera Libro de Compras N° Atención 4841545")
 async def generar_libro_compras(
-    req: LibroComprasRequest,
+    emisor_id: int,
+    natencion: Optional[str] = "4919743",
+    periodo:   Optional[str] = "2026-05",
     db: AsyncSession = Depends(get_db),
-    emisor_auth: Emisor = Depends(validar_api_key),
 ):
-    if emisor_auth.id != req.emisor_id:
-        raise HTTPException(status_code=403, detail="No autorizado para este emisor")
-    emisor = await db.get(Emisor, req.emisor_id)
+    emisor = await db.get(Emisor, emisor_id)
     if not emisor:
-        raise HTTPException(404, f"Emisor {req.emisor_id} no encontrado")
+        raise HTTPException(404, f"Emisor {emisor_id} no encontrado")
 
     res = await db.execute(
-        select(Certificado).where(
-            Certificado.emisor_id == req.emisor_id,
-            Certificado.activo == True,
-        ).limit(1)
+        select(Certificado).where(Certificado.emisor_id == emisor_id).limit(1)
     )
     cert = res.scalar_one_or_none()
     if not cert or not cert.certificado_p12:
-        raise HTTPException(400, "Sin certificado .p12 activo para este emisor")
+        raise HTTPException(400, "Sin certificado .p12")
 
     rut_envia = cert.rut_firmante or emisor.rut
-
-    if not req.documentos:
-        raise HTTPException(400, "El libro debe tener al menos un documento")
-
-    logger.info(
-        f"[LIBRO COMPRAS] emisor={emisor.rut} natencion={req.natencion} "
-        f"docs={len(req.documentos)} tipos={sorted(set(d.tipo for d in req.documentos))}"
-    )
+    tmst      = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
     try:
-        xml_str = _xml_libro_compras(emisor.rut, rut_envia, req)
+        xml_str = _construir_libro_xml(emisor, rut_envia, natencion, periodo, tmst)
     except Exception as e:
-        logger.error(f"Error construyendo LibroCompras: {e}", exc_info=True)
-        raise HTTPException(500, f"Error al construir el libro: {e}")
+        raise HTTPException(500, f"Error construyendo libro: {e}")
 
     firma = FirmaDigital(cert.certificado_p12, cert.certificado_password or "")
     try:
         xml_firmado = await firma.firmar_libro(xml_str)
     except Exception as e:
-        logger.error(f"Error firmando LibroCompras: {e}", exc_info=True)
-        raise HTTPException(500, f"Error al firmar: {e}")
+        raise HTTPException(500, f"Error firmando: {e}")
 
     rut_limpio = emisor.rut.replace(".", "").replace("-", "")
-    nombre = f"LibroCompras_{req.natencion}_{rut_limpio}_{req.periodo}.xml"
-
+    nombre = f"LibroCompras_{natencion}_{rut_limpio}_{periodo}.xml"
     return Response(
-        content=xml_firmado.encode("ISO-8859-1"),
-        media_type="application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
+        content    = xml_firmado.encode("ISO-8859-1"),
+        media_type = "application/octet-stream",
+        headers    = {"Content-Disposition": f'attachment; filename="{nombre}"'},
     )
