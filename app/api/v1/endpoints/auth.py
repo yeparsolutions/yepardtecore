@@ -11,8 +11,10 @@
 #   POST /v1/auth/resetear-password   — valida OTP y cambia contraseña
 # ══════════════════════════════════════════════════════════════
 
-import random
+import secrets
+import time
 import logging
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -41,12 +43,43 @@ OTP_EXPIRA_MINUTOS = 15
 # ── Helpers ───────────────────────────────────────────────────
 
 def _generar_otp() -> str:
-    """Genera un código numérico de 6 dígitos."""
-    return str(random.randint(100000, 999999))
+    """Genera un código de 6 dígitos criptográficamente seguro."""
+    # secrets en vez de random: impredecible y conserva ceros a la izquierda.
+    return f"{secrets.randbelow(1_000_000):06d}"
 
 
 def _otp_expira() -> datetime:
     return datetime.now(timezone.utc) + timedelta(minutes=OTP_EXPIRA_MINUTOS)
+
+
+# ── Limitador de intentos de OTP (anti fuerza bruta) ──────────
+# En memoria, por email. Un OTP de 6 dígitos sin freno se rompe por
+# fuerza bruta en minutos; con esto, tras N intentos dentro de la
+# ventana la cuenta queda bloqueada temporalmente.
+# Nota: es por proceso — se reinicia en cada deploy y no sería global
+# si algún día corres varios workers. Para un worker en Railway alcanza;
+# si escalas, mover a Redis o a un contador en BD.
+_otp_intentos: dict[str, list[float]] = defaultdict(list)
+_OTP_MAX_INTENTOS = 5
+_OTP_VENTANA = 15 * 60  # 15 min, igual que la vigencia del OTP
+
+
+def _limitar_otp(clave: str) -> None:
+    """
+    Cuenta los intentos por 'clave' (ej. verif:correo o reset:correo)
+    dentro de la ventana. Si se supera el máximo, corta con 429.
+    No invalida el OTP a propósito: invalidarlo permitiría a un atacante
+    quemar el código legítimo de la víctima (un DoS). Solo frenamos el ritmo.
+    """
+    ahora = time.time()
+    _otp_intentos[clave] = [t for t in _otp_intentos[clave] if t > ahora - _OTP_VENTANA]
+    if len(_otp_intentos[clave]) >= _OTP_MAX_INTENTOS:
+        raise HTTPException(
+            status_code=429,
+            detail="Demasiados intentos. Espera unos minutos e inténtalo de nuevo.",
+            headers={"Retry-After": str(_OTP_VENTANA)},
+        )
+    _otp_intentos[clave].append(ahora)
 
 
 # ── Schemas ───────────────────────────────────────────────────
@@ -194,6 +227,8 @@ async def verificar_email(datos: VerificarEmailInput, db: AsyncSession = Depends
     El usuario ingresa el código OTP de 6 dígitos que recibió por email.
     Si es válido y no expiró, marca su cuenta como verificada.
     """
+    _limitar_otp(f"verif:{datos.email.lower().strip()}")
+
     res = await db.execute(
         select(Usuario).where(Usuario.email == datos.email.lower().strip())
     )
@@ -304,6 +339,8 @@ async def resetear_password(
     Valida el OTP de recuperación y actualiza la contraseña.
     Invalida el OTP tras el primer uso exitoso.
     """
+    _limitar_otp(f"reset:{datos.email.lower().strip()}")
+
     if len(datos.password) < 8:
         raise HTTPException(422, "La nueva contraseña debe tener al menos 8 caracteres")
 
