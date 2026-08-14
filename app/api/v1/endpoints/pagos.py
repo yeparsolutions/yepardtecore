@@ -38,6 +38,19 @@ from app.core.security import verificar_token
 logger = logging.getLogger("yepardtecore.pagos")
 router = APIRouter(prefix="/pagos", tags=["Pagos"])
 
+def _verificar_secreto(request: Request, header: str = "X-Admin-Secret") -> None:
+    """
+    Verifica un secreto compartido (panel admin / cron). Falla CERRADO:
+    si el secreto no está configurado en el entorno, rechaza. Antes, con el
+    default vacío, un header vacío igualaba a "" y abría el panel a cualquiera.
+    Comparación en tiempo constante para no filtrar el secreto por timing.
+    """
+    provisto = request.headers.get(header, "")
+    esperado = settings.MP_WEBHOOK_SECRET or ""
+    if not esperado or not hmac.compare_digest(provisto, esperado):
+        raise HTTPException(403, "No autorizado")
+
+
 MONTO_SUSCRIPCION = 100000   # $100.000 CLP
 DIAS_SUSCRIPCION  = 365
 
@@ -146,23 +159,37 @@ async def webhook_mp(
     x_signature  = request.headers.get("x-signature", "")
     x_request_id = request.headers.get("x-request-id", "")
 
-    if settings.MP_WEBHOOK_SECRET and x_signature:
-        ts    = ""
-        v1    = ""
-        for part in x_signature.split(","):
-            k, _, v = part.partition("=")
-            if k.strip() == "ts":   ts = v.strip()
-            if k.strip() == "v1":   v1 = v.strip()
+    # Falla CERRADO: sin secreto configurado o sin firma en el request, se
+    # rechaza. Antes, si faltaba x-signature se SALTABA la validación entera
+    # y la notificación se procesaba igual (webhook falsificable).
+    if not settings.MP_WEBHOOK_SECRET:
+        logger.error("[MP-WEBHOOK] MP_WEBHOOK_SECRET no configurado — request rechazado")
+        raise HTTPException(503, "Webhook no configurado")
 
-        manifest = f"id:{request.query_params.get('data.id', '')};request-id:{x_request_id};ts:{ts};"
-        esperado = hmac.HMAC(
-            settings.MP_WEBHOOK_SECRET.encode(),
-            manifest.encode(),
-            hashlib.sha256)
+    if not x_signature:
+        logger.warning("[MP-WEBHOOK] Falta la firma x-signature — request rechazado")
+        raise HTTPException(400, "Falta firma del webhook")
 
-        if not hmac.compare_digest(esperado, v1):
-            logger.warning("[MP-WEBHOOK] Firma inválida — request ignorado")
-            raise HTTPException(400, "Firma inválida")
+    ts = ""
+    v1 = ""
+    for part in x_signature.split(","):
+        k, _, v = part.partition("=")
+        if k.strip() == "ts":   ts = v.strip()
+        if k.strip() == "v1":   v1 = v.strip()
+
+    manifest = f"id:{request.query_params.get('data.id', '')};request-id:{x_request_id};ts:{ts};"
+    # .hexdigest(): antes se comparaba el OBJETO hmac.HMAC contra el string v1,
+    # que nunca coincide — la firma legítima quedaba rota y solo pasaba el
+    # camino sin firma. Ahora comparamos el hex contra el v1 hex que manda MP.
+    esperado = hmac.new(
+        settings.MP_WEBHOOK_SECRET.encode(),
+        manifest.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+    if not hmac.compare_digest(esperado, v1):
+        logger.warning("[MP-WEBHOOK] Firma inválida — request rechazado")
+        raise HTTPException(400, "Firma inválida")
 
     # ── Procesar la notificación ──────────────────────────────
     try:
@@ -495,9 +522,7 @@ async def notificar_renovaciones(
     Protegido por header X-Cron-Secret para que solo Railway lo llame.
     """
     # Validar secret para que no lo llame cualquiera
-    secret = request.headers.get("X-Cron-Secret", "")
-    if secret != settings.MP_WEBHOOK_SECRET:
-        raise HTTPException(403, "No autorizado")
+    _verificar_secreto(request, "X-Cron-Secret")
 
     ahora = datetime.now(timezone.utc)
     notificados = []
@@ -652,9 +677,7 @@ async def admin_resumen(
     db: AsyncSession = Depends(get_db),
 ):
     """Resumen general para el panel de admin."""
-    secret = request.headers.get("X-Admin-Secret", "")
-    if secret != settings.MP_WEBHOOK_SECRET:
-        raise HTTPException(403, "No autorizado")
+    _verificar_secreto(request)
 
     from sqlalchemy import func
     from app.models.usuario import Usuario
@@ -745,9 +768,7 @@ async def admin_toggle_emisor(
     db: AsyncSession = Depends(get_db),
 ):
     """Activa o desactiva un emisor desde el panel de admin."""
-    secret = request.headers.get("X-Admin-Secret", "")
-    if secret != settings.MP_WEBHOOK_SECRET:
-        raise HTTPException(403, "No autorizado")
+    _verificar_secreto(request)
 
     emisor = await db.get(Emisor, emisor_id)
     if not emisor:
@@ -773,9 +794,7 @@ async def admin_activar_pago(
     db: AsyncSession = Depends(get_db),
 ):
     """Activa manualmente el pago de un emisor (ej: transferencia bancaria)."""
-    secret = request.headers.get("X-Admin-Secret", "")
-    if secret != settings.MP_WEBHOOK_SECRET:
-        raise HTTPException(403, "No autorizado")
+    _verificar_secreto(request)
 
     emisor = await db.get(Emisor, emisor_id)
     if not emisor:
