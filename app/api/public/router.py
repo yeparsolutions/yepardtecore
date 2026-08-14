@@ -5,10 +5,10 @@
 # Prefix: /api
 # ══════════════════════════════════════════════════════════════
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File, Form, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,8 @@ from app.models.dte import DTE
 from app.services.dte_service import DTEService
 from app.services.sii_sender import SIISender
 from app.models.certificado import Certificado
+from app.core.security import _check_rate_limit, RATE_LIMITS
+from lxml import etree as _etree_safe
 import logging
 logger = logging.getLogger("yepardtecore.api")
 
@@ -47,7 +49,21 @@ def _fix_mojibake(texto):
         return texto  # si no se puede reparar limpiamente, dejar como está
 
 
+def _safe_fromstring(xml_bytes):
+    """
+    Parsea XML con entidades externas y DTD deshabilitadas → previene XXE
+    (lectura de archivos del servidor vía <!ENTITY ... SYSTEM "file://...">).
+    Se crea un parser por llamada porque los parsers de lxml no son seguros
+    para uso concurrente compartido.
+    """
+    parser = _etree_safe.XMLParser(
+        resolve_entities=False, no_network=True, load_dtd=False, huge_tree=False
+    )
+    return _etree_safe.fromstring(xml_bytes, parser)
+
+
 async def get_emisor_by_api_key(
+    request: Request,
     x_api_key: str = Header(..., description="API Key del desarrollador"),
     db: AsyncSession = Depends(get_db),
 ) -> Emisor:
@@ -58,7 +74,20 @@ async def get_emisor_by_api_key(
         )
     )).scalar_one_or_none()
     if not emisor:
+        logger.warning(
+            f"[AUTH] API Key inválida: {x_api_key[:12]}... desde "
+            f"{request.client.host if request.client else 'unknown'}"
+        )
         raise HTTPException(401, "API Key inválida o inactiva")
+
+    # Expiración de la API key (si el modelo la define)
+    if getattr(emisor, "api_key_expires_at", None):
+        if datetime.now(timezone.utc) > emisor.api_key_expires_at:
+            raise HTTPException(403, "API Key expirada. Genera una nueva desde el portal.")
+
+    # Rate limiting por API key (ventana deslizante en memoria, definido en security.py)
+    _check_rate_limit(x_api_key, RATE_LIMITS["default"])
+
     return emisor
 
 
@@ -636,7 +665,7 @@ async def firmar_y_enviar(
     # ── Determinar folio: el contador del cliente, validado contra el CAF ────
     try:
         from lxml import etree as _etree
-        caf_el      = _etree.fromstring(caf_xml_bytes)
+        caf_el      = _safe_fromstring(caf_xml_bytes)
         folio_desde = int(caf_el.findtext(".//D") or caf_el.findtext(".//DESDE") or 1)
         folio_hasta = int(caf_el.findtext(".//H") or caf_el.findtext(".//HASTA") or folio_desde)
 
@@ -907,7 +936,11 @@ def _ind_despacho(motivo: str) -> int:
 
 
 @router.post("/generar-set")
-async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)):
+async def generar_set(
+    datos: GenerarSetInput,
+    emisor: Emisor = Depends(get_emisor_by_api_key),
+    db: AsyncSession = Depends(get_db),
+):
     """
     Stateless: genera el EnvioBOLETA/EnvioDTE completo con todos los casos.
     El cliente provee su pfx y CAF. YeparDTEcore firma y arma el sobre.
@@ -971,7 +1004,7 @@ async def generar_set(datos: GenerarSetInput, db: AsyncSession = Depends(get_db)
         """Devuelve (caf_xml_str, folio_desde, folio_hasta) de un CAF base64."""
         caf_bytes = _b64.b64decode(b64_str)
         caf_str   = caf_bytes.decode("utf-8")
-        caf_el    = _etree.fromstring(caf_bytes)
+        caf_el    = _safe_fromstring(caf_bytes)
         f_desde   = int(caf_el.findtext(".//D") or caf_el.findtext(".//DESDE") or 1)
         f_hasta   = int(caf_el.findtext(".//H") or caf_el.findtext(".//HASTA") or f_desde)
         return caf_str, f_desde, f_hasta
@@ -1510,7 +1543,10 @@ class EnviarSobreInput(BaseModel):
 
 
 @router.post("/enviar-sobre")
-async def enviar_sobre_directo(datos: EnviarSobreInput):
+async def enviar_sobre_directo(
+    datos: EnviarSobreInput,
+    emisor: Emisor = Depends(get_emisor_by_api_key),
+):
     """
     Recibe un sobre XML ya firmado y lo envía al SII.
     No genera ni consume CAFs — solo autentica y envía.
@@ -2060,6 +2096,7 @@ class ConsumoFoliosIn(BaseModel):
 @router.post("/generar-consumo-folios")
 async def generar_consumo_folios(
     datos:  ConsumoFoliosIn,
+    emisor: Emisor = Depends(get_emisor_by_api_key),
     db:     AsyncSession = Depends(get_db),
 ):
     """Genera y opcionalmente envía el Reporte de Consumo de Folios al SII.
@@ -2196,6 +2233,7 @@ async def intercambio_responder(
     mail_contacto:  str = Form(""),
     fono_contacto:  str = Form(""),
     recinto:        str = Form("Casa Matriz"),       # recinto de recepción (Recibos)
+    emisor:         Emisor = Depends(get_emisor_by_api_key),
 ):
     import base64 as _b64
     from app.services import intercambio as _inter
