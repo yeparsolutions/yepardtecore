@@ -387,7 +387,7 @@
         </div>
     </div>
 
-    <div class="grid-2">
+    <div>
         <div class="card">
             <div class="card-title">Vigencia de suscripción</div>
             <div style="display:flex;justify-content:space-between;font-size:.78rem;color:var(--muted);margin-top:4px;">
@@ -407,10 +407,6 @@
                     Al renovar se extiende 1 año desde tu fecha de vencimiento actual.
                 </p>
             </div>
-        </div>
-        <div class="card">
-            <div class="card-title">Volumen por tipo (para costos)</div>
-            <div id="por-tipo"><div class="empty">Sin documentos aún</div></div>
         </div>
     </div>
 
@@ -1524,24 +1520,6 @@ function render(data) {
         if (lbl) lbl.textContent = `en los últimos ${uso.rango_dias}d`;
     }
 
-    // Qué emite la app (por tipo, en el período)
-    const tipos = (uso && uso.por_tipo) || {};
-    const maxV  = Math.max(...Object.values(tipos), 1);
-    const tipEl = document.getElementById('por-tipo');
-    if (Object.keys(tipos).length) {
-        tipEl.innerHTML = Object.entries(tipos).map(([n, c]) => `
-            <div class="tipo-row">
-                <span class="tipo-name">${n}</span>
-                <div class="tipo-bar-wrap">
-                    <div class="tipo-bar">
-                        <div class="tipo-bar-fill" style="width:${Math.round(c/maxV*100)}%"></div>
-                    </div>
-                </div>
-                <span class="tipo-count">${c}</span>
-            </div>`).join('');
-    } else {
-        tipEl.innerHTML = '<div class="empty">Sin emisiones en el período</div>';
-    }
 
     // Salud de integración + folios + uso + errores
     poblarMeses();
