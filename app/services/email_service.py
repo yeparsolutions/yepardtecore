@@ -66,7 +66,7 @@ def _base_template(titulo: str, cuerpo: str) -> str:
                   border-radius:16px;padding:36px;
                   border:1px solid #e0e0e0;">
        <img src="https://app.yepardtecore.cl/static/logo-300x130.png"
-             alt="YeparDTEcore" style="height:36px;margin-bottom:28px;">
+             alt="YeparDTEcore" style="height:72px;margin-bottom:28px;">
         <h2 style="font-size:1.4rem;color:#1a1a1a;margin-bottom:10px;">{titulo}</h2>
         {cuerpo}
         <hr style="border:none;border-top:1px solid #eee;margin:28px 0;">
