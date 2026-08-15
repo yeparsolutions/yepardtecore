@@ -62,6 +62,7 @@ DIAS_SUSCRIPCION  = 365
 class CrearPreferenciaInput(BaseModel):
     emisor_id: int
     email:     str   # email del pagador (para MP)
+    plan:      str | None = None   # developer|partner|business|scale (default developer)
 
 
 @router.post("/crear-preferencia")
@@ -96,15 +97,21 @@ async def crear_preferencia(
             "mensaje": "Esta cuenta ya tiene una suscripción activa.",
         }
 
+    # Plan elegido → precio y nombre (Developer por defecto)
+    from app.services.planes_dtecore import plan_info, precio_total, PLAN_DEFAULT
+    _plan  = (datos.plan or PLAN_DEFAULT).lower()
+    _pinfo = plan_info(_plan)
+    _monto = precio_total(_plan)
+
     # Construir la preferencia para Checkout Pro
     preferencia = {
         "items": [
             {
-                "title":       f"YeparDTEcore API — Suscripción Anual ({emisor.nombre_app})",
+                "title":       f"YeparDTEcore — Plan {_pinfo['nombre']} ({emisor.nombre_app})",
                 "quantity":    1,
-                "unit_price":  MONTO_SUSCRIPCION,
+                "unit_price":  _monto,
                 "currency_id": "CLP",
-                "description": "Acceso ilimitado a la API de facturación electrónica por 1 año",
+                "description": f"Plan {_pinfo['nombre']} — hasta {_pinfo['apps']} app(s) por 1 año",
             }
         ],
         "payer": {
@@ -116,7 +123,7 @@ async def crear_preferencia(
             "pending": f"{settings.APP_BASE_URL}/onboarding?pago=pendiente&emisor={datos.emisor_id}",
         },
         "auto_return":       "approved",
-        "external_reference": str(datos.emisor_id),   # para identificar en webhook
+        "external_reference": f"{datos.emisor_id}:{_plan}",   # emisor_id:plan para el webhook
         "notification_url":  f"{settings.APP_BASE_URL}/v1/pagos/webhook",
         "statement_descriptor": "YEPAR DTECORE",
     }
@@ -253,11 +260,14 @@ async def webhook_mp(
         logger.warning("[MP-WEBHOOK] Pago aprobado sin external_reference")
         return {"ok": True, "advertencia": "sin referencia"}
 
+    # external_reference viene como "emisor_id" o "emisor_id:plan"
+    _ref_partes = str(referencia).split(":")
     try:
-        emisor_id = int(referencia)
-    except ValueError:
-        logger.warning(f"[MP-WEBHOOK] external_reference no es int: {referencia}")
+        emisor_id = int(_ref_partes[0])
+    except (ValueError, IndexError):
+        logger.warning(f"[MP-WEBHOOK] external_reference inválido: {referencia}")
         return {"ok": True, "advertencia": "referencia inválida"}
+    plan_pagado = _ref_partes[1].lower() if len(_ref_partes) > 1 and _ref_partes[1] else None
 
     res = await db.execute(select(Emisor).where(Emisor.id == emisor_id))
     emisor = res.scalar_one_or_none()
@@ -275,6 +285,8 @@ async def webhook_mp(
     base = _fin_actual if (_fin_actual and _fin_actual > ahora) else ahora
     emisor.estado_pago        = "pagado"
     emisor.ambiente           = "produccion"   # al pagar, se habilita producción
+    if plan_pagado:
+        emisor.plan = plan_pagado              # registrar el plan cobrado
     emisor.suscripcion_inicio = ahora
     emisor.suscripcion_fin    = base + timedelta(days=DIAS_SUSCRIPCION)
     await db.commit()
