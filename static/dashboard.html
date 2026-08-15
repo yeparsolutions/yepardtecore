@@ -452,7 +452,7 @@
         <div class="code-block">
             <button class="copy-code" onclick="copiarCodigo(this)">Copiar</button>
 <span class="cmt"># Ejemplo con curl</span>
-curl -X POST https://yepardtecore.cl/api/firmar-y-enviar \
+curl -X POST https://app.yepardtecore.cl/api/firmar-y-enviar \
   -H <span class="str">"X-API-Key: yek_tu_api_key_aqui"</span> \
   -H <span class="str">"Content-Type: application/json"</span> \
   -d '{<span class="key">"emisor"</span>: {...}, <span class="key">"tipo"</span>: 33, <span class="key">"items"</span>: [...]}'
@@ -468,7 +468,7 @@ curl -X POST https://yepardtecore.cl/api/firmar-y-enviar \
     <div class="alert-info">
         🔑 <strong>Autenticación:</strong> todas las llamadas requieren el header
         <code>X-API-Key: yek_tu_key</code>. El endpoint base es
-        <code>https://yepardtecore.cl/api</code>
+        <code>https://app.yepardtecore.cl/api</code>
     </div>
 
     <div class="alert-info" style="background:#f0fdf4;border-color:#bbf7d0;">
@@ -491,7 +491,7 @@ curl -X POST https://yepardtecore.cl/api/firmar-y-enviar \
         <div class="code-block">
             <button class="copy-code" onclick="copiarCodigo(this)">Copiar</button>
 <span class="cmt">// Node.js / fetch</span>
-const res = await fetch(<span class="str">'https://yepardtecore.cl/api/firmar-y-enviar'</span>, {
+const res = await fetch(<span class="str">'https://app.yepardtecore.cl/api/firmar-y-enviar'</span>, {
   method: <span class="str">'POST'</span>,
   headers: {
     <span class="key">'X-API-Key'</span>: <span class="str">'yek_tu_api_key'</span>,
@@ -873,7 +873,7 @@ folios_emisor (
             <div class="code-block">
                 <button class="copy-code" onclick="copiarCodigo(this)">Copiar</button>
 <span class="cmt">// Emitir una factura electrónica (tipo 33)</span>
-const resultado = await fetch(<span class="str">'https://yepardtecore.cl/api/firmar-y-enviar'</span>, {
+const resultado = await fetch(<span class="str">'https://app.yepardtecore.cl/api/firmar-y-enviar'</span>, {
   method: <span class="str">'POST'</span>,
   headers: {
     <span class="str">'X-API-Key'</span>: process.env.DTECORE_API_KEY,
@@ -940,7 +940,7 @@ if (data.ok) {
                 <button class="copy-code" onclick="copiarCodigo(this)">Copiar</button>
 <span class="cmt">// Consultar estado</span>
 const estado = await fetch(
-  <span class="str">`https://yepardtecore.cl/api/estado/${trackId}?rut_emisor=${rut}&tipo=33&ambiente=produccion`</span>,
+  <span class="str">`https://app.yepardtecore.cl/api/estado/${trackId}?rut_emisor=${rut}&tipo=33&ambiente=produccion`</span>,
   { headers: { <span class="str">'X-API-Key'</span>: process.env.DTECORE_API_KEY } }
 );
 const s = await estado.json();
