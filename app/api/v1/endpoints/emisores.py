@@ -363,6 +363,12 @@ async def registro_desarrollador(
     api_key   = "yek_" + secrets.token_hex(30)
     rut_dev   = f"DEV-{int(datetime.now(timezone.utc).timestamp()) % 1000000}"
 
+    # Trial: 7 días de prueba SOLO en certificación. Producción se habilita
+    # cuando el desarrollador elige y paga un plan.
+    from datetime import timedelta as _td
+    _ahora     = datetime.now(timezone.utc)
+    _trial_fin = _ahora + _td(days=7)
+
     emisor = Emisor(
         rut=rut_dev,
         razon_social=datos.nombre_app,          # nombre de la app como razón social
@@ -374,9 +380,11 @@ async def registro_desarrollador(
         url_app=datos.url_app.strip("/"),        # URL sin slash final
         api_key=api_key,
         activo=True,
-        ambiente="produccion",
-        plan="anual",
-        estado_pago="pendiente",                 # pendiente hasta confirmar pago
+        ambiente="certificacion",                # el trial arranca en certificación
+        plan="trial",
+        estado_pago="trial",                     # 7 días de prueba
+        suscripcion_inicio=_ahora,
+        suscripcion_fin=_trial_fin,              # vence a los 7 días
         correo=datos.email.lower().strip(),
     )
     db.add(emisor)
@@ -431,7 +439,8 @@ async def registro_desarrollador(
         "mensaje": (
             f"¡Bienvenido a YeparDTEcore! Tu API key está lista. "
             f"Úsala en el header X-API-Key en cada llamada. "
-            f"Estado de suscripción: pendiente de pago."
+            f"Tienes 7 días de prueba en certificación. "
+            f"Elige un plan para emitir en producción."
         ),
     }
 
