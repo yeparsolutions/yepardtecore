@@ -377,7 +377,7 @@
             <div class="stat-icon">📅</div>
             <div class="card-title">Este mes</div>
             <div class="stat-value" id="s-mes">—</div>
-            <div class="stat-label">en el mes actual</div>
+            <div class="stat-label" id="s-mes-label">en el mes actual</div>
         </div>
         <div class="card">
             <div class="stat-icon">⏳</div>
@@ -409,14 +409,41 @@
             </div>
         </div>
         <div class="card">
-            <div class="card-title">DTEs por tipo</div>
+            <div class="card-title">Qué emite tu app (por tipo)</div>
             <div id="por-tipo"><div class="empty">Sin documentos aún</div></div>
         </div>
     </div>
 
+    <!-- Salud de la integración -->
     <div class="card">
-        <div class="card-title">Últimos documentos</div>
-        <div id="recientes"><div class="empty">Sin documentos aún</div></div>
+        <div class="card-title">Estado de la integración</div>
+        <div id="integracion-health"><div class="empty">Cargando…</div></div>
+    </div>
+
+    <!-- Folios -->
+    <div class="card">
+        <div class="card-title">Folios disponibles por tipo</div>
+        <div id="folios-list"><div class="empty">Sin CAF cargados</div></div>
+    </div>
+
+    <!-- Uso / emisiones por día -->
+    <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+            <div class="card-title" style="margin:0;">Emisiones por día</div>
+            <div id="rango-selector" style="display:flex;gap:6px;">
+                <button class="rango-btn" data-d="7"  onclick="cargarRango(7)"  style="background:var(--card);color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:4px 11px;font-size:.75rem;cursor:pointer;font-family:inherit;">7d</button>
+                <button class="rango-btn" data-d="30" onclick="cargarRango(30)" style="background:var(--card);color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:4px 11px;font-size:.75rem;cursor:pointer;font-family:inherit;">30d</button>
+                <button class="rango-btn" data-d="90" onclick="cargarRango(90)" style="background:var(--card);color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:4px 11px;font-size:.75rem;cursor:pointer;font-family:inherit;">90d</button>
+            </div>
+        </div>
+        <div id="uso-chart" style="margin-top:14px;"><div class="empty">Sin emisiones en el período</div></div>
+        <div id="uso-resumen" style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;font-size:.8rem;color:var(--muted);"></div>
+    </div>
+
+    <!-- Últimos errores -->
+    <div class="card">
+        <div class="card-title">Últimos rechazos / errores ante el SII</div>
+        <div id="ultimos-errores"><div class="empty">Sin errores en el período 🎉</div></div>
     </div>
 </div>
 
@@ -1283,21 +1310,115 @@ async function cargar() {
 
     if (!emisorId) { window.location.href = '/onboarding'; return; }
 
+    await cargarRango(30, true);
+}
+
+let rangoActual = 30;
+async function cargarRango(dias, primera) {
+    rangoActual = dias;
+    document.querySelectorAll('.rango-btn').forEach(b => {
+        const on = parseInt(b.dataset.d) === dias;
+        b.style.background = on ? 'var(--blue)' : 'var(--card)';
+        b.style.color      = on ? '#fff' : 'var(--muted)';
+    });
     try {
         const token = localStorage.getItem('yepar_access_token');
-        const res = await fetch(`/v1/pagos/dashboard/${emisorId}`, {
+        const res = await fetch(`/v1/pagos/dashboard/${emisorId}?dias=${dias}`, {
             headers: token ? { 'Authorization': `Bearer ${token}` } : {},
         });
-        if (!res.ok) { window.location.href = '/onboarding'; return; }
+        if (!res.ok) { if (primera) window.location.href = '/onboarding'; return; }
         render(await res.json());
     } catch(e) {
-        document.getElementById('loader').innerHTML =
+        if (primera) document.getElementById('loader').innerHTML =
             `<p style="color:#dc2626">Error cargando. <a href="/onboarding">Volver</a></p>`;
     }
 }
 
+function _badge(txt, cls){ return `<span class="dias-badge ${cls}">${txt}</span>`; }
+
+function renderIntegracion(intg){
+    const el = document.getElementById('integracion-health'); if (!el) return;
+    const activa = intg.activa ? _badge('Activa','dias-ok') : _badge('Pausada','dias-bad');
+    const amb = intg.ambiente === 'produccion' ? _badge('Producción','dias-ok') : _badge('Certificación','dias-warn');
+    const c = intg.certificado || {};
+    let certB;
+    if (c.estado === 'vigente')         certB = _badge(`Vigente · ${c.dias}d`,'dias-ok');
+    else if (c.estado === 'por_vencer') certB = _badge(`Vence en ${c.dias}d`,'dias-warn');
+    else if (c.estado === 'vencido')    certB = _badge('Vencido','dias-bad');
+    else                                certB = _badge('Sin datos','dias-warn');
+    const t = intg.tasa_exito;
+    let tasaB;
+    if (t === null || t === undefined) tasaB = '<span style="color:var(--muted)">Sin datos aún</span>';
+    else tasaB = _badge(`${t}% aceptados`, t>=95?'dias-ok':t>=80?'dias-warn':'dias-bad');
+    el.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div><div style="font-size:.72rem;color:var(--muted);margin-bottom:4px;">App vinculada</div>
+             <div style="font-weight:600;">${intg.app_vinculada || '—'}</div>
+             <div style="font-size:.74rem;color:var(--muted);">${intg.url_app || 'Sin URL'}</div></div>
+        <div><div style="font-size:.72rem;color:var(--muted);margin-bottom:4px;">Estado</div>${activa}</div>
+        <div><div style="font-size:.72rem;color:var(--muted);margin-bottom:4px;">Ambiente</div>${amb}</div>
+        <div><div style="font-size:.72rem;color:var(--muted);margin-bottom:4px;">Certificado</div>${certB}</div>
+        <div style="grid-column:1/-1;"><div style="font-size:.72rem;color:var(--muted);margin-bottom:4px;">Tasa de éxito ante el SII</div>${tasaB}</div>
+      </div>`;
+}
+
+function renderFolios(folios){
+    const el = document.getElementById('folios-list'); if (!el) return;
+    if (!folios.length){ el.innerHTML = '<div class="empty">Sin CAF cargados</div>'; return; }
+    el.innerHTML = folios.map(f => {
+        const col = f.bajo ? '#dc2626' : 'var(--muted)';
+        const amb = f.ambiente === 'produccion' ? '' : ' <span style="font-size:.65rem;color:var(--muted)">(cert)</span>';
+        return `<div class="tipo-row">
+            <span class="tipo-name">${f.descripcion}${amb}</span>
+            <div class="tipo-bar-wrap"><div class="tipo-bar">
+                <div class="tipo-bar-fill${f.bajo?' danger':''}" style="width:${f.pct_usado}%"></div></div></div>
+            <span class="tipo-count" style="color:${col}">${f.disponibles.toLocaleString('es-CL')}</span>
+        </div>` + (f.bajo ? `<div style="font-size:.7rem;color:#dc2626;margin:-2px 0 8px 0;">⚠ Quedan pocos folios de ${f.descripcion} — solicita un nuevo CAF</div>` : '');
+    }).join('');
+}
+
+function renderUso(uso){
+    const chart = document.getElementById('uso-chart'); if (!chart) return;
+    const dd = uso.por_dia || [];
+    const maxC = Math.max(...dd.map(x=>x.count), 1);
+    const total = uso.total_rango || 0;
+    if (!total){ chart.innerHTML = '<div class="empty">Sin emisiones en el período</div>'; }
+    else {
+        const n = dd.length, bw = 100 / n;
+        const bars = dd.map((x,i)=>{
+            const hh = x.count ? Math.max(2, x.count/maxC*100) : 0;
+            const isPico = uso.pico && x.fecha === uso.pico.fecha && x.count === uso.pico.count;
+            const fill = isPico ? 'var(--blue)' : '#93c5fd';
+            return `<rect x="${(i*bw+bw*0.15).toFixed(2)}" y="${(100-hh).toFixed(2)}" width="${(bw*0.7).toFixed(2)}" height="${hh.toFixed(2)}" fill="${fill}"><title>${x.fecha}: ${x.count}</title></rect>`;
+        }).join('');
+        chart.innerHTML = `
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%;height:130px;display:block;">${bars}</svg>
+          <div style="display:flex;justify-content:space-between;font-size:.68rem;color:var(--muted);margin-top:4px;">
+            <span>${dd[0]?dd[0].fecha:''}</span><span>${dd.length?dd[dd.length-1].fecha:''}</span></div>`;
+    }
+    const e = uso.por_estado || {};
+    const r = document.getElementById('uso-resumen');
+    if (r) r.innerHTML =
+        `<span>Total: <strong style="color:#e5e7eb">${total.toLocaleString('es-CL')}</strong></span>`+
+        `<span>✅ ${e.exitosos||0}</span><span>❌ ${e.errores||0}</span><span>⏳ ${e.pendientes||0}</span>`+
+        (uso.pico ? `<span>Pico: <strong style="color:#e5e7eb">${uso.pico.count}</strong> (${uso.pico.fecha})</span>` : '');
+}
+
+function renderErrores(errs){
+    const el = document.getElementById('ultimos-errores'); if (!el) return;
+    if (!errs.length){ el.innerHTML = '<div class="empty">Sin errores en el período 🎉</div>'; return; }
+    el.innerHTML = `<table class="tbl">
+        <thead><tr><th>Tipo</th><th>Folio</th><th>Estado</th><th>Track ID</th><th>Fecha</th></tr></thead>
+        <tbody>${errs.map(r=>`
+            <tr><td>${r.tipo}</td><td>${r.folio}</td>
+                <td><span class="estado-badge estado-${r.estado}">${r.estado}</span></td>
+                <td style="font-family:monospace;font-size:.7rem;">${r.track_id}</td>
+                <td>${r.fecha}</td></tr>`).join('')}
+        </tbody></table>`;
+}
+
 function render(data) {
-    const { cuenta, suscripcion, metricas } = data;
+    const { cuenta, suscripcion, metricas, integracion, uso } = data;
     apiKeyVal = cuenta.api_key || '';
 
     // Topbar
@@ -1345,8 +1466,15 @@ function render(data) {
             `<span class="dias-badge dias-bad">Sin suscripción activa</span>`;
     }
 
-    // Por tipo
-    const tipos = metricas.por_tipo;
+    // Stat del período
+    if (uso) {
+        document.getElementById('s-mes').textContent = (uso.total_rango||0).toLocaleString('es-CL');
+        const lbl = document.getElementById('s-mes-label');
+        if (lbl) lbl.textContent = `en los últimos ${uso.rango_dias}d`;
+    }
+
+    // Qué emite la app (por tipo, en el período)
+    const tipos = (uso && uso.por_tipo) || {};
     const maxV  = Math.max(...Object.values(tipos), 1);
     const tipEl = document.getElementById('por-tipo');
     if (Object.keys(tipos).length) {
@@ -1360,22 +1488,13 @@ function render(data) {
                 </div>
                 <span class="tipo-count">${c}</span>
             </div>`).join('');
+    } else {
+        tipEl.innerHTML = '<div class="empty">Sin emisiones en el período</div>';
     }
 
-    // Recientes
-    const recEl = document.getElementById('recientes');
-    if (metricas.recientes.length) {
-        recEl.innerHTML = `<table class="tbl">
-            <thead><tr><th>Tipo</th><th>Folio</th><th>Monto</th><th>Estado</th><th>Fecha</th></tr></thead>
-            <tbody>${metricas.recientes.map(r => `
-                <tr>
-                    <td>${r.tipo}</td><td>${r.folio}</td>
-                    <td>$${Number(r.monto).toLocaleString('es-CL')}</td>
-                    <td><span class="estado-badge estado-${r.estado}">${r.estado}</span></td>
-                    <td>${r.fecha}</td>
-                </tr>`).join('')}
-            </tbody></table>`;
-    }
+    // Salud de integración + folios + uso + errores
+    if (integracion) { renderIntegracion(integracion); renderFolios(integracion.folios || []); }
+    if (uso) { renderUso(uso); renderErrores(uso.ultimos_errores || []); }
 
     // API Key
     document.querySelectorAll('.apikey-text').forEach(el => el.textContent = apiKeyVal);
