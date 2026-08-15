@@ -91,6 +91,27 @@ async def get_emisor_by_api_key(
     return emisor
 
 
+def _requiere_plan_para_produccion(emisor, ambiente_resuelto):
+    """
+    Candado de trial: PRODUCCIÓN solo para cuentas con plan pagado y vigente.
+    Durante el trial (o si la suscripción venció) solo se permite certificación;
+    para emitir en producción hay que elegir y pagar un plan.
+    """
+    if (ambiente_resuelto or "").lower() != "produccion":
+        return
+    fin = getattr(emisor, "suscripcion_fin", None)
+    if fin is not None and getattr(fin, "tzinfo", None) is None:
+        fin = fin.replace(tzinfo=timezone.utc)
+    pagado_vigente = (getattr(emisor, "estado_pago", None) == "pagado"
+                      and fin is not None and fin > datetime.now(timezone.utc))
+    if not pagado_vigente:
+        raise HTTPException(status_code=403, detail={
+            "mensaje": "Tu cuenta está en período de prueba (solo certificación). "
+                       "Elige un plan para habilitar la emisión en producción.",
+            "tipo": "requiere_plan",
+        })
+
+
 @router.get("/health")
 async def health():
     # Verificar en vivo qué fixes están realmente cargados en este deploy.
@@ -235,6 +256,8 @@ async def emitir_dte(
     tipos_validos = {33, 34, 39, 41, 52, 56, 61}
     if datos.tipo not in tipos_validos:
         raise HTTPException(422, f"Tipo DTE no válido: {datos.tipo}")
+
+    _requiere_plan_para_produccion(emisor, emisor.ambiente or "certificacion")
 
     fecha = datos.fecha or _hoy_chile()
     datos_dte = {
@@ -525,6 +548,7 @@ async def firmar_y_enviar(
     # Resolver ambiente: override por request > default del emisor > certificacion
     ambiente_efectivo = datos.ambiente or emisor_api.ambiente or "certificacion"
     datos.ambiente = ambiente_efectivo
+    _requiere_plan_para_produccion(emisor_api, datos.ambiente)
 
     if datos.tipo not in tipos_validos:
         raise HTTPException(422, f"Tipo DTE no válido: {datos.tipo}")
@@ -958,6 +982,8 @@ async def generar_set(
     import re as _re
 
     TIPOS_BOLETA = {39, 41}
+
+    _requiere_plan_para_produccion(emisor, datos.ambiente or "certificacion")
 
     if not datos.casos:
         raise HTTPException(400, "No hay casos para generar")
@@ -1555,6 +1581,8 @@ async def enviar_sobre_directo(
     """
     from app.services.firma_digital import FirmaDigital
 
+    _requiere_plan_para_produccion(emisor, datos.ambiente or "certificacion")
+
     try:
         pfx_bytes  = _b64.b64decode(datos.pfx_base64)
         sobre_xml  = _b64.b64decode(datos.xml_sobre_b64).decode("ISO-8859-1")
@@ -1627,6 +1655,8 @@ async def generar_libro_desde_xml_publico(
         _parsear_dtes_desde_xml, _construir_libro_xml, _DTEFake,
     )
     from app.services.firma_digital import FirmaDigital
+
+    _requiere_plan_para_produccion(emisor, ambiente or "certificacion")
 
     tipo_libro = tipo_libro.lower().strip()
     if tipo_libro not in ("ventas", "guias", "compras"):
@@ -1823,6 +1853,8 @@ async def generar_libro_compras_publico(
     # Todo el cuerpo va dentro de un try que loguea el traceback COMPLETO y lo
     # devuelve en el mensaje de error. Así, si algo falla, el log y la respuesta
     # muestran la causa exacta en vez de un "Internal Server Error" sin pistas.
+    _requiere_plan_para_produccion(emisor, ambiente or "certificacion")
+
     import traceback as _tb
     try:
         return await _generar_libro_compras_impl(
@@ -2112,6 +2144,8 @@ async def generar_consumo_folios(
     from lxml import etree as _etree
     import base64 as _b64cf, hashlib as _hs
     from datetime import datetime as _dt
+
+    _requiere_plan_para_produccion(emisor, datos.ambiente or "certificacion")
 
     _limpiar  = lambda r: r.replace(".", "").strip() if r else r
     rut_em    = _limpiar(datos.rut_emisor)
