@@ -1426,6 +1426,14 @@ async function renovar() {
         localStorage.setItem('yepar_emisor_id', emisorId);
         localStorage.setItem('yepar_email', email);
 
+        if (data.pagado) {
+            if (btn) btn.disabled = false;
+            if (errEl) { errEl.textContent = data.mensaje || 'Esta cuenta ya tiene una suscripción activa.'; errEl.style.display = 'block'; }
+            return;
+        }
+        if (!data.init_point) {
+            throw new Error('No se pudo iniciar el pago (init_point vacío). Revisa las credenciales de Mercado Pago en Railway.');
+        }
         window.location.href = data.init_point;
     } catch(e) {
         if (btn) btn.disabled = false;
