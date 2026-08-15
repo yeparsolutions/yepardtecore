@@ -274,6 +274,7 @@ async def webhook_mp(
         _fin_actual = _fin_actual.replace(tzinfo=timezone.utc)
     base = _fin_actual if (_fin_actual and _fin_actual > ahora) else ahora
     emisor.estado_pago        = "pagado"
+    emisor.ambiente           = "produccion"   # al pagar, se habilita producción
     emisor.suscripcion_inicio = ahora
     emisor.suscripcion_fin    = base + timedelta(days=DIAS_SUSCRIPCION)
     await db.commit()
@@ -1028,6 +1029,7 @@ async def admin_activar_pago(
         nuevo_fin = ahora + timedelta(days=365)
 
     emisor.estado_pago        = "pagado"
+    emisor.ambiente           = "produccion"   # al activar el pago, se habilita producción
     emisor.suscripcion_inicio = ahora
     emisor.suscripcion_fin    = nuevo_fin
     await db.commit()
