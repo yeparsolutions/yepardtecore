@@ -405,22 +405,95 @@ async def estado_pago(
 
 # ── Dashboard del desarrollador ───────────────────────────────
 
+# ══════════════════════════════════════════════════════════════
+# MONITOR DE SERVIDORES DEL SII (cron cada 5 min)
+# Chequea los servidores que YeparDTEcore realmente usa y que son
+# alcanzables desde el server. Nota: rahue/maullin2 (boletas host viejo)
+# NO resuelven por DNS fuera de Chile, por eso monitoreamos la API REST
+# de boletas (api/apicert.sii.cl), que es la puerta real de producción.
+# ══════════════════════════════════════════════════════════════
+SII_SERVIDORES = [
+    ("maullin",     "Maullín · DTE certificación", "https://maullin.sii.cl/DTEWS/CrSeed.jws"),
+    ("palena",      "Palena · DTE producción",     "https://palena.sii.cl/DTEWS/CrSeed.jws"),
+    ("boleta_cert", "Boletas · certificación",     "https://apicert.sii.cl/recursos/v1/boleta.electronica.semilla"),
+    ("boleta_prod", "Boletas · producción",        "https://api.sii.cl/recursos/v1/boleta.electronica.semilla"),
+]
+SII_LATENCIA_LENTA_MS = 3500
+
+
+@router.post("/check-sii-health")
+async def check_sii_health(request: Request, db: AsyncSession = Depends(get_db)):
+    """
+    Monitor de fondo: consulta cada servidor del SII, mide latencia y registra
+    caídas. Pensado para un cron cada 5 minutos (X-Cron-Secret, igual que el de
+    renovaciones). El dashboard solo LEE lo último guardado → carga instantánea.
+    """
+    _verificar_secreto(request, "X-Cron-Secret")
+    from app.models.sii_health import SIIHealth, SIIIncidente
+    import time as _time
+
+    ahora = datetime.now(timezone.utc)
+    resultados = []
+    async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+        for clave, nombre, url in SII_SERVIDORES:
+            estado, latencia = "caido", None
+            t0 = _time.perf_counter()
+            try:
+                resp = await client.get(url)
+                latencia = int((_time.perf_counter() - t0) * 1000)
+                # Cualquier respuesta HTTP < 500 = el servidor está vivo y contesta.
+                estado = "ok" if resp.status_code < 500 else "caido"
+                if estado == "ok" and latencia > SII_LATENCIA_LENTA_MS:
+                    estado = "lento"
+            except Exception:
+                latencia = int((_time.perf_counter() - t0) * 1000)
+                estado = "caido"
+
+            row = await db.get(SIIHealth, clave)
+            if not row:
+                row = SIIHealth(servidor=clave, nombre=nombre, url=url)
+                db.add(row)
+            row.nombre, row.url = nombre, url
+            row.estado, row.latencia_ms, row.ultimo_check = estado, latencia, ahora
+
+            estaba_caido = row.caido_desde is not None
+            if estado == "caido":
+                if not estaba_caido:
+                    row.caido_desde = ahora          # empieza la caída
+            else:
+                row.ultimo_ok = ahora
+                if estaba_caido:                     # se recuperó → cerrar incidente
+                    inicio = row.caido_desde
+                    if getattr(inicio, "tzinfo", None) is None:
+                        inicio = inicio.replace(tzinfo=timezone.utc)
+                    db.add(SIIIncidente(
+                        servidor=clave, nombre=nombre, inicio=inicio, fin=ahora,
+                        duracion_seg=int((ahora - inicio).total_seconds()),
+                    ))
+                    row.caido_desde = None
+            resultados.append({"servidor": clave, "estado": estado, "latencia_ms": latencia})
+
+    await db.commit()
+    return {"ok": True, "checked_at": ahora.isoformat(), "resultados": resultados}
+
+
 @router.get("/dashboard/{emisor_id}")
 async def dashboard(
     emisor_id: int,
     request: Request,
     dias: int = 30,
+    mes: str | None = None,   # "YYYY-MM" para ver un mes específico (tiene prioridad sobre dias)
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Dashboard del desarrollador, enfocado en la SALUD de la integración (no en
-    listar documentos, que el dev ya tiene en su propia app): app vinculada,
-    ambiente, certificado, folios, tasa de éxito ante el SII, uso por día
-    (rango elegible con ?dias=) y últimos errores para depurar.
+    Dashboard del desarrollador, enfocado en la SALUD de la conexión con el SII
+    (no en listar sus documentos, que el dev ya tiene en su app): estado de los
+    servidores del SII con latencia e historial de caídas, señal de vida de la
+    integración, tasa de aceptación, y volumen de DTE para costos (rango o mes).
     """
     _verificar_jwt_emisor(request, emisor_id)
     from app.models.dte import DTE
-    from app.models.caf import CAF
+    from app.models.sii_health import SIIHealth, SIIIncidente
     from sqlalchemy import func
     from datetime import datetime, timezone, timedelta
 
@@ -429,8 +502,20 @@ async def dashboard(
         raise HTTPException(404, "Cuenta no encontrada")
 
     ahora = datetime.now(timezone.utc)
-    dias  = max(1, min(int(dias or 30), 365))
-    desde = ahora - timedelta(days=dias)
+
+    # ── Ventana de tiempo: por mes (YYYY-MM) o por rango de días ───────────────
+    modo = "mes" if mes else "rango"
+    if mes:
+        try:
+            y, m = int(mes[:4]), int(mes[5:7])
+            desde = datetime(y, m, 1, tzinfo=timezone.utc)
+            hasta = datetime(y + (m // 12), (m % 12) + 1, 1, tzinfo=timezone.utc)
+        except Exception:
+            mes, modo = None, "rango"
+    if not mes:
+        dias = max(1, min(int(dias or 30), 365))
+        desde = ahora - timedelta(days=dias)
+        hasta = ahora + timedelta(days=1)
 
     TIPO_LBL = {33: "Factura", 34: "F.Exenta", 39: "Boleta", 41: "B.Exenta",
                 52: "Guía", 56: "N.Débito", 61: "N.Crédito"}
@@ -439,8 +524,7 @@ async def dashboard(
              "NO_AUTORIZADO", "TIMEOUT", "DESCONOCIDO"}
 
     # ── Suscripción ───────────────────────────────────────────────────────────
-    dias_restantes = None
-    porcentaje_tiempo = None
+    dias_restantes = porcentaje_tiempo = None
     fin = emisor.suscripcion_fin
     if fin is not None and getattr(fin, "tzinfo", None) is None:
         fin = fin.replace(tzinfo=timezone.utc)
@@ -452,63 +536,79 @@ async def dashboard(
             if getattr(inicio, "tzinfo", None) is None:
                 inicio = inicio.replace(tzinfo=timezone.utc)
             total_dias = (fin - inicio).days or 365
-            transcurridos = (ahora - inicio).days
-            porcentaje_tiempo = min(100, max(0, round(transcurridos / total_dias * 100)))
+            porcentaje_tiempo = min(100, max(0, round((ahora - inicio).days / total_dias * 100)))
 
-    # ── Certificado: días para vencer ─────────────────────────────────────────
-    cert_estado, cert_dias, cert_fecha = "sin_datos", None, None
-    if emisor.certificado_vigencia:
-        cert_fecha = str(emisor.certificado_vigencia)
-        parsed = None
-        for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S",
-                    "%d-%m-%Y", "%d/%m/%Y"):
-            try:
-                parsed = datetime.strptime(cert_fecha[:19], fmt)
-                break
-            except ValueError:
-                continue
-        if parsed:
-            cert_dias = (parsed.date() - ahora.date()).days
-            cert_estado = ("vencido" if cert_dias < 0
-                           else "por_vencer" if cert_dias < 30 else "vigente")
-
-    # ── Folios disponibles por CAF ────────────────────────────────────────────
-    folios = []
+    # ── Estado de los servidores del SII (leído del monitor de fondo) ──────────
+    sii_servers, sii_incidentes = [], []
+    monitor_activo = False
     try:
-        res_caf = await db.execute(
-            select(CAF).where(CAF.emisor_id == emisor_id, CAF.activo == True)
-            .order_by(CAF.tipo_dte)
-        )
-        for c in res_caf.scalars().all():
-            total = (c.folio_hasta - c.folio_desde + 1)
-            disponibles = max(0, c.folio_hasta - c.folio_actual + 1)
-            usados = max(0, min(total, c.folio_actual - c.folio_desde))
-            folios.append({
-                "tipo": c.tipo_dte,
-                "descripcion": TIPO_LBL.get(c.tipo_dte, str(c.tipo_dte)),
-                "ambiente": c.ambiente,
-                "disponibles": disponibles,
-                "total": total,
-                "usados": usados,
-                "pct_usado": round(usados / total * 100) if total else 0,
-                "bajo": disponibles <= max(10, round(total * 0.1)),
+        rows = (await db.execute(select(SIIHealth))).scalars().all()
+        by_key = {r.servidor: r for r in rows}
+        for clave, nombre, url in SII_SERVIDORES:
+            r = by_key.get(clave)
+            if r and r.ultimo_check:
+                monitor_activo = True
+                uc = r.ultimo_check
+                if getattr(uc, "tzinfo", None) is None:
+                    uc = uc.replace(tzinfo=timezone.utc)
+                # Si el último chequeo es muy viejo (>20 min), el monitor no corre
+                fresco = (ahora - uc).total_seconds() < 20 * 60
+                cd = r.caido_desde
+                if cd is not None and getattr(cd, "tzinfo", None) is None:
+                    cd = cd.replace(tzinfo=timezone.utc)
+                sii_servers.append({
+                    "servidor": clave, "nombre": r.nombre or nombre,
+                    "estado": r.estado if fresco else "desconocido",
+                    "latencia_ms": r.latencia_ms,
+                    "ultimo_check": uc.strftime("%d/%m %H:%M"),
+                    "caido_desde": cd.strftime("%d/%m %H:%M") if cd else None,
+                    "fresco": fresco,
+                })
+            else:
+                sii_servers.append({
+                    "servidor": clave, "nombre": nombre, "estado": "desconocido",
+                    "latencia_ms": None, "ultimo_check": None,
+                    "caido_desde": None, "fresco": False,
+                })
+        res_inc = await db.execute(
+            select(SIIIncidente).order_by(SIIIncidente.inicio.desc()).limit(8))
+        for i in res_inc.scalars().all():
+            mins = round((i.duracion_seg or 0) / 60)
+            sii_incidentes.append({
+                "nombre": i.nombre,
+                "inicio": i.inicio.strftime("%d/%m %H:%M") if i.inicio else "",
+                "fin":    i.fin.strftime("%d/%m %H:%M") if i.fin else "",
+                "duracion": f"{mins} min" if mins else "<1 min",
             })
     except Exception:
-        folios = []
+        pass
 
-    # ── Métricas de DTE ───────────────────────────────────────────────────────
+    # ── Métricas de DTE (volumen para costos + señal de vida + tasa éxito) ─────
     total_dtes = total_rango = 0
     por_tipo, por_dia, pico = {}, [], None
     exitosos = errores = pendientes = 0
     tasa_exito = None
+    ultima_actividad = None
     ultimos_errores = []
     try:
         total_dtes = (await db.execute(
             select(func.count(DTE.id)).where(DTE.emisor_id == emisor_id))).scalar() or 0
 
+        ult = (await db.execute(
+            select(func.max(DTE.created_at)).where(DTE.emisor_id == emisor_id))).scalar()
+        if ult:
+            if getattr(ult, "tzinfo", None) is None:
+                ult = ult.replace(tzinfo=timezone.utc)
+            horas = (ahora - ult).total_seconds() / 3600
+            ultima_actividad = {
+                "fecha": ult.strftime("%d/%m/%Y %H:%M"),
+                "hace_horas": round(horas, 1),
+                "reciente": horas < 48,
+            }
+
         res_est = await db.execute(
             select(DTE.estado, func.count(DTE.id))
-            .where(DTE.emisor_id == emisor_id, DTE.created_at >= desde)
+            .where(DTE.emisor_id == emisor_id, DTE.created_at >= desde, DTE.created_at < hasta)
             .group_by(DTE.estado))
         for est, c in res_est.fetchall():
             total_rango += c
@@ -520,19 +620,20 @@ async def dashboard(
 
         res_tipo = await db.execute(
             select(DTE.tipo_dte, func.count(DTE.id))
-            .where(DTE.emisor_id == emisor_id, DTE.created_at >= desde)
+            .where(DTE.emisor_id == emisor_id, DTE.created_at >= desde, DTE.created_at < hasta)
             .group_by(DTE.tipo_dte))
         por_tipo = {TIPO_LBL.get(t, str(t)): c for t, c in res_tipo.fetchall()}
 
         res_dia = await db.execute(
             select(func.date(DTE.created_at), func.count(DTE.id))
-            .where(DTE.emisor_id == emisor_id, DTE.created_at >= desde)
+            .where(DTE.emisor_id == emisor_id, DTE.created_at >= desde, DTE.created_at < hasta)
             .group_by(func.date(DTE.created_at)))
         conteo = {}
         for d, c in res_dia.fetchall():
             conteo[d.isoformat() if hasattr(d, "isoformat") else str(d)] = c
-        base_day = (ahora - timedelta(days=dias - 1)).date()
-        for i in range(dias):
+        n_dias = max(1, (hasta.date() - desde.date()).days)
+        base_day = desde.date()
+        for i in range(n_dias):
             d = base_day + timedelta(days=i)
             por_dia.append({"fecha": d.strftime("%d/%m"), "iso": d.isoformat(),
                             "count": conteo.get(d.isoformat(), 0)})
@@ -558,8 +659,7 @@ async def dashboard(
         "cuenta": {
             "id": emisor.id, "nombre_app": emisor.nombre_app, "url_app": emisor.url_app,
             "correo": emisor.correo, "api_key": emisor.api_key,
-            "estado_pago": emisor.estado_pago, "ambiente": emisor.ambiente,
-            "activa": emisor.activo,
+            "estado_pago": emisor.estado_pago, "activa": emisor.activo,
         },
         "suscripcion": {
             "estado": emisor.estado_pago,
@@ -570,21 +670,21 @@ async def dashboard(
         },
         "integracion": {
             "app_vinculada": emisor.nombre_app, "url_app": emisor.url_app,
-            "origen_vinculado": getattr(emisor, "origen_vinculado", None),
-            "activa": emisor.activo, "ambiente": emisor.ambiente,
-            "certificado": {"fecha": cert_fecha, "dias": cert_dias, "estado": cert_estado},
-            "folios": folios,
+            "activa": emisor.activo,
+            "ultima_actividad": ultima_actividad,
             "tasa_exito": tasa_exito,
         },
+        "sii": {
+            "monitor_activo": monitor_activo,
+            "servidores": sii_servers,
+            "incidentes": sii_incidentes,
+        },
         "uso": {
-            "rango_dias": dias, "total_rango": total_rango,
+            "modo": modo, "rango_dias": (None if mes else dias), "mes": mes,
+            "total_dtes": total_dtes, "total_rango": total_rango,
             "por_dia": por_dia, "pico": pico, "por_tipo": por_tipo,
             "por_estado": {"exitosos": exitosos, "errores": errores, "pendientes": pendientes},
             "ultimos_errores": ultimos_errores,
-        },
-        "metricas": {   # compat con render() anterior
-            "total_dtes": total_dtes, "dtes_este_mes": total_rango,
-            "por_tipo": por_tipo, "recientes": [],
         },
     }
 
