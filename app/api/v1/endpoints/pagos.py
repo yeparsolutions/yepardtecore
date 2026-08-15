@@ -51,7 +51,9 @@ def _verificar_secreto(request: Request, header: str = "X-Admin-Secret") -> None
         raise HTTPException(403, "No autorizado")
 
 
-MONTO_SUSCRIPCION = 100000   # $100.000 CLP
+# Precio anual: se muestra como base + IVA; MP cobra el TOTAL con IVA.
+PRECIO_NETO       = 150000                     # base sin IVA
+MONTO_SUSCRIPCION = round(PRECIO_NETO * 1.19)  # 178.500 — total que cobra MP
 DIAS_SUSCRIPCION  = 365
 
 
@@ -578,7 +580,7 @@ async def notificar_renovaciones(
       interrupciones, renueva ahora.
     </p>
     <div style="background:#f0f4ff;border-radius:10px;padding:16px;margin-bottom:20px;">
-      <strong>Plan Anual — $100.000 CLP</strong><br>
+      <strong>Plan Anual — $150.000 + IVA ($178.500 CLP)</strong><br>
       <span style="font-size:.85rem;color:#64748b;">
         DTEs ilimitados · Misma API key · Sin cambios en tu software
       </span>
@@ -697,7 +699,7 @@ async def admin_resumen(
     total_pendientes = res_pendientes.scalar() or 0
 
     # Ingresos estimados
-    ingresos_estimados = total_pagados * 100000
+    ingresos_estimados = total_pagados * PRECIO_NETO   # neto; el IVA se remite al SII
 
     # Vencen en 30 días
     en_30 = ahora + timedelta(days=30)
