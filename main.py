@@ -1,4 +1,5 @@
 import os
+import asyncio
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,8 +34,29 @@ async def lifespan(app: FastAPI):
         from app.models.usuario     import Usuario
         from app.models.sii_health   import SIIHealth, SIIIncidente
         await conn.run_sync(Base.metadata.create_all)
+    # Monitor interno del SII: corre cada 5 min DENTRO del proceso, sin cron externo
+    tarea_monitor = asyncio.create_task(_monitor_sii_loop())
     yield
+    tarea_monitor.cancel()
     await engine.dispose()
+
+
+async def _monitor_sii_loop():
+    """Chequea los servidores del SII cada 5 minutos, dentro del propio proceso."""
+    from app.db.base import AsyncSessionLocal
+    from app.api.v1.endpoints.pagos import ejecutar_check_sii
+    _log = logging.getLogger("yepardtecore.monitor")
+    await asyncio.sleep(10)  # dejar que la app termine de levantar
+    while True:
+        try:
+            async with AsyncSessionLocal() as db:
+                await ejecutar_check_sii(db)
+            _log.info("[MONITOR-SII] chequeo completado")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            _log.error(f"[MONITOR-SII] error: {e}")
+        await asyncio.sleep(60)  # 1 minuto
 
 app = FastAPI(
     title=settings.APP_NAME,
