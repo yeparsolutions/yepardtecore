@@ -198,7 +198,7 @@ async def health():
         checks["fix_boleta_check"] = f"error: {ex}"
     return {"ok": True, "servicio": "YeparDTEcore", "version": "2.1",
             "fixes": checks,
-            "docs": "https://yepardtecore.cl/api/docs"}
+            "docs": "https://app.yepardtecore.cl/api/docs"}
 
 
 class ReceptorInput(BaseModel):
