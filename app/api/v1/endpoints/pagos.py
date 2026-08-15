@@ -278,7 +278,7 @@ async def webhook_mp(
             <body style="font-family:'DM Sans',Arial,sans-serif;background:#f8f9fa;margin:0;padding:40px 20px;">
               <div style="max-width:480px;margin:0 auto;background:#fff;border-radius:16px;
                           padding:36px;border:1px solid #e0e0e0;">
-                <img src="https://yepardtecore.cl/static/logo-horizontal.svg"
+                <img src="https://app.yepardtecore.cl/static/logo-300x130.png"
                      alt="YeparDTEcore" style="height:36px;margin-bottom:28px;">
                 <h2 style="font-size:1.4rem;color:#1a1a1a;margin-bottom:10px;">
                   ¡Tu suscripción está activa!
@@ -294,7 +294,7 @@ async def webhook_mp(
                 </div>
                 <p style="color:#6c757d;font-size:0.85rem;line-height:1.6;">
                   Úsala en el header <code>X-API-Key</code> en cada llamada.<br>
-                  Documentación: <a href="https://yepardtecore.cl/api/docs">yepardtecore.cl/api/docs</a>
+                  Documentación: <a href="https://app.yepardtecore.cl/api/docs">app.yepardtecore.cl/api/docs</a>
                 </p>
                 <hr style="border:none;border-top:1px solid #eee;margin:28px 0;">
                 <p style="font-size:0.75rem;color:#999;">
@@ -567,7 +567,7 @@ async def notificar_renovaciones(
 <body style="font-family:'DM Sans',Arial,sans-serif;background:#f8f9fa;margin:0;padding:40px 20px;">
   <div style="max-width:480px;margin:0 auto;background:#fff;border-radius:16px;
               padding:36px;border:1px solid #e0e0e0;">
-    <img src="https://yepardtecore.cl/static/logo-horizontal.svg"
+    <img src="https://app.yepardtecore.cl/static/logo-300x130.png"
          alt="YeparDTEcore" style="height:36px;margin-bottom:28px;">
     <h2 style="color:{color};font-size:1.3rem;margin-bottom:10px;">
       Tu suscripción vence {urgencia}
@@ -583,7 +583,7 @@ async def notificar_renovaciones(
         DTEs ilimitados · Misma API key · Sin cambios en tu software
       </span>
     </div>
-    <a href="https://yepardtecore.cl/dashboard"
+    <a href="https://app.yepardtecore.cl/dashboard"
        style="display:block;text-align:center;background:{color};color:#fff;
               padding:13px;border-radius:10px;text-decoration:none;
               font-weight:700;font-size:.95rem;margin-bottom:16px;">
