@@ -156,7 +156,7 @@ async def validar_api_key(
                 detail=(
                     f"Esta API key ya está vinculada a otra aplicación "
                     f"({emisor.origen_vinculado}). Para moverla, libera la "
-                    "vinculación desde tu panel en yepardtecore.cl."
+                    "vinculación desde tu panel en app.yepardtecore.cl."
                 ),
             )
 
