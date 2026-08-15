@@ -344,6 +344,9 @@
         <button class="nav-item" onclick="irA('manual')">
             <span>📘</span> Manual
         </button>
+        <button class="nav-item" onclick="irA('planes')">
+            <span>💳</span> Planes
+        </button>
         <button class="nav-item" onclick="irA('renovar')">
             <span>🔄</span> Renovar
         </button>
@@ -1021,6 +1024,50 @@ const s = await estado.json();
 
 
 <!-- ─── RENOVAR ─── -->
+<div class="section" id="sec-planes">
+    <h1 class="section-title">Planes</h1>
+    <p class="section-sub">Elige el plan según cuántas apps necesitas conectar a YeparDTEcore</p>
+
+    <div id="planes-trial-aviso"></div>
+
+    <div class="grid-2" style="gap:16px;">
+        <div class="card" style="border:2px solid var(--blue);">
+            <div style="font-weight:700;font-size:1.1rem;">Developer</div>
+            <div style="font-size:.8rem;color:var(--muted);margin-bottom:10px;">1 aplicación</div>
+            <div style="font-size:1.5rem;font-weight:700;color:var(--blue);">$150.000</div>
+            <div style="font-size:.75rem;color:var(--muted);">+ IVA · $178.500 CLP/año</div>
+            <button onclick="renovar()" style="margin-top:12px;width:100%;background:var(--blue);color:#fff;border:none;border-radius:10px;padding:10px;font-size:.85rem;font-weight:600;cursor:pointer;font-family:inherit;">Elegir plan →</button>
+        </div>
+        <div class="card" style="border:1px solid var(--border);">
+            <div style="font-weight:700;font-size:1.1rem;">Partner</div>
+            <div style="font-size:.8rem;color:var(--muted);margin-bottom:10px;">3 aplicaciones</div>
+            <div style="font-size:1.5rem;font-weight:700;color:var(--blue);">$350.000</div>
+            <div style="font-size:.75rem;color:var(--muted);">+ IVA · $416.500 CLP/año</div>
+            <button disabled style="margin-top:12px;width:100%;background:var(--card);color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:10px;font-size:.8rem;font-family:inherit;cursor:not-allowed;">Disponible pronto</button>
+        </div>
+        <div class="card" style="border:1px solid var(--border);">
+            <div style="font-weight:700;font-size:1.1rem;">Business</div>
+            <div style="font-size:.8rem;color:var(--muted);margin-bottom:10px;">5 aplicaciones</div>
+            <div style="font-size:1.5rem;font-weight:700;color:var(--blue);">$500.000</div>
+            <div style="font-size:.75rem;color:var(--muted);">+ IVA · $595.000 CLP/año</div>
+            <button disabled style="margin-top:12px;width:100%;background:var(--card);color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:10px;font-size:.8rem;font-family:inherit;cursor:not-allowed;">Disponible pronto</button>
+        </div>
+        <div class="card" style="border:1px solid var(--border);">
+            <div style="font-weight:700;font-size:1.1rem;">Scale</div>
+            <div style="font-size:.8rem;color:var(--muted);margin-bottom:10px;">10 aplicaciones</div>
+            <div style="font-size:1.5rem;font-weight:700;color:var(--blue);">$850.000</div>
+            <div style="font-size:.75rem;color:var(--muted);">+ IVA · $1.011.500 CLP/año</div>
+            <button disabled style="margin-top:12px;width:100%;background:var(--card);color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:10px;font-size:.8rem;font-family:inherit;cursor:not-allowed;">Disponible pronto</button>
+        </div>
+    </div>
+
+    <p style="font-size:.8rem;color:var(--muted);margin-top:16px;">
+        Por ahora el pago habilita el plan <strong>Developer</strong> (1 app). Los planes superiores
+        (Partner, Business, Scale) estarán disponibles muy pronto — si necesitas más apps ahora,
+        escríbenos a <a href="mailto:soporte@yeparsolutions.com">soporte@yeparsolutions.com</a>.
+    </p>
+</div>
+
 <div class="section" id="sec-renovar">
     <h1 class="section-title">Renovar suscripción</h1>
     <p class="section-sub">Extiende tu acceso a la API por otro año</p>
@@ -1478,19 +1525,38 @@ function render(data) {
     document.getElementById('sub-overview').textContent =
         `${cuenta.nombre_app} · ${cuenta.correo}`;
 
-    // Banner no pagado
-    if (cuenta.estado_pago !== 'pagado') {
-        document.getElementById('unpaid-wrap').innerHTML = `
+    // Banner: prueba (trial) vs pendiente de pago
+    const _uw = document.getElementById('unpaid-wrap');
+    const _av = document.getElementById('planes-trial-aviso');
+    if (cuenta.estado_pago === 'trial') {
+        const _d = suscripcion.dias_restantes ?? 0;
+        _uw.innerHTML = `
+            <div class="unpaid-banner" style="background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a;">
+                <span style="font-size:1.3rem">🎁</span>
+                <p><strong>Prueba gratis activa</strong> — te quedan <strong>${_d} días</strong>.
+                Puedes emitir en <strong>certificación</strong>; la producción se habilita al elegir un plan.
+                <a href="javascript:void(0)" onclick="irA('planes')" style="color:#1e3a8a;font-weight:700;">Ver planes →</a></p>
+            </div>`;
+        if (_av) _av.innerHTML = `
+            <div class="unpaid-banner" style="background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a;margin-bottom:16px;">
+                <span style="font-size:1.3rem">🎁</span>
+                <p>Estás en <strong>prueba gratis</strong> · quedan <strong>${_d} días</strong>.
+                Al elegir un plan se habilita la emisión en producción.</p>
+            </div>`;
+    } else if (cuenta.estado_pago !== 'pagado') {
+        _uw.innerHTML = `
             <div class="unpaid-banner">
                 <span style="font-size:1.3rem">⚠️</span>
                 <p>Suscripción <strong>pendiente de pago</strong>.
-                <a href="/onboarding" style="color:#991b1b;font-weight:600;">Ir a pagar →</a></p>
+                <a href="javascript:void(0)" onclick="irA('planes')" style="color:#991b1b;font-weight:600;">Elegir plan →</a></p>
             </div>`;
     }
 
     // Stats
     document.getElementById('s-total').textContent = (uso ? (uso.total_dtes||0) : 0).toLocaleString('es-CL');
     document.getElementById('s-dias').textContent  = suscripcion.dias_restantes ?? '—';
+    const _dl = document.getElementById('s-dias-label');
+    if (_dl) _dl.textContent = (cuenta.estado_pago === 'trial') ? 'de prueba' : 'de suscripción';
 
     // Suscripción bar
     if (suscripcion.inicio) {
@@ -1541,6 +1607,8 @@ function render(data) {
     const estadoEl = document.getElementById('ren-estado');
     if (cuenta.estado_pago === 'pagado') {
         estadoEl.innerHTML = '<span class="dias-badge dias-ok">Activa</span>';
+    } else if (cuenta.estado_pago === 'trial') {
+        estadoEl.innerHTML = '<span class="dias-badge dias-warn">Prueba (7 días)</span>';
     } else {
         estadoEl.innerHTML = '<span class="dias-badge dias-bad">Pendiente de pago</span>';
         // Mostrar alerta en sección renovar
