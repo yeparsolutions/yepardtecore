@@ -421,14 +421,11 @@ SII_SERVIDORES = [
 SII_LATENCIA_LENTA_MS = 3500
 
 
-@router.post("/check-sii-health")
-async def check_sii_health(request: Request, db: AsyncSession = Depends(get_db)):
+async def ejecutar_check_sii(db: AsyncSession) -> list:
     """
-    Monitor de fondo: consulta cada servidor del SII, mide latencia y registra
-    caídas. Pensado para un cron cada 5 minutos (X-Cron-Secret, igual que el de
-    renovaciones). El dashboard solo LEE lo último guardado → carga instantánea.
+    Chequea cada servidor del SII, mide latencia y registra caídas.
+    La comparten el endpoint /check-sii-health y el monitor interno (main.py).
     """
-    _verificar_secreto(request, "X-Cron-Secret")
     from app.models.sii_health import SIIHealth, SIIIncidente
     import time as _time
 
@@ -441,7 +438,6 @@ async def check_sii_health(request: Request, db: AsyncSession = Depends(get_db))
             try:
                 resp = await client.get(url)
                 latencia = int((_time.perf_counter() - t0) * 1000)
-                # Cualquier respuesta HTTP < 500 = el servidor está vivo y contesta.
                 estado = "ok" if resp.status_code < 500 else "caido"
                 if estado == "ok" and latencia > SII_LATENCIA_LENTA_MS:
                     estado = "lento"
@@ -459,10 +455,10 @@ async def check_sii_health(request: Request, db: AsyncSession = Depends(get_db))
             estaba_caido = row.caido_desde is not None
             if estado == "caido":
                 if not estaba_caido:
-                    row.caido_desde = ahora          # empieza la caída
+                    row.caido_desde = ahora
             else:
                 row.ultimo_ok = ahora
-                if estaba_caido:                     # se recuperó → cerrar incidente
+                if estaba_caido:
                     inicio = row.caido_desde
                     if getattr(inicio, "tzinfo", None) is None:
                         inicio = inicio.replace(tzinfo=timezone.utc)
@@ -474,7 +470,20 @@ async def check_sii_health(request: Request, db: AsyncSession = Depends(get_db))
             resultados.append({"servidor": clave, "estado": estado, "latencia_ms": latencia})
 
     await db.commit()
-    return {"ok": True, "checked_at": ahora.isoformat(), "resultados": resultados}
+    return resultados
+
+
+@router.post("/check-sii-health")
+async def check_sii_health(request: Request, db: AsyncSession = Depends(get_db)):
+    """
+    Dispara el chequeo manualmente o desde un cron externo (X-Cron-Secret).
+    El monitor interno de main.py ya lo corre solo cada 5 min; este endpoint
+    queda como respaldo y para probarlo a mano.
+    """
+    _verificar_secreto(request, "X-Cron-Secret")
+    resultados = await ejecutar_check_sii(db)
+    return {"ok": True, "checked_at": datetime.now(timezone.utc).isoformat(),
+            "resultados": resultados}
 
 
 @router.get("/dashboard/{emisor_id}")
