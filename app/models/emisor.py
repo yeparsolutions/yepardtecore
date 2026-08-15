@@ -9,7 +9,7 @@
 # sello y firma registrados.
 # ══════════════════════════════════════════════════════════════
 
-from sqlalchemy import String, Boolean, Text, DateTime, Integer
+from sqlalchemy import String, Boolean, Text, DateTime, Integer, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 from app.db.base import Base
@@ -70,6 +70,9 @@ class Emisor(Base):
 
     # ── Plan y límites (para apps cliente como YeparDTE) ─────
     plan:             Mapped[str | None]  = mapped_column(String(20),  nullable=True, default="gratuito")
+    # Cuenta que agrupa apps: NULL = esta fila ES la cuenta dueña (app #1);
+    # con valor = app hija que pertenece a esa cuenta dueña.
+    cuenta_padre_id:  Mapped[int | None]  = mapped_column(Integer, ForeignKey("emisores.id"), nullable=True, index=True)
     docs_usados:      Mapped[int | None]  = mapped_column(Integer,     nullable=True, default=0)
     docs_limit:       Mapped[int | None]  = mapped_column(Integer,     nullable=True, default=20)
     vendedores_limit: Mapped[int | None]  = mapped_column(Integer,     nullable=True, default=0)
