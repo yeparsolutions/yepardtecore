@@ -88,8 +88,8 @@ async def api_root():
     return {
         "servicio": "YeparDTEcore API",
         "version":  "2.1",
-        "docs":     "https://yepardtecore.cl/dashboard",
-        "health":   "https://yepardtecore.cl/api/health",
+        "docs":     "https://app.yepardtecore.cl/dashboard",
+        "health":   "https://app.yepardtecore.cl/api/health",
     }
 
 @app.get("/onboarding", response_class=HTMLResponse, tags=["Frontend"])
