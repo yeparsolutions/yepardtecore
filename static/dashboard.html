@@ -1036,36 +1036,46 @@ const s = await estado.json();
             <div style="font-size:.8rem;color:var(--muted);margin-bottom:10px;">1 aplicación</div>
             <div style="font-size:1.5rem;font-weight:700;color:var(--blue);">$150.000</div>
             <div style="font-size:.75rem;color:var(--muted);">+ IVA · $178.500 CLP/año</div>
-            <button onclick="renovar()" style="margin-top:12px;width:100%;background:var(--blue);color:#fff;border:none;border-radius:10px;padding:10px;font-size:.85rem;font-weight:600;cursor:pointer;font-family:inherit;">Elegir plan →</button>
+            <button onclick="renovar('developer')" style="margin-top:12px;width:100%;background:var(--blue);color:#fff;border:none;border-radius:10px;padding:10px;font-size:.85rem;font-weight:600;cursor:pointer;font-family:inherit;">Elegir plan →</button>
         </div>
         <div class="card" style="border:1px solid var(--border);">
             <div style="font-weight:700;font-size:1.1rem;">Partner</div>
             <div style="font-size:.8rem;color:var(--muted);margin-bottom:10px;">3 aplicaciones</div>
             <div style="font-size:1.5rem;font-weight:700;color:var(--blue);">$350.000</div>
             <div style="font-size:.75rem;color:var(--muted);">+ IVA · $416.500 CLP/año</div>
-            <button disabled style="margin-top:12px;width:100%;background:var(--card);color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:10px;font-size:.8rem;font-family:inherit;cursor:not-allowed;">Disponible pronto</button>
+            <button onclick="renovar('partner')" style="margin-top:12px;width:100%;background:var(--blue);color:#fff;border:none;border-radius:10px;padding:10px;font-size:.85rem;font-weight:600;cursor:pointer;font-family:inherit;">Elegir plan →</button>
         </div>
         <div class="card" style="border:1px solid var(--border);">
             <div style="font-weight:700;font-size:1.1rem;">Business</div>
             <div style="font-size:.8rem;color:var(--muted);margin-bottom:10px;">5 aplicaciones</div>
             <div style="font-size:1.5rem;font-weight:700;color:var(--blue);">$500.000</div>
             <div style="font-size:.75rem;color:var(--muted);">+ IVA · $595.000 CLP/año</div>
-            <button disabled style="margin-top:12px;width:100%;background:var(--card);color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:10px;font-size:.8rem;font-family:inherit;cursor:not-allowed;">Disponible pronto</button>
+            <button onclick="renovar('business')" style="margin-top:12px;width:100%;background:var(--blue);color:#fff;border:none;border-radius:10px;padding:10px;font-size:.85rem;font-weight:600;cursor:pointer;font-family:inherit;">Elegir plan →</button>
         </div>
         <div class="card" style="border:1px solid var(--border);">
             <div style="font-weight:700;font-size:1.1rem;">Scale</div>
             <div style="font-size:.8rem;color:var(--muted);margin-bottom:10px;">10 aplicaciones</div>
             <div style="font-size:1.5rem;font-weight:700;color:var(--blue);">$850.000</div>
             <div style="font-size:.75rem;color:var(--muted);">+ IVA · $1.011.500 CLP/año</div>
-            <button disabled style="margin-top:12px;width:100%;background:var(--card);color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:10px;font-size:.8rem;font-family:inherit;cursor:not-allowed;">Disponible pronto</button>
+            <button onclick="renovar('scale')" style="margin-top:12px;width:100%;background:var(--blue);color:#fff;border:none;border-radius:10px;padding:10px;font-size:.85rem;font-weight:600;cursor:pointer;font-family:inherit;">Elegir plan →</button>
         </div>
     </div>
 
     <p style="font-size:.8rem;color:var(--muted);margin-top:16px;">
-        Por ahora el pago habilita el plan <strong>Developer</strong> (1 app). Los planes superiores
-        (Partner, Business, Scale) estarán disponibles muy pronto — si necesitas más apps ahora,
-        escríbenos a <a href="mailto:soporte@yeparsolutions.com">soporte@yeparsolutions.com</a>.
+        Todos los planes se cobran anualmente (precio + IVA). Al pagar se habilita la emisión en
+        producción y las apps que incluye tu plan. Puedes subir de plan cuando quieras.
     </p>
+    <div class="card" style="margin-top:20px;">
+        <div class="card-title">Mis aplicaciones</div>
+        <div id="apps-uso" style="font-size:.82rem;color:var(--muted);margin-bottom:10px;">—</div>
+        <div id="apps-list"></div>
+        <div id="apps-add" style="margin-top:14px;display:none;">
+            <input id="app-nombre" placeholder="Nombre de la nueva app" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:.85rem;margin-bottom:8px;">
+            <input id="app-url" placeholder="https://tu-app.cl (opcional)" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:.85rem;margin-bottom:8px;">
+            <button onclick="agregarApp()" style="width:100%;background:var(--blue);color:#fff;border:none;border-radius:8px;padding:9px;font-size:.83rem;font-weight:600;cursor:pointer;font-family:inherit;">+ Agregar app</button>
+            <div id="app-add-error" style="color:#dc2626;font-size:.78rem;margin-top:6px;"></div>
+        </div>
+    </div>
 </div>
 
 <div class="section" id="sec-renovar">
@@ -1512,6 +1522,48 @@ function renderErrores(errs){
         </tbody></table>`;
 }
 
+async function cargarApps(){
+    if (!emisorId) return;
+    try {
+        const token = localStorage.getItem('yepar_access_token');
+        const res = await fetch(`/v1/pagos/apps/${emisorId}`, { headers: token?{'Authorization':`Bearer ${token}`}:{} });
+        if (!res.ok) return;
+        const d = await res.json();
+        const uso = document.getElementById('apps-uso');
+        if (uso) uso.innerHTML = `Plan <strong>${d.plan_nombre}</strong> · ${d.usadas} de ${d.limite} app(s) en uso`;
+        const list = document.getElementById('apps-list');
+        if (list) list.innerHTML = (d.apps||[]).map(a => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+                <span style="font-size:.86rem;">${a.nombre_app||'—'} ${a.es_principal?'<span style=\'font-size:.65rem;color:var(--muted)\'>(principal)</span>':''}
+                    <div style="font-size:.72rem;color:var(--muted);">${a.url_app||'sin URL'}</div></span>
+                <span style="font-family:monospace;font-size:.7rem;color:var(--muted);">${(a.api_key||'').slice(0,14)}…</span>
+            </div>`).join('');
+        const add = document.getElementById('apps-add');
+        if (add) add.style.display = d.puede_agregar ? 'block' : 'none';
+    } catch(e){}
+}
+
+async function agregarApp(){
+    const nombre = document.getElementById('app-nombre').value.trim();
+    const url    = document.getElementById('app-url').value.trim();
+    const errEl  = document.getElementById('app-add-error');
+    errEl.textContent = '';
+    if (!nombre){ errEl.textContent = 'Ingresa el nombre de la app.'; return; }
+    try {
+        const token = localStorage.getItem('yepar_access_token');
+        const res = await fetch('/v1/pagos/apps', {
+            method:'POST',
+            headers:{'Content-Type':'application/json', ...(token?{'Authorization':`Bearer ${token}`}:{})},
+            body: JSON.stringify({ emisor_id: parseInt(emisorId), nombre_app: nombre, url_app: url })
+        });
+        const d = await res.json();
+        if (!res.ok){ errEl.textContent = (d.detail && d.detail.mensaje) || d.detail || 'No se pudo crear la app.'; return; }
+        document.getElementById('app-nombre').value = '';
+        document.getElementById('app-url').value = '';
+        cargarApps();
+    } catch(e){ errEl.textContent = 'Error de red.'; }
+}
+
 function render(data) {
     const { cuenta, suscripcion, integracion, uso, sii } = data;
     apiKeyVal = cuenta.api_key || '';
@@ -1591,6 +1643,7 @@ function render(data) {
     poblarMeses();
     if (integracion) renderIntegracion(integracion);
     if (sii) renderSII(sii);
+    cargarApps();
     if (uso) { renderUso(uso); renderErrores(uso.ultimos_errores || []); }
 
     // API Key
@@ -1625,7 +1678,7 @@ function render(data) {
     document.getElementById('app').style.display    = 'block';
 }
 
-async function renovar() {
+async function renovar(plan) {
     const btn = document.getElementById('btn-renovar-mp');
     const errEl = document.getElementById('renovar-error');
     if (btn) btn.disabled = true;
@@ -1636,7 +1689,7 @@ async function renovar() {
         const res = await fetch('/v1/pagos/crear-preferencia', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ emisor_id: parseInt(emisorId), email })
+            body: JSON.stringify({ emisor_id: parseInt(emisorId), email, plan: plan || undefined })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Error al crear el pago');
