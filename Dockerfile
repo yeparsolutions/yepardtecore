@@ -15,10 +15,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir --no-binary lxml,xmlsec lxml==4.9.4 xmlsec==1.3.17 && \
     pip install --no-cache-dir -r requirements.txt
+# Cache-bust ANTES del COPY: fuerza recopiar codigo y estaticos frescos.
+# Sube este numero (4, 5, 6...) cada vez que un deploy no refleje tus cambios.
+ARG BUST=3
+RUN echo "cache-bust=$BUST"
 COPY . .
-# Cache bust DESPUÉS del COPY para forzar rebuild del código fuente
-ARG BUST=2
-RUN echo "bust=$BUST"
 RUN javac FirmaDTE.java
 EXPOSE 8000
 CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
