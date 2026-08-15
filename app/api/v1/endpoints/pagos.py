@@ -409,111 +409,182 @@ async def estado_pago(
 async def dashboard(
     emisor_id: int,
     request: Request,
+    dias: int = 30,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Datos completos para el dashboard del desarrollador.
-    Incluye: info de la cuenta, suscripción, métricas de uso y API key.
+    Dashboard del desarrollador, enfocado en la SALUD de la integración (no en
+    listar documentos, que el dev ya tiene en su propia app): app vinculada,
+    ambiente, certificado, folios, tasa de éxito ante el SII, uso por día
+    (rango elegible con ?dias=) y últimos errores para depurar.
     """
     _verificar_jwt_emisor(request, emisor_id)
     from app.models.dte import DTE
-    from sqlalchemy import func, case
-    from datetime import datetime, timezone
+    from app.models.caf import CAF
+    from sqlalchemy import func
+    from datetime import datetime, timezone, timedelta
 
     emisor = await db.get(Emisor, emisor_id)
     if not emisor:
         raise HTTPException(404, "Cuenta no encontrada")
 
     ahora = datetime.now(timezone.utc)
+    dias  = max(1, min(int(dias or 30), 365))
+    desde = ahora - timedelta(days=dias)
 
-    # Días restantes de suscripción
+    TIPO_LBL = {33: "Factura", 34: "F.Exenta", 39: "Boleta", 41: "B.Exenta",
+                52: "Guía", 56: "N.Débito", 61: "N.Crédito"}
+    EXITO = {"ACEPTADO", "ACEPTADO_CON_REPAROS", "RECIBIDO"}
+    ERROR = {"RECHAZADO", "ERROR", "ERROR_HTTP", "ERROR_PARSEO",
+             "NO_AUTORIZADO", "TIMEOUT", "DESCONOCIDO"}
+
+    # ── Suscripción ───────────────────────────────────────────────────────────
     dias_restantes = None
     porcentaje_tiempo = None
-    if emisor.suscripcion_fin:
-        fin = emisor.suscripcion_fin
-        if hasattr(fin, 'tzinfo') and fin.tzinfo is None:
-            fin = fin.replace(tzinfo=timezone.utc)
-        delta = fin - ahora
-        dias_restantes = max(0, delta.days)
+    fin = emisor.suscripcion_fin
+    if fin is not None and getattr(fin, "tzinfo", None) is None:
+        fin = fin.replace(tzinfo=timezone.utc)
+    vigente = (emisor.estado_pago == "pagado" and fin is not None and fin > ahora)
+    if fin:
+        dias_restantes = max(0, (fin - ahora).days)
         if emisor.suscripcion_inicio:
             inicio = emisor.suscripcion_inicio
-            if hasattr(inicio, 'tzinfo') and inicio.tzinfo is None:
+            if getattr(inicio, "tzinfo", None) is None:
                 inicio = inicio.replace(tzinfo=timezone.utc)
             total_dias = (fin - inicio).days or 365
             transcurridos = (ahora - inicio).days
-            porcentaje_tiempo = min(100, round(transcurridos / total_dias * 100))
+            porcentaje_tiempo = min(100, max(0, round(transcurridos / total_dias * 100)))
 
-    # Métricas de DTE (solo si tiene documentos en BD)
+    # ── Certificado: días para vencer ─────────────────────────────────────────
+    cert_estado, cert_dias, cert_fecha = "sin_datos", None, None
+    if emisor.certificado_vigencia:
+        cert_fecha = str(emisor.certificado_vigencia)
+        parsed = None
+        for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S",
+                    "%d-%m-%Y", "%d/%m/%Y"):
+            try:
+                parsed = datetime.strptime(cert_fecha[:19], fmt)
+                break
+            except ValueError:
+                continue
+        if parsed:
+            cert_dias = (parsed.date() - ahora.date()).days
+            cert_estado = ("vencido" if cert_dias < 0
+                           else "por_vencer" if cert_dias < 30 else "vigente")
+
+    # ── Folios disponibles por CAF ────────────────────────────────────────────
+    folios = []
     try:
-        res_total = await db.execute(
-            select(func.count(DTE.id)).where(DTE.emisor_id == emisor_id)
+        res_caf = await db.execute(
+            select(CAF).where(CAF.emisor_id == emisor_id, CAF.activo == True)
+            .order_by(CAF.tipo_dte)
         )
-        total_dtes = res_total.scalar() or 0
-
-        res_por_tipo = await db.execute(
-            select(DTE.tipo_dte, func.count(DTE.id))
-            .where(DTE.emisor_id == emisor_id)
-            .group_by(DTE.tipo_dte)
-        )
-        por_tipo = {
-            {33:"Facturas",34:"F.Exentas",39:"Boletas",41:"B.Exentas",
-             52:"Guías",56:"N.Débito",61:"N.Crédito"}.get(t, str(t)): c
-            for t, c in res_por_tipo.fetchall()
-        }
-
-        res_mes = await db.execute(
-            select(func.count(DTE.id)).where(
-                DTE.emisor_id == emisor_id,
-                DTE.created_at >= ahora.replace(day=1, hour=0, minute=0, second=0)
-            )
-        )
-        dtes_este_mes = res_mes.scalar() or 0
-
-        res_recientes = await db.execute(
-            select(DTE.tipo_dte, DTE.folio, DTE.monto_total, DTE.estado, DTE.created_at)
-            .where(DTE.emisor_id == emisor_id)
-            .order_by(DTE.created_at.desc())
-            .limit(5)
-        )
-        recientes = [
-            {
-                "tipo": {33:"Factura",34:"F.Exenta",39:"Boleta",41:"B.Exenta",
-                         52:"Guía",56:"N.Débito",61:"N.Crédito"}.get(r[0], str(r[0])),
-                "folio": r[1],
-                "monto": r[2],
-                "estado": r[3],
-                "fecha": r[4].strftime("%d/%m/%Y %H:%M") if r[4] else "",
-            }
-            for r in res_recientes.fetchall()
-        ]
+        for c in res_caf.scalars().all():
+            total = (c.folio_hasta - c.folio_desde + 1)
+            disponibles = max(0, c.folio_hasta - c.folio_actual + 1)
+            usados = max(0, min(total, c.folio_actual - c.folio_desde))
+            folios.append({
+                "tipo": c.tipo_dte,
+                "descripcion": TIPO_LBL.get(c.tipo_dte, str(c.tipo_dte)),
+                "ambiente": c.ambiente,
+                "disponibles": disponibles,
+                "total": total,
+                "usados": usados,
+                "pct_usado": round(usados / total * 100) if total else 0,
+                "bajo": disponibles <= max(10, round(total * 0.1)),
+            })
     except Exception:
-        total_dtes = dtes_este_mes = 0
-        por_tipo = {}
-        recientes = []
+        folios = []
+
+    # ── Métricas de DTE ───────────────────────────────────────────────────────
+    total_dtes = total_rango = 0
+    por_tipo, por_dia, pico = {}, [], None
+    exitosos = errores = pendientes = 0
+    tasa_exito = None
+    ultimos_errores = []
+    try:
+        total_dtes = (await db.execute(
+            select(func.count(DTE.id)).where(DTE.emisor_id == emisor_id))).scalar() or 0
+
+        res_est = await db.execute(
+            select(DTE.estado, func.count(DTE.id))
+            .where(DTE.emisor_id == emisor_id, DTE.created_at >= desde)
+            .group_by(DTE.estado))
+        for est, c in res_est.fetchall():
+            total_rango += c
+            if est in EXITO:   exitosos += c
+            elif est in ERROR: errores += c
+            else:              pendientes += c
+        if (exitosos + errores) > 0:
+            tasa_exito = round(exitosos / (exitosos + errores) * 100)
+
+        res_tipo = await db.execute(
+            select(DTE.tipo_dte, func.count(DTE.id))
+            .where(DTE.emisor_id == emisor_id, DTE.created_at >= desde)
+            .group_by(DTE.tipo_dte))
+        por_tipo = {TIPO_LBL.get(t, str(t)): c for t, c in res_tipo.fetchall()}
+
+        res_dia = await db.execute(
+            select(func.date(DTE.created_at), func.count(DTE.id))
+            .where(DTE.emisor_id == emisor_id, DTE.created_at >= desde)
+            .group_by(func.date(DTE.created_at)))
+        conteo = {}
+        for d, c in res_dia.fetchall():
+            conteo[d.isoformat() if hasattr(d, "isoformat") else str(d)] = c
+        base_day = (ahora - timedelta(days=dias - 1)).date()
+        for i in range(dias):
+            d = base_day + timedelta(days=i)
+            por_dia.append({"fecha": d.strftime("%d/%m"), "iso": d.isoformat(),
+                            "count": conteo.get(d.isoformat(), 0)})
+        if por_dia:
+            top = max(por_dia, key=lambda x: x["count"])
+            if top["count"] > 0:
+                pico = {"fecha": top["fecha"], "count": top["count"]}
+
+        res_err = await db.execute(
+            select(DTE.tipo_dte, DTE.folio, DTE.estado, DTE.track_id, DTE.created_at)
+            .where(DTE.emisor_id == emisor_id, DTE.estado.in_(list(ERROR)))
+            .order_by(DTE.created_at.desc()).limit(8))
+        ultimos_errores = [{
+            "tipo": TIPO_LBL.get(r[0], str(r[0])), "folio": r[1],
+            "estado": r[2], "track_id": r[3] or "—",
+            "fecha": r[4].strftime("%d/%m/%Y %H:%M") if r[4] else "",
+        } for r in res_err.fetchall()]
+    except Exception:
+        pass
 
     return {
         "ok": True,
         "cuenta": {
-            "id":         emisor.id,
-            "nombre_app": emisor.nombre_app,
-            "url_app":    emisor.url_app,
-            "correo":     emisor.correo,
-            "api_key":    emisor.api_key,
-            "estado_pago": emisor.estado_pago,
-            "ambiente":   emisor.ambiente,
+            "id": emisor.id, "nombre_app": emisor.nombre_app, "url_app": emisor.url_app,
+            "correo": emisor.correo, "api_key": emisor.api_key,
+            "estado_pago": emisor.estado_pago, "ambiente": emisor.ambiente,
+            "activa": emisor.activo,
         },
         "suscripcion": {
-            "estado":           emisor.estado_pago,
-            "inicio":           emisor.suscripcion_inicio.strftime("%d/%m/%Y") if emisor.suscripcion_inicio else None,
-            "fin":              emisor.suscripcion_fin.strftime("%d/%m/%Y") if emisor.suscripcion_fin else None,
-            "dias_restantes":   dias_restantes,
-            "porcentaje_tiempo": porcentaje_tiempo,
+            "estado": emisor.estado_pago,
+            "inicio": emisor.suscripcion_inicio.strftime("%d/%m/%Y") if emisor.suscripcion_inicio else None,
+            "fin": emisor.suscripcion_fin.strftime("%d/%m/%Y") if emisor.suscripcion_fin else None,
+            "dias_restantes": dias_restantes, "porcentaje_tiempo": porcentaje_tiempo,
+            "vigente": vigente,
         },
-        "metricas": {
-            "total_dtes":     total_dtes,
-            "dtes_este_mes":  dtes_este_mes,
-            "por_tipo":       por_tipo,
-            "recientes":      recientes,
+        "integracion": {
+            "app_vinculada": emisor.nombre_app, "url_app": emisor.url_app,
+            "origen_vinculado": getattr(emisor, "origen_vinculado", None),
+            "activa": emisor.activo, "ambiente": emisor.ambiente,
+            "certificado": {"fecha": cert_fecha, "dias": cert_dias, "estado": cert_estado},
+            "folios": folios,
+            "tasa_exito": tasa_exito,
+        },
+        "uso": {
+            "rango_dias": dias, "total_rango": total_rango,
+            "por_dia": por_dia, "pico": pico, "por_tipo": por_tipo,
+            "por_estado": {"exitosos": exitosos, "errores": errores, "pendientes": pendientes},
+            "ultimos_errores": ultimos_errores,
+        },
+        "metricas": {   # compat con render() anterior
+            "total_dtes": total_dtes, "dtes_este_mes": total_rango,
+            "por_tipo": por_tipo, "recientes": [],
         },
     }
 
