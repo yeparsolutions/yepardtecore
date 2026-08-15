@@ -80,7 +80,16 @@ async def crear_preferencia(
     if not emisor:
         raise HTTPException(404, "Cuenta no encontrada")
 
-    if emisor.estado_pago == "pagado":
+    # Bloquear solo si la suscripción está VIGENTE (pagada Y con fin en el futuro).
+    # Si ya venció, dejar renovar aunque estado_pago todavía diga "pagado" — así
+    # la renovación funciona al instante, sin depender de que el job diario haya
+    # corrido. Una cuenta permanente (fin en 2300) queda siempre vigente.
+    _fin = emisor.suscripcion_fin
+    if _fin is not None and getattr(_fin, "tzinfo", None) is None:
+        _fin = _fin.replace(tzinfo=timezone.utc)
+    vigente = (emisor.estado_pago == "pagado"
+               and _fin is not None and _fin > datetime.now(timezone.utc))
+    if vigente:
         return {
             "ok":     True,
             "pagado": True,
@@ -258,9 +267,15 @@ async def webhook_mp(
         return {"ok": False, "error": "Emisor no encontrado"}
 
     ahora = datetime.now(timezone.utc)
+    # Renovación: si aún está vigente, extender DESDE su fecha de fin (no perder
+    # los días que le quedan al renovar anticipado); si ya venció, partir de hoy.
+    _fin_actual = emisor.suscripcion_fin
+    if _fin_actual is not None and getattr(_fin_actual, "tzinfo", None) is None:
+        _fin_actual = _fin_actual.replace(tzinfo=timezone.utc)
+    base = _fin_actual if (_fin_actual and _fin_actual > ahora) else ahora
     emisor.estado_pago        = "pagado"
     emisor.suscripcion_inicio = ahora
-    emisor.suscripcion_fin    = ahora + timedelta(days=DIAS_SUSCRIPCION)
+    emisor.suscripcion_fin    = base + timedelta(days=DIAS_SUSCRIPCION)
     await db.commit()
 
     logger.info(
@@ -527,6 +542,25 @@ async def notificar_renovaciones(
     _verificar_secreto(request, "X-Cron-Secret")
 
     ahora = datetime.now(timezone.utc)
+
+    # ── Marcar como vencidas las cuentas cuya suscripción ya expiró ────────────
+    # La fecha (suscripcion_fin) es la fuente de verdad; acá la reflejamos en
+    # estado_pago para que el panel y el bloqueo de renovación queden coherentes.
+    # Una cuenta con fin en el futuro (ej. 2300, cuentas permanentes) NUNCA se toca.
+    res_venc = await db.execute(
+        select(Emisor).where(
+            Emisor.estado_pago == "pagado",
+            Emisor.suscripcion_fin.isnot(None),
+            Emisor.suscripcion_fin < ahora,
+        )
+    )
+    vencidas = res_venc.scalars().all()
+    for _em in vencidas:
+        _em.estado_pago = "vencido"
+    if vencidas:
+        await db.commit()
+        logger.info(f"[RENOVACION] {len(vencidas)} cuenta(s) marcadas como vencidas")
+
     notificados = []
 
     # Buscar emisores que vencen en 30, 7 o 1 día
