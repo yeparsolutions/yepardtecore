@@ -31,6 +31,7 @@ async def lifespan(app: FastAPI):
         from app.models.dte         import DTE
         from app.models.certificado import Certificado
         from app.models.usuario     import Usuario
+        from app.models.sii_health   import SIIHealth, SIIIncidente
         await conn.run_sync(Base.metadata.create_all)
     yield
     await engine.dispose()
