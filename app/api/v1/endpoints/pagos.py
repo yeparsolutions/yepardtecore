@@ -27,7 +27,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -289,6 +289,10 @@ async def webhook_mp(
         emisor.plan = plan_pagado              # registrar el plan cobrado
     emisor.suscripcion_inicio = ahora
     emisor.suscripcion_fin    = base + timedelta(days=DIAS_SUSCRIPCION)
+    # Propagar plan/suscripción a las apps hijas de la cuenta
+    await db.execute(update(Emisor).where(Emisor.cuenta_padre_id == emisor.id).values(
+        estado_pago="pagado", ambiente="produccion", plan=emisor.plan,
+        suscripcion_inicio=emisor.suscripcion_inicio, suscripcion_fin=emisor.suscripcion_fin))
     await db.commit()
 
     logger.info(
@@ -709,6 +713,108 @@ async def dashboard(
             "ultimos_errores": ultimos_errores,
         },
     }
+
+
+# ══════════════════════════════════════════════════════════════
+# GESTIÓN DE APPS DE LA CUENTA (multi-app por plan)
+# La cuenta dueña (cuenta_padre_id NULL) agrupa apps hijas. Las hijas
+# comparten plan y suscripción con la dueña. El límite lo da el plan.
+# ══════════════════════════════════════════════════════════════
+class CrearAppInput(BaseModel):
+    emisor_id:  int          # cuenta dueña autenticada
+    nombre_app: str
+    url_app:    str = ""
+
+
+@router.get("/apps/{emisor_id}")
+async def listar_apps(emisor_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Lista las apps de la cuenta (la dueña + sus apps hijas) y el uso del plan."""
+    _verificar_jwt_emisor(request, emisor_id)
+    from app.services.planes_dtecore import limite_apps, plan_info
+
+    dueno = await db.get(Emisor, emisor_id)
+    if not dueno:
+        raise HTTPException(404, "Cuenta no encontrada")
+    owner_id = dueno.cuenta_padre_id or dueno.id
+
+    res = await db.execute(
+        select(Emisor).where(
+            (Emisor.id == owner_id) | (Emisor.cuenta_padre_id == owner_id)
+        ).order_by(Emisor.id))
+    apps  = res.scalars().all()
+    owner = next((a for a in apps if a.id == owner_id), dueno)
+    lim   = limite_apps(owner.plan)
+
+    return {
+        "ok": True,
+        "plan":        owner.plan,
+        "plan_nombre": plan_info(owner.plan)["nombre"],
+        "limite":      lim,
+        "usadas":      len(apps),
+        "puede_agregar": (owner.estado_pago == "pagado" and len(apps) < lim),
+        "apps": [{
+            "id": a.id, "nombre_app": a.nombre_app, "url_app": a.url_app,
+            "api_key": a.api_key, "ambiente": a.ambiente,
+            "es_principal": a.id == owner_id,
+        } for a in apps],
+    }
+
+
+@router.post("/apps")
+async def crear_app(datos: CrearAppInput, request: Request, db: AsyncSession = Depends(get_db)):
+    """Crea una app nueva dentro de la cuenta, respetando el límite del plan."""
+    _verificar_jwt_emisor(request, datos.emisor_id)
+    from app.services.planes_dtecore import limite_apps
+    import secrets as _secrets
+
+    dueno = await db.get(Emisor, datos.emisor_id)
+    if not dueno:
+        raise HTTPException(404, "Cuenta no encontrada")
+    owner_id = dueno.cuenta_padre_id or dueno.id
+    owner    = dueno if dueno.id == owner_id else await db.get(Emisor, owner_id)
+
+    if owner.estado_pago != "pagado":
+        raise HTTPException(403, {
+            "mensaje": "Elige un plan para agregar más apps a tu cuenta.",
+            "tipo": "requiere_plan"})
+
+    usadas = (await db.execute(select(func.count(Emisor.id)).where(
+        (Emisor.id == owner_id) | (Emisor.cuenta_padre_id == owner_id)))).scalar() or 1
+    lim = limite_apps(owner.plan)
+    if usadas >= lim:
+        raise HTTPException(403, {
+            "mensaje": f"Tu plan permite {lim} app(s) y ya las usas todas. "
+                       f"Sube de plan para agregar más.",
+            "tipo": "limite_apps"})
+
+    if not datos.nombre_app.strip():
+        raise HTTPException(422, "El nombre de la app es obligatorio")
+
+    # App hija: hereda plan/suscripción/estado de la cuenta dueña
+    hija = Emisor(
+        rut=f"DEV-{_secrets.token_hex(4)}",
+        razon_social=datos.nombre_app.strip(),
+        giro="Desarrollo de Software",
+        direccion="No aplica", comuna="No aplica", ciudad="No aplica",
+        nombre_app=datos.nombre_app.strip(),
+        url_app=(datos.url_app or "").strip().strip("/"),
+        api_key="yek_" + _secrets.token_hex(30),
+        activo=True,
+        cuenta_padre_id=owner_id,
+        plan=owner.plan,
+        estado_pago=owner.estado_pago,
+        ambiente=owner.ambiente,
+        suscripcion_inicio=owner.suscripcion_inicio,
+        suscripcion_fin=owner.suscripcion_fin,
+        correo=owner.correo,
+    )
+    db.add(hija)
+    await db.commit()
+    await db.refresh(hija)
+
+    return {"ok": True, "app": {
+        "id": hija.id, "nombre_app": hija.nombre_app,
+        "url_app": hija.url_app, "api_key": hija.api_key}}
 
 
 # ══════════════════════════════════════════════════════════════
