@@ -68,8 +68,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
+    # API pública por API Key (X-API-Key), no por cookies — por eso no
+    # necesita allow_credentials. "*" + credentials=True es una combinación
+    # inválida (los navegadores la ignoran o la rechazan); cualquier dominio
+    # de terceros debe poder integrar con su API key sin necesitar cookies.
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
