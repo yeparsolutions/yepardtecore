@@ -25,7 +25,11 @@ class Settings(BaseSettings):
 
     # ── Entorno ───────────────────────────────────────────────
     ENVIRONMENT: Literal["development", "production"] = "development"
-    DEBUG: bool = True
+    # False por defecto: si ENVIRONMENT no queda bien seteado en Railway,
+    # que falle "silencioso" hacia el modo seguro (sin echo de SQL con
+    # datos de clientes en los logs), no al revés. Actívalo con DEBUG=true
+    # en tu .env local si lo necesitas para desarrollo.
+    DEBUG: bool = False
     APP_BASE_URL: str = "https://yepardtecore.yeparsolutions.com"
     FRONTEND_URL: str = "https://yeparstock.yeparsolutions.com"
 
