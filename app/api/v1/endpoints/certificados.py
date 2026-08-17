@@ -1,4 +1,5 @@
 # app/api/v1/endpoints/certificados.py
+import logging
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -10,6 +11,8 @@ from app.models.emisor import Emisor
 from app.models.certificado import Certificado  # <-- Importar el modelo correcto
 from app.core.security import validar_api_key
 import re
+
+logger = logging.getLogger("yepardtecore.certificados")
 
 router = APIRouter(prefix="/certificados", tags=["Certificados Digitales"])
 
@@ -83,9 +86,9 @@ async def subir_certificado(
 
     try:
         await db.commit()
-    except Exception as e:
+    except Exception:
         await db.rollback()
-        print(f"DEBUG ERROR DB: {str(e)}")
+        logger.exception("Error al guardar certificado en base de datos")
         raise HTTPException(status_code=500, detail="Error al guardar en base de datos")
 
     return {
