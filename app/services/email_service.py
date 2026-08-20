@@ -746,7 +746,7 @@ def _html_carta_dte(doc, empresa, logo_base64=None, logo_ancho=70, copia="tribut
      el bloque del timbre al fondo con margin-top:auto. El min-height se
      ajustó a 287mm (con padding inferior chico) para que el timbre baje
      hasta el pie de la página en la impresión del navegador. */
-  body {{ padding: 12mm 12mm 4mm 12mm; min-height: 287mm; display: flex; flex-direction: column; }}
+  body {{ padding: 12mm 12mm 4mm 12mm; min-height: 300mm; display: flex; flex-direction: column; }}
 </style>
 </head><body>
 {banner_html}
