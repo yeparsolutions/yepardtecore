@@ -44,6 +44,9 @@ class EmisorBoleta:
     acteco: str = "620200"
     telefono: str = ""
     correo: str = ""
+    # Código de sucursal asignado por el SII (Formulario 3239). Si viene
+    # vacío, la boleta se emite como si fuera la casa matriz (sin el tag).
+    cdg_sii_sucur: str = ""
 
 
 @dataclass
@@ -284,6 +287,11 @@ class XMLBuilderBoleta:
         # es más austero: incluirlos provoca STATUS 7 (esquema inválido)
         # en el upload, aunque el dato venga con buena intención.
         # → Se omiten SIEMPRE, sin importar lo que traiga el input.
+
+        # CdgSIISucur va SIEMPRE antes de DirOrigen — mismo orden que en
+        # facturas/NC/ND/guías. Solo se escribe si la sucursal tiene código.
+        if (em.cdg_sii_sucur or "").strip():
+            etree.SubElement(emisor, f"{{{NS}}}CdgSIISucur").text = em.cdg_sii_sucur.strip()
 
         # Dirección del emisor
         etree.SubElement(emisor, f"{{{NS}}}DirOrigen").text   = self._sanitizar(em.direccion)
