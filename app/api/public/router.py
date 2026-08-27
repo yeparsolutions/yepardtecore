@@ -440,6 +440,9 @@ class EmisorStateless(BaseModel):
     correo:         str = ""
     nro_resolucion: str = "0"
     fch_resolucion: str = "2000-01-01"
+    # Código de sucursal asignado por el SII (Formulario 3239). Vacío por
+    # defecto: si no viene, el DTE sale igual que hoy (casa matriz).
+    cdg_sii_sucur:  str = ""
 
 class ReceptorStateless(BaseModel):
     rut:       str = "66666666-6"
@@ -623,6 +626,7 @@ async def firmar_y_enviar(
                     rut=e.rut, razon_social=e.razon_social, giro=e.giro,
                     direccion=e.direccion, comuna=e.comuna, ciudad=e.ciudad,
                     acteco=e.acteco, telefono=e.telefono, correo=e.correo,
+                    cdg_sii_sucur=e.cdg_sii_sucur,
                 ),
                 receptor      = ReceptorBoleta(
                     rut=r.rut, razon_social=r.nombre, correo=r.email or "",
@@ -662,6 +666,7 @@ async def firmar_y_enviar(
                     rut=e.rut, razon_social=e.razon_social, giro=e.giro,
                     direccion=e.direccion, comuna=e.comuna, ciudad=e.ciudad,
                     acteco=e.acteco, telefono=e.telefono, correo=e.correo,
+                    cdg_sii_sucur=e.cdg_sii_sucur,
                 ),
                 receptor      = ReceptorDTE(
                     rut=r.rut, razon_social=r.nombre, giro=r.giro or "",
