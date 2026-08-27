@@ -31,6 +31,10 @@ class EmisorDTE:
     telefono: str = ""
     correo: str = ""
     acteco: str = "620200"
+    # Código de sucursal asignado por el SII (Formulario 3239). Si viene
+    # vacío, el DTE se emite como si fuera la casa matriz (sin el tag) —
+    # así una empresa sin sucursales declaradas no se ve afectada.
+    cdg_sii_sucur: str = ""
 
 
 @dataclass
@@ -345,6 +349,12 @@ class XMLBuilder:
             if em.correo:
                 etree.SubElement(emisor, f"{{{NS}}}CorreoEmisor").text = em.correo
             etree.SubElement(emisor, f"{{{NS}}}Acteco").text = em.acteco or "620200"
+
+        # CdgSIISucur va SIEMPRE antes de DirOrigen — el orden importa porque
+        # el SII valida el XML contra el XSD (no es solo estético). Solo se
+        # escribe si la sucursal tiene código SII; si no, no se emite nada.
+        if (em.cdg_sii_sucur or "").strip():
+            etree.SubElement(emisor, f"{{{NS}}}CdgSIISucur").text = em.cdg_sii_sucur.strip()
 
         etree.SubElement(emisor, f"{{{NS}}}DirOrigen").text    = (em.direccion or "").strip()
         etree.SubElement(emisor, f"{{{NS}}}CmnaOrigen").text   = (em.comuna or "").strip()
