@@ -2304,3 +2304,200 @@ async def intercambio_responder(
         "resultado_b64":     _b64x(res["resultado"]),
         "dtes":              res["dtes"],
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  COMPRAS — recepción de DTE como receptor (producción)
+#
+#  A diferencia de ventas (donde YeparDTEcore firma y timbra el documento que
+#  la empresa emite), en compras el documento lo emitió OTRO — nosotros solo
+#  necesitamos leerlo o declararlo. Por eso estos dos endpoints son las dos
+#  mitades sin estado que un backend multi-tenant necesita para armar su
+#  propio Libro de Compras real:
+#
+#    1. /api/compras/parsear-xml   — lee un EnvioDTE recibido y devuelve sus
+#       documentos ya normalizados (no firma nada, no requiere certificado).
+#    2. /api/libro-compras/produccion — arma y firma el XML del Libro de
+#       Compras a partir de documentos que el backend YA tiene guardados
+#       (no de un set de certificación cargado a mano).
+#
+#  Igual que el resto de la API pública: YeparDTEcore no persiste ninguno de
+#  estos documentos — el dueño de esa tabla es el backend de cada cliente
+#  (YeparDTE, o cualquier ERP que integre directo).
+# ═══════════════════════════════════════════════════════════════════════════
+
+@router.post("/compras/parsear-xml")
+async def parsear_compra_xml(
+    archivo: UploadFile = File(..., description="XML EnvioDTE recibido de un proveedor"),
+    emisor:  Emisor      = Depends(get_emisor_by_api_key),
+):
+    """
+    Recibe el XML de un EnvioDTE que llegó de un proveedor (por ejemplo,
+    adjunto en un correo a la casilla de intercambio) y devuelve sus
+    documentos normalizados, listos para que el backend los guarde como
+    compras. No firma ni persiste nada — es una lectura, no una operación
+    tributaria.
+
+    Devuelve el mismo detalle por documento que ya usa el flujo de
+    intercambio (tipo, folio, fecha, RUT emisor/receptor, monto total), más
+    la razón social del emisor cuando el XML la trae en el detalle.
+    """
+    from app.services import intercambio as _inter
+
+    contenido = await archivo.read()
+    if not contenido:
+        raise HTTPException(400, "El archivo llegó vacío")
+
+    try:
+        info = _inter.parsear_envio_recibido(contenido)
+    except Exception as e:
+        raise HTTPException(400, f"No se pudo leer el XML: {e}")
+
+    if not info["dtes"]:
+        raise HTTPException(404, "El XML no contiene documentos")
+
+    return {
+        "ok":                 True,
+        "rut_emisor_envio":   info["rut_emisor_envio"],
+        "rut_receptor_envio": info["rut_receptor_envio"],
+        "documentos": [
+            {
+                "tipo_dte":   int(d["tipo"])  if d["tipo"]  else None,
+                "folio":      int(d["folio"]) if d["folio"] else None,
+                "fecha":      d["fch_emis"],
+                "rut_emisor": d["rut_emisor"],
+                "rut_receptor": d["rut_recep"],
+                "monto_total": int(float(d["mnt_total"])) if d["mnt_total"] else 0,
+            }
+            for d in info["dtes"]
+        ],
+    }
+
+
+class DocumentoLibroCompras(BaseModel):
+    """Un documento de compra real — datos completos, no el set fijo de
+    certificación. Mismos campos que espera _xml_libro_compras."""
+    tipo:           int
+    folio:          int
+    fecha:          str            # AAAA-MM-DD — fecha REAL de emisión del documento
+    rut:            str = "66666666-6"
+    razon:          str = ""
+    exe:            int = 0
+    neto:           int = 0
+    iva:            int = 0
+    tipo_especial:  str = ""       # "" | iva_uso_comun | iva_no_rec | iva_ret_total
+    iva_uso_comun:  int = 0
+    fct_prop:       str = "0.60"
+    iva_no_rec:     int = 0
+    cod_iva_no_rec: int = 9
+    iva_ret_total:  int = 0
+    total:          int = 0
+
+
+@router.post("/libro-compras/produccion")
+async def generar_libro_compras_produccion(
+    periodo:      str  = Form(...),          # "AAAA-MM"
+    documentos:   str  = Form(...),          # JSON: list[DocumentoLibroCompras]
+    fch_resol:    str  = Form("2000-01-01"),
+    nro_resol:    str  = Form("0"),
+    tipo_libro:   str  = Form("ESPECIAL"),   # verificar con el SII si corresponde MENSUAL en producción
+    tipo_envio:   str  = Form("TOTAL"),
+    cod_aut_rec:  str  = Form(""),
+    ambiente:     str  = Form("produccion"),
+    auto_enviar:  bool = Form(False),
+    pfx_base64:   str  = Form(...),          # certificado de la empresa (stateless)
+    pfx_password: str  = Form(""),
+    rut_firmante: str  = Form(""),
+    rut_empresa:  str  = Form(...),          # RUT de la empresa dueña del libro (el receptor real)
+    emisor:       Emisor = Depends(get_emisor_by_api_key),
+):
+    """
+    Arma y firma el Libro de Compras de un período con documentos que el
+    backend ya tiene guardados (no un set de certificación). Es el equivalente
+    de /generar-libro-desde-xml pero para compras reales de producción: en vez
+    de volver a parsear XML, recibe los documentos ya conocidos.
+
+    Reutiliza tal cual el mismo constructor de XML que ya está probado en
+    certificación (_xml_libro_compras) — cambia de dónde vienen los datos,
+    no cómo se arma el libro.
+    """
+    import json as _json
+    import base64 as _b64lc
+    from app.api.v1.endpoints.libro_compras import LibroComprasRequest, _xml_libro_compras
+    from app.services.firma_digital import FirmaDigital
+
+    _requiere_plan_para_produccion(emisor, ambiente or "certificacion")
+
+    try:
+        docs_raw = _json.loads(documentos)
+    except Exception as e:
+        raise HTTPException(400, f"'documentos' no es JSON válido: {e}")
+    if not docs_raw:
+        raise HTTPException(400, "El libro debe tener al menos un documento")
+
+    try:
+        docs_validados = [DocumentoLibroCompras(**d) for d in docs_raw]
+    except Exception as e:
+        raise HTTPException(400, f"Documento inválido: {e}")
+
+    req = LibroComprasRequest(
+        emisor_id=0,   # no se usa: _xml_libro_compras solo lee los campos de abajo
+        natencion="",  # el N° de atención solo existe en certificación; en producción va vacío
+        periodo=periodo,
+        fch_resol=fch_resol,
+        nro_resol=nro_resol,
+        tipo_libro=tipo_libro,
+        tipo_envio=tipo_envio,
+        cod_aut_rec=cod_aut_rec,
+        documentos=docs_validados,
+    )
+
+    p12_bytes = _b64lc.b64decode(pfx_base64)
+    rut_envia = rut_firmante or rut_empresa
+
+    try:
+        xml_str = _xml_libro_compras(rut_empresa, rut_envia, req)
+    except Exception as e:
+        logger.error(f"[LIBRO-COMPRAS-PROD] Error construyendo: {e}", exc_info=True)
+        raise HTTPException(500, f"Error al construir el libro: {e}")
+
+    firma = FirmaDigital(p12_bytes, pfx_password)
+    try:
+        xml_firmado = await firma.firmar_libro(xml_str)
+    except Exception as e:
+        logger.error(f"[LIBRO-COMPRAS-PROD] Error firmando: {e}", exc_info=True)
+        raise HTTPException(500, f"Error al firmar: {e}")
+
+    rut_limpio = rut_empresa.replace(".", "").replace("-", "")
+    nombre = f"LibroCompras_{rut_limpio}_{periodo}.xml"
+    libro_b64 = _b64lc.b64encode(xml_firmado.encode("ISO-8859-1")).decode()
+
+    resultado_envio = None
+    if auto_enviar:
+        sender = SIISender(ambiente=ambiente)
+        try:
+            resultado_envio = await sender.enviar_sobre(
+                sobre_xml      = xml_firmado,
+                rut_emisor     = rut_empresa.replace(".", "").strip(),
+                rut_enviador   = rut_envia,
+                p12_bytes      = p12_bytes,
+                password       = pfx_password,
+                auth_p12_bytes = None,
+                auth_password  = None,
+            )
+        except Exception as e:
+            logger.error(f"[LIBRO-COMPRAS-PROD] Error enviando: {e}", exc_info=True)
+            raise HTTPException(500, f"Libro generado pero falló el envío: {e}")
+
+    return {
+        "ok":            True,
+        "periodo":       periodo,
+        "documentos":    len(docs_validados),
+        "nombre":        nombre,
+        "libro_xml":     xml_firmado,
+        "libro_xml_b64": libro_b64,
+        "enviado":       auto_enviar,
+        "track_id":      (resultado_envio or {}).get("track_id"),
+        "estado":        (resultado_envio or {}).get("estado"),
+        "mensaje":       (resultado_envio or {}).get("mensaje"),
+    }
