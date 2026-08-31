@@ -11,16 +11,30 @@ mirar su RCV a ojo (el mismo que se ve en sii.cl → Mi SII → Registro de
 Compras y Venta). Este módulo automatiza esa misma navegación: inicia sesión
 con RUT + Clave Tributaria (igual que un usuario real) y llama los mismos
 endpoints internos que usa esa pantalla — verificados contra tráfico de red
-real capturado en agosto de 2026, NO contra documentación del SII (no
-existe). Dos consecuencias directas:
+real (HAR) capturado en agosto de 2026 por el propio cliente, NO contra
+documentación del SII (no existe). Consecuencias directas:
 
-  1. El login (`_login`) es la única parte que no pudimos verificar con una
-     ejecución real de punta a punta — por buenas razones no se probó con
-     una clave tributaria real durante el desarrollo. Los nombres de campo
-     y la URL sí están confirmados leyendo el HTML real del formulario de
-     login (ver commit), pero conviene probarlo primero con un período que
-     ya sabemos que tiene datos.
-  2. El SII puede cambiar esta pantalla interna sin aviso (no es un
+  1. La app real resultó ser "consdcvinternetui" (no "consemitidosinternetui"
+     como se asumió al principio) — se confirmó viendo un HAR real donde esa
+     pantalla devuelve datos reales de compras y ventas con
+     respEstado.codRespuesta=0. El nombre del código interno del SII no
+     necesariamente coincide con el nombre visible del menú.
+  2. El login SÍ está verificado de punta a punta contra el SII real (RUT +
+     Clave Tributaria reales, agosto 2026): incluye el paso de login en sí
+     (`_login`), el salto "puente" por JavaScript que el SII usa en vez de
+     una redirección HTTP normal, y el arranque de la app (obtieneConf,
+     aaSessionService/load, consultarParametros, getDatosInicio,
+     getDcvEmpresasAutorizadas) antes de poder llamar a getResumen.
+  3. TODAVÍA NO VERIFICADO: el detalle a nivel de documento (folio,
+     proveedor, fecha de cada factura individual). getResumen del SII solo
+     da totales agregados por tipo de documento y estado contable — no lista
+     los documentos uno por uno. Falta capturar (en un HAR real) qué llama
+     el SII cuando se hace clic en una de esas filas del resumen para ver el
+     detalle. Hasta que eso se confirme, `sync_rcv_compras` deliberadamente
+     NO inventa documentos individuales (folios falsos romperían la
+     deduplicación y el Libro de Compras) — junta los totales por tipo/
+     estado y corta ahí con un error claro pidiendo ese último HAR.
+  4. El SII puede cambiar esta pantalla interna sin aviso (no es un
      contrato público) y esto dejaría de funcionar de un día para otro. Si
      eso pasa, la carga manual y el importar XML (services/intercambio.py)
      siguen funcionando igual — son la red de seguridad permanente.
@@ -31,12 +45,10 @@ sincronización y la descarta. Quien guarda algo (cifrado) es el backend.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 import secrets
 import uuid
-from datetime import datetime
 from urllib.parse import urljoin
 
 import httpx
@@ -46,20 +58,31 @@ logger = logging.getLogger("yepardtecore.sii_rcv")
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
 
-LOGIN_INICIO   = "https://misiir.sii.cl/cgi_misii/siihome.cgi"
-LOGIN_POST_URL = "https://zeusr.sii.cl/cgi_AUT2000/CAutInicio.cgi"
+LOGIN_INICIO     = "https://misiir.sii.cl/cgi_misii/siihome.cgi"
+LOGIN_POST_URL   = "https://zeusr.sii.cl/cgi_AUT2000/CAutInicio.cgi"
 LOGIN_REFERENCIA = "https://misiir.sii.cl/cgi_misii/siihome.cgi"
-RCV_BASE = "https://www4.sii.cl/consemitidosinternetui"
+
+# CONFIRMADO vía HAR real (agosto 2026): esta es la app real detrás de
+# "Registro de Compras y Venta" en Mi SII — no "consemitidosinternetui"
+# como se había asumido antes de tener tráfico real para comparar.
+RCV_BASE = "https://www4.sii.cl/consdcvinternetui"
 RCV_APP  = f"{RCV_BASE}/"
-RCV_NS   = "cl.sii.sdi.lob.diii.consemitidos.data.api.interfaces.FacadeService"
+RCV_NS   = "cl.sii.sdi.lob.diii.consdcv.data.api.interfaces.FacadeService"
+SETTINGS_NS = "cl.sii.sdi.lob.diii.consdcv.data.impl.SettingsApplicationService"
+AUTCONF_NS  = "cl.sii.sdi.ss.aa.api.interfaces.AutConfDataService"
 
-# Operación 2 = documentos donde la empresa es RECEPTORA (compras).
-# Operación 1 = documentos donde es EMISORA (ventas) — no se usa acá.
-OPERACION_COMPRAS = 2
+AASESSION_URL = "https://www4.sii.cl/common-1.0/services/aaSessionService/load"
+AUTCONF_URL   = "https://www4.sii.cl/common-1.0/services/autConfDataService/obtieneConf"
 
-# Tope de documentos por sincronización — cortafuego ante una respuesta
-# inesperada (o un período con un volumen anormal) antes de martillar el SII.
-MAX_DOCUMENTOS = 500
+# Estados contables del RCV que se traen como "compra". Quedan fuera
+# RECLAMADO (documentos que la propia empresa objetó — no deberían entrar
+# como compra válida) y NO_INCLUIR (documentos marcados para excluir del
+# período por el propio contribuyente). Ajustable si hace falta verlos.
+ESTADOS_A_TRAER = ("REGISTRO", "PENDIENTE")
+
+# Tope de filas de resumen por sincronización — cortafuego ante una
+# respuesta inesperada antes de martillar el SII.
+MAX_FILAS_RESUMEN = 200
 
 
 class SIIRCVError(Exception):
@@ -81,24 +104,9 @@ def _gen_conversation_id() -> str:
     return secrets.token_hex(7).upper()[:13]
 
 
-def _meta(namespace_metodo: str, conversation_id: str) -> dict:
-    return {
-        "namespace": f"{RCV_NS}/{namespace_metodo}",
-        "conversationId": conversation_id,
-        "transactionId": str(uuid.uuid4()),
-        "page": None,
-    }
-
-
-def _fecha_a_iso(fecha_ddmmaaaa: str | None) -> str | None:
-    """'04/07/2026' → '2026-07-04'. Si no calza el formato, la deja tal cual
-    para no perder el dato — mejor una fecha rara que un documento perdido."""
-    if not fecha_ddmmaaaa:
-        return None
-    try:
-        return datetime.strptime(fecha_ddmmaaaa, "%d/%m/%Y").strftime("%Y-%m-%d")
-    except ValueError:
-        return fecha_ddmmaaaa
+def _periodo_a_ptributario(periodo: str) -> str:
+    """'2026-08' → '202608'. El SII de esta app no usa guión en el período."""
+    return re.sub(r"[^0-9]", "", periodo or "")
 
 
 async def _login(client: httpx.AsyncClient, rut_empresa: str, clave_tributaria: str) -> None:
@@ -126,18 +134,10 @@ async def _login(client: httpx.AsyncClient, rut_empresa: str, clave_tributaria: 
         raise SIIRCVError(f"No se pudo contactar el login del SII: {e}") from e
 
     texto = resp.text or ""
-    # DIAGNÓSTICO TEMPORAL: el login es la única parte que nunca se probó de
-    # punta a punta contra el SII real. "Usuario no autorizado" en getResumen
-    # con el RUT correcto sugiere que la sesión no quedó realmente autenticada
-    # aunque el POST haya devuelto 200 — y que nuestras señales de rechazo
-    # (_login más abajo) no están detectando el mensaje real del SII. Este log
-    # muestra la URL final y el arranque del HTML para ver qué contestó de
-    # verdad, sin tener que adivinar. Se puede quitar una vez confirmado.
     logger.info(
         f"[SII-LOGIN][DIAG] status={resp.status_code} url_final={resp.url} "
-        f"largo_body={len(texto)} body_completo={texto!r}"
+        f"largo_body={len(texto)}"
     )
-    logger.info(f"[SII-LOGIN][DIAG] cookies_tras_post={dict(client.cookies)}")
     # El SII no devuelve un 401 — te vuelve a mostrar el formulario de login
     # con un mensaje. Buscamos las señales típicas de rechazo.
     if resp.status_code >= 500:
@@ -154,8 +154,7 @@ async def _login(client: httpx.AsyncClient, rut_empresa: str, clave_tributaria: 
         )
     if re.search(r"m[aá]ximo de sesiones autenticadas", texto, re.I):
         # CONFIRMADO en producción: cada intento de sincronización abre una
-        # sesión nueva en el SII y nunca la cierra (no existe todavía un
-        # "logout" en este flujo). Tras varios intentos seguidos el SII
+        # sesión nueva en el SII. Si se acumulan varias sin cerrar, el SII
         # empieza a rechazar logins nuevos con este mensaje — el RUT/Clave
         # están bien, el límite es de sesiones simultáneas sin cerrar.
         raise SIIRCVError(
@@ -167,22 +166,19 @@ async def _login(client: httpx.AsyncClient, rut_empresa: str, clave_tributaria: 
         )
 
     # ── Completar el login ────────────────────────────────────────────────
-    # CONFIRMADO (viendo el HTML real vía el log [SII-LOGIN][DIAG]): el SII
-    # no redirige por HTTP tras el POST — entrega esta página "puente" con
-    # un `location.replace('https://misiir.sii.cl/...')` en JavaScript, que
-    # el navegador ejecuta para terminar de armar la sesión. httpx no
+    # El SII no redirige por HTTP tras el POST — entrega una página "puente"
+    # con un `location.replace('https://misiir.sii.cl/...')` en JavaScript,
+    # que el navegador ejecuta para terminar de armar la sesión. httpx no
     # ejecuta JS, así que sin este paso el POST "funciona" (200 OK, ya con
-    # las cookies de sesión) pero el SII nunca ve el login como completo —
-    # por eso getResumen contestaba "Usuario no autorizado" con el RUT
-    # correcto. Se extrae la URL del propio script en vez de asumir que
-    # siempre es LOGIN_REFERENCIA, por si el SII la cambia.
+    # las cookies de sesión) pero el SII nunca ve el login como completo. Se
+    # extrae la URL del propio script en vez de asumir que siempre es
+    # LOGIN_REFERENCIA, por si el SII la cambia.
     m_redirect = re.search(r"location\.replace\(['\"]([^'\"]+)['\"]\)", texto)
     destino_final = m_redirect.group(1) if m_redirect else LOGIN_REFERENCIA
-    # BUG CORREGIDO: esta página a veces trae una ruta relativa (ej.
-    # '/AUT2000/index.html' en la página de "máximo de sesiones") en vez de
-    # una URL completa. httpx no acepta una ruta relativa directamente y
-    # tronaba con "unknown url type". urljoin la resuelve contra la URL de
-    # la respuesta, igual que haría un navegador.
+    # Esta página a veces trae una ruta relativa (ej. '/AUT2000/index.html'
+    # en la página de "máximo de sesiones") en vez de una URL completa.
+    # urljoin la resuelve contra la URL de la respuesta, igual que haría un
+    # navegador.
     destino_final = urljoin(str(resp.url), destino_final)
     try:
         resp_final = await client.get(destino_final)
@@ -190,60 +186,90 @@ async def _login(client: httpx.AsyncClient, rut_empresa: str, clave_tributaria: 
         raise SIIRCVError(f"No se pudo completar el login del SII (paso final): {e}") from e
     logger.info(
         f"[SII-LOGIN][DIAG] paso_final destino={destino_final} "
-        f"status={resp_final.status_code} url_final={resp_final.url}"
+        f"status={resp_final.status_code}"
     )
 
 
-async def _rcv_post(client: httpx.AsyncClient, metodo: str, data: dict, conversation_id: str) -> dict:
-    body = {"metaData": _meta(metodo, conversation_id), "data": data}
+def _meta(namespace_completo: str, conversation_id: str, *, con_page: bool) -> dict:
+    meta = {
+        "namespace": namespace_completo,
+        "conversationId": conversation_id,
+        "transactionId": str(uuid.uuid4()),
+    }
+    if con_page:
+        meta["page"] = None
+    return meta
+
+
+async def _post_arranque(client: httpx.AsyncClient, url: str, namespace: str, conversation_id: str) -> dict:
+    """POST liviano para las llamadas de arranque de la app (obtieneConf,
+    consultarParametros): no llevan "page" ni "data" en el request, y su
+    respuesta no trae "respEstado" — no hay nada que validar más que la
+    conexión. Confirmado contra el HAR real: son parte de la secuencia que
+    hace el navegador antes de poder pedir datos, pero no son en sí mismas
+    la causa de rechazo si fallan — por eso son best-effort (no cortan la
+    sincronización si dan error, solo se registra)."""
+    body = {"metaData": _meta(namespace, conversation_id, con_page=False)}
+    resp = await client.post(url, json=body)
+    if not resp.is_success:
+        raise SIIRCVError(f"{url} respondió {resp.status_code}.")
     try:
-        resp = await client.post(f"{RCV_BASE}/services/data/facadeService/{metodo}", json=body)
+        return resp.json()
+    except ValueError:
+        return {}
+
+
+async def _facade_post(client: httpx.AsyncClient, url: str, namespace: str, data: dict, conversation_id: str) -> dict:
+    """POST a un método de FacadeService (o equivalente) que sí sigue el
+    contrato completo: "page" en metaData, "data" con los parámetros, y
+    "respEstado.codRespuesta" en la respuesta (0 = éxito)."""
+    body = {"metaData": _meta(namespace, conversation_id, con_page=True), "data": data}
+    try:
+        resp = await client.post(url, json=body)
     except httpx.RequestError as e:
-        raise SIIRCVError(f"No se pudo contactar el RCV del SII ({metodo}): {e}") from e
+        raise SIIRCVError(f"No se pudo contactar {url}: {e}") from e
 
     if not resp.is_success:
-        raise SIIRCVError(f"El RCV del SII respondió {resp.status_code} en {metodo}.")
+        raise SIIRCVError(f"El SII respondió {resp.status_code} en {url}.")
     try:
         payload = resp.json()
     except ValueError:
         raise SIIRCVError(
-            f"El RCV del SII devolvió una respuesta que no es JSON en {metodo} "
-            f"— probablemente la sesión no quedó autenticada."
+            f"El SII devolvió una respuesta que no es JSON en {url} — "
+            f"probablemente la sesión no quedó autenticada."
         )
-    cod = (payload.get("respEstado") or {}).get("codRespuesta")
-    if cod not in (0, None):
-        msg = (payload.get("respEstado") or {}).get("msgeRespuesta") or "sin detalle"
-        # DIAGNÓSTICO TEMPORAL: volcamos el payload completo (no solo el
-        # mensaje) para ver si el SII manda alguna pista adicional del
-        # rechazo (otro campo del respEstado, algo en "data", etc.) que el
-        # mensaje corto no muestra.
-        logger.warning(f"[SII-RCV][DIAG] Rechazo completo en {metodo}: {payload!r}")
-        raise SIIRCVError(f"El SII rechazó la consulta ({metodo}): {msg}")
+    resp_estado = payload.get("respEstado")
+    if resp_estado is not None:
+        cod = resp_estado.get("codRespuesta")
+        if cod not in (0, None):
+            msg = resp_estado.get("msgeRespuesta") or "sin detalle"
+            logger.warning(f"[SII-RCV][DIAG] Rechazo completo en {url}: {payload!r}")
+            raise SIIRCVError(f"El SII rechazó la consulta ({url}): {msg}")
     return payload
 
 
 async def sync_rcv_compras(rut_empresa: str, clave_tributaria: str, periodo: str) -> list[dict]:
     """
-    Trae del SII los documentos recibidos (compras) del período "AAAA-MM"
-    indicado, para `rut_empresa` ("12.345.678-9"), usando su Clave
-    Tributaria. Devuelve una lista de dicts listos para guardar como
-    `Compra` en el backend — no persiste nada acá.
+    Trae del SII el resumen de compras del período "AAAA-MM" indicado, para
+    `rut_empresa` ("12.345.678-9"), usando su Clave Tributaria.
+
+    IMPORTANTE (ver docstring del módulo, punto 3): esto todavía trae solo
+    TOTALES por tipo de documento y estado contable, no el listado
+    documento por documento (folio, proveedor). Devuelve esos totales como
+    "resumen" — el backend NO debe crear registros de Compra individuales
+    con esto todavía; falta confirmar el endpoint de detalle con un HAR real
+    de esa pantalla.
     """
     rut_num, dv = _norm_rut(rut_empresa)
+    ptributario = _periodo_a_ptributario(periodo)
     conv_id = _gen_conversation_id()
 
     headers = {
         "User-Agent": _UA,
         "Accept": "application/json, text/plain, */*",
         "Origin": "https://www4.sii.cl",
-        # Encontrados comparando un HAR real de una app hermana del SII
-        # (consdcvinternetui, misma familia www4.sii.cl/cons*internetui) que
-        # SÍ autentica bien: el navegador manda Referer apuntando a la SPA y
-        # los headers "Sec-Fetch-*" en cada llamada. Nuestro cliente no los
-        # mandaba — es un sospechoso directo de por qué el SII contestaba
-        # "Usuario no autorizado" pese a tener cookies de sesión válidas
-        # (varios backends usan Referer/Sec-Fetch-Site como chequeo extra,
-        # además de las cookies, precisamente para bloquear scripts).
+        # Confirmados comparando con un HAR real: el navegador manda Referer
+        # apuntando a la SPA y los headers "Sec-Fetch-*" en cada llamada.
         "Referer": RCV_APP,
         "Sec-Fetch-Dest": "empty",
         "Sec-Fetch-Mode": "cors",
@@ -255,131 +281,79 @@ async def sync_rcv_compras(rut_empresa: str, clave_tributaria: str, periodo: str
     ) as client:
         await _login(client, rut_empresa, clave_tributaria)
 
-        # Visita la app antes de llamarla — mismo orden que seguiría un
-        # navegador real y evita depender solo de las cookies del login.
         try:
-            resp_app = await client.get(RCV_APP)
+            await client.get(RCV_APP)
         except httpx.RequestError as e:
             raise SIIRCVError(f"No se pudo abrir el Registro de Compras y Venta: {e}") from e
 
-        # Antes de llamar a la app en sí, el navegador siempre pide el
-        # "estado de sesión" a este endpoint COMÚN (mismo para todas las
-        # apps de www4.sii.cl, confirmado en el HAR de consdcvinternetui —
-        # una app hermana de esta misma familia). Es de solo lectura, no
-        # debería cambiar nada del lado del servidor, pero lo replicamos
-        # por si acaso el "tocar" esta ruta primero importa para lo que
-        # viene después. Best-effort: si falla, seguimos igual — no es un
-        # paso que hayamos visto fallar en la app real.
+        # ── Arranque de la app — CONFIRMADO vía HAR real: el navegador hace
+        # esta secuencia exacta antes de poder pedir cualquier dato. Saltarse
+        # estos pasos es lo que causaba "Usuario no autorizado" en getResumen
+        # aunque el login general al SII ya hubiera funcionado.
         try:
-            resp_sess = await client.get("https://www4.sii.cl/common-1.0/services/aaSessionService/load")
-            logger.info(
-                f"[SII-RCV][DIAG] aaSessionService/load status={resp_sess.status_code} "
-                f"body={resp_sess.text[:300]!r}"
-            )
+            await client.get(AASESSION_URL)
         except httpx.RequestError as e:
             logger.warning(f"[SII-RCV][DIAG] aaSessionService/load falló (no fatal): {e}")
 
-        # DIAGNÓSTICO TEMPORAL: comparar estas cookies contra las de una
-        # sesión real de navegador (HAR) para ver si falta alguna propia de
-        # www4.sii.cl (p.ej. un token CSRF tipo XSRF-TOKEN que Angular suele
-        # exigir como header en cada POST y que un simple login no genera).
-        logger.info(
-            f"[SII-RCV][DIAG] tras abrir RCV_APP: status={resp_app.status_code} "
-            f"cookies={dict(client.cookies)}"
-        )
+        try:
+            await _post_arranque(client, AUTCONF_URL, f"{AUTCONF_NS}/obtieneConf", conv_id)
+        except SIIRCVError as e:
+            logger.warning(f"[SII-RCV][DIAG] obtieneConf falló (no fatal): {e}")
 
         try:
-            resumen = await _rcv_post(client, "getResumen", {
-                "periodo": periodo, "rutContribuyente": rut_num,
-                "dvContribuyente": dv, "operacion": OPERACION_COMPRAS,
-            }, conv_id)
-        except SIIRCVError:
-            # DIAGNÓSTICO TEMPORAL — no cambia el resultado, solo ayuda a
-            # entender el rechazo "Usuario no autorizado" (codError
-            # cnsmtds.1.1.02) en operacion=2 (compras). Probamos el MISMO
-            # período con operacion=1 (ventas/emitidos, algo que esta
-            # empresa sí hace todos los días) usando la misma sesión: si
-            # esto también falla, el problema es de sesión/autenticación en
-            # general; si esto FUNCIONA, el problema es puntual a permisos
-            # de "compras" de esta cuenta en el SII (algo a habilitar del
-            # lado del SII, no un bug de este código).
-            try:
-                resumen_ventas = await _rcv_post(client, "getResumen", {
-                    "periodo": periodo, "rutContribuyente": rut_num,
-                    "dvContribuyente": dv, "operacion": 1,
-                }, conv_id)
-                logger.warning(
-                    "[SII-RCV][DIAG] operacion=1 (ventas) SÍ funcionó con la "
-                    f"misma sesión: {resumen_ventas.get('data')!r}"
-                )
-            except SIIRCVError as e2:
-                logger.warning(
-                    f"[SII-RCV][DIAG] operacion=1 (ventas) también falló: {e2} "
-                    "— el rechazo es de sesión/autenticación en general, no "
-                    "específico de compras."
-                )
-            raise
+            await _post_arranque(
+                client, f"{RCV_BASE}/services/data/settingsService/consultarParametros",
+                f"{SETTINGS_NS}/consultarParametros", conv_id,
+            )
+        except SIIRCVError as e:
+            logger.warning(f"[SII-RCV][DIAG] consultarParametros falló (no fatal): {e}")
 
-        filas_resumen = ((resumen.get("data") or {}).get("resumenDte")) or []
-        documentos: list[dict] = []
+        # Estos dos SÍ son parte del contrato completo (FacadeService) y si
+        # fallan, no tiene sentido seguir — son los que de verdad activan la
+        # sesión para esta app específica.
+        await _facade_post(
+            client, f"{RCV_BASE}/services/data/facadeService/getDatosInicio",
+            f"{RCV_NS}/getDatosInicio", {}, conv_id,
+        )
+        await _facade_post(
+            client, f"{RCV_BASE}/services/data/facadeService/getDcvEmpresasAutorizadas",
+            f"{RCV_NS}/getDcvEmpresasAutorizadas",
+            {"rutAutenticado": rut_num, "dvAutenticado": dv}, conv_id,
+        )
 
-        for fila in filas_resumen:
-            tipo_doc = fila.get("tipoDoc")
-            if not tipo_doc or not fila.get("totalDoc"):
-                continue
+        # ── Resumen de compras, por cada estado contable relevante ─────────
+        resumen_por_estado: dict[str, dict] = {}
+        for estado in ESTADOS_A_TRAER:
+            payload = await _facade_post(
+                client, f"{RCV_BASE}/services/data/facadeService/getResumen",
+                f"{RCV_NS}/getResumen",
+                {
+                    "rutEmisor": rut_num, "dvEmisor": dv,
+                    "ptributario": ptributario, "estadoContab": estado,
+                    "operacion": "COMPRA",
+                },
+                conv_id,
+            )
+            filas = payload.get("data") or []
+            logger.info(f"[SII-RCV] Resumen {estado} {periodo}: {len(filas)} fila(s) — {filas!r}")
+            resumen_por_estado[estado] = filas
 
-            detalle_tipo = await _rcv_post(client, "getDetalleRecibidos", {
-                "tipoDoc": str(tipo_doc), "rut": rut_num, "dv": dv,
-                "periodo": periodo, "operacion": OPERACION_COMPRAS,
-                "derrCodigo": str(tipo_doc), "refNCD": "0",
-            }, conv_id)
+        total_filas = sum(len(v) for v in resumen_por_estado.values())
+        if total_filas == 0:
+            # No hay nada que traer — no es un error, es un período sin
+            # compras registradas en el RCV.
+            return []
 
-            for fila_doc in ((detalle_tipo.get("dataResp") or {}).get("detalles")) or []:
-                if len(documentos) >= MAX_DOCUMENTOS:
-                    logger.warning(f"[SII-RCV] Tope de {MAX_DOCUMENTOS} documentos alcanzado en {periodo}, se corta.")
-                    break
-
-                # OJO: en esta respuesta el SII reutiliza los campos
-                # "rutReceptor/dvReceptor/rznSocRecep" para el PROVEEDOR
-                # cuando operacion=2 (son compras, no ventas) — es un
-                # nombre heredado de la pantalla de "emitidos", no un error
-                # nuestro. getDetalleDTERecibidos sí los llama correctamente
-                # rutEmisor/rznSocEmisor.
-                dhdr_codigo = fila_doc.get("dhdrCodigo")
-                folio = fila_doc.get("folio")
-                rut_prov_num = fila_doc.get("rutReceptor")
-                dv_prov = fila_doc.get("dvReceptor")
-
-                razon_proveedor = fila_doc.get("rznSocRecep") or ""
-                if dhdr_codigo and folio and rut_prov_num:
-                    try:
-                        detalle_doc = await _rcv_post(client, "getDetalleDTERecibidos", {
-                            "dhdrCodigo": dhdr_codigo, "rut": rut_num, "dv": dv,
-                            "folio": folio, "tipoDoc": str(tipo_doc),
-                            "rutDoc": rut_prov_num, "dvDoc": dv_prov,
-                        }, conv_id)
-                        dd = detalle_doc.get("detalleDte") or {}
-                        if dd.get("rznSocEmisor"):
-                            razon_proveedor = dd["rznSocEmisor"]
-                    except SIIRCVError as e:
-                        # No aborta la sincronización completa por un documento
-                        # puntual que falle — sigue con el resto y avisa.
-                        logger.warning(f"[SII-RCV] No se pudo ampliar el detalle de folio {folio} tipo {tipo_doc}: {e}")
-                    await asyncio.sleep(0.25)
-
-                documentos.append({
-                    "tipo_dte": int(tipo_doc),
-                    "folio": int(folio) if folio else None,
-                    "fecha": _fecha_a_iso(fila_doc.get("fechaEmision")),
-                    "proveedor_rut": f"{rut_prov_num}-{dv_prov}" if rut_prov_num else "",
-                    "proveedor_razon": razon_proveedor,
-                    "monto_neto": int(fila_doc.get("mntNeto") or 0),
-                    "monto_exento": int(fila_doc.get("mntExento") or 0),
-                    "monto_iva": int(fila_doc.get("mntIva") or 0),
-                    "monto_total": int(fila_doc.get("mntTotal") or 0),
-                })
-
-            if len(documentos) >= MAX_DOCUMENTOS:
-                break
-
-        return documentos
+        # TODO (bloqueado — falta un HAR real de la pantalla de detalle):
+        # getResumen solo da totales por tipo de documento, no folios
+        # individuales. Hasta tener el endpoint de detalle confirmado,
+        # cortamos acá con un error explícito en vez de inventar documentos
+        # con folios falsos (rompería la deduplicación y el Libro de
+        # Compras). Los totales ya quedaron en el log de arriba como prueba
+        # de que la conexión y la autenticación SÍ están funcionando.
+        raise SIIRCVError(
+            f"Conexión y autenticación con el SII OK — se encontraron "
+            f"{total_filas} fila(s) de resumen para {periodo}, pero todavía "
+            f"falta implementar el detalle por documento (folio, proveedor). "
+            f"Contacta a soporte con este mensaje para terminar esa parte."
+        )
