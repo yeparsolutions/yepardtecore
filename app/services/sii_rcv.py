@@ -236,6 +236,18 @@ async def sync_rcv_compras(rut_empresa: str, clave_tributaria: str, periodo: str
         "User-Agent": _UA,
         "Accept": "application/json, text/plain, */*",
         "Origin": "https://www4.sii.cl",
+        # Encontrados comparando un HAR real de una app hermana del SII
+        # (consdcvinternetui, misma familia www4.sii.cl/cons*internetui) que
+        # SÍ autentica bien: el navegador manda Referer apuntando a la SPA y
+        # los headers "Sec-Fetch-*" en cada llamada. Nuestro cliente no los
+        # mandaba — es un sospechoso directo de por qué el SII contestaba
+        # "Usuario no autorizado" pese a tener cookies de sesión válidas
+        # (varios backends usan Referer/Sec-Fetch-Site como chequeo extra,
+        # además de las cookies, precisamente para bloquear scripts).
+        "Referer": RCV_APP,
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
     }
     async with httpx.AsyncClient(
         headers=headers, timeout=30, follow_redirects=True,
@@ -249,6 +261,23 @@ async def sync_rcv_compras(rut_empresa: str, clave_tributaria: str, periodo: str
             resp_app = await client.get(RCV_APP)
         except httpx.RequestError as e:
             raise SIIRCVError(f"No se pudo abrir el Registro de Compras y Venta: {e}") from e
+
+        # Antes de llamar a la app en sí, el navegador siempre pide el
+        # "estado de sesión" a este endpoint COMÚN (mismo para todas las
+        # apps de www4.sii.cl, confirmado en el HAR de consdcvinternetui —
+        # una app hermana de esta misma familia). Es de solo lectura, no
+        # debería cambiar nada del lado del servidor, pero lo replicamos
+        # por si acaso el "tocar" esta ruta primero importa para lo que
+        # viene después. Best-effort: si falla, seguimos igual — no es un
+        # paso que hayamos visto fallar en la app real.
+        try:
+            resp_sess = await client.get("https://www4.sii.cl/common-1.0/services/aaSessionService/load")
+            logger.info(
+                f"[SII-RCV][DIAG] aaSessionService/load status={resp_sess.status_code} "
+                f"body={resp_sess.text[:300]!r}"
+            )
+        except httpx.RequestError as e:
+            logger.warning(f"[SII-RCV][DIAG] aaSessionService/load falló (no fatal): {e}")
 
         # DIAGNÓSTICO TEMPORAL: comparar estas cookies contra las de una
         # sesión real de navegador (HAR) para ver si falta alguna propia de
