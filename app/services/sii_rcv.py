@@ -152,6 +152,27 @@ async def _login(client: httpx.AsyncClient, rut_empresa: str, clave_tributaria: 
             "del sitio). Reintenta la sincronización en unos minutos."
         )
 
+    # ── Completar el login ────────────────────────────────────────────────
+    # CONFIRMADO (viendo el HTML real vía el log [SII-LOGIN][DIAG]): el SII
+    # no redirige por HTTP tras el POST — entrega esta página "puente" con
+    # un `location.replace('https://misiir.sii.cl/...')` en JavaScript, que
+    # el navegador ejecuta para terminar de armar la sesión. httpx no
+    # ejecuta JS, así que sin este paso el POST "funciona" (200 OK, ya con
+    # las cookies de sesión) pero el SII nunca ve el login como completo —
+    # por eso getResumen contestaba "Usuario no autorizado" con el RUT
+    # correcto. Se extrae la URL del propio script en vez de asumir que
+    # siempre es LOGIN_REFERENCIA, por si el SII la cambia.
+    m_redirect = re.search(r"location\.replace\(['\"]([^'\"]+)['\"]\)", texto)
+    destino_final = m_redirect.group(1) if m_redirect else LOGIN_REFERENCIA
+    try:
+        resp_final = await client.get(destino_final)
+    except httpx.RequestError as e:
+        raise SIIRCVError(f"No se pudo completar el login del SII (paso final): {e}") from e
+    logger.info(
+        f"[SII-LOGIN][DIAG] paso_final destino={destino_final} "
+        f"status={resp_final.status_code} url_final={resp_final.url}"
+    )
+
 
 async def _rcv_post(client: httpx.AsyncClient, metodo: str, data: dict, conversation_id: str) -> dict:
     body = {"metaData": _meta(metodo, conversation_id), "data": data}
