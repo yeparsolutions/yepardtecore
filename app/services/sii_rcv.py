@@ -37,6 +37,7 @@ import re
 import secrets
 import uuid
 from datetime import datetime
+from urllib.parse import urljoin
 
 import httpx
 
@@ -151,6 +152,19 @@ async def _login(client: httpx.AsyncClient, rut_empresa: str, clave_tributaria: 
             "El SII puso la sesión en una sala de espera virtual (alta demanda "
             "del sitio). Reintenta la sincronización en unos minutos."
         )
+    if re.search(r"m[aá]ximo de sesiones autenticadas", texto, re.I):
+        # CONFIRMADO en producción: cada intento de sincronización abre una
+        # sesión nueva en el SII y nunca la cierra (no existe todavía un
+        # "logout" en este flujo). Tras varios intentos seguidos el SII
+        # empieza a rechazar logins nuevos con este mensaje — el RUT/Clave
+        # están bien, el límite es de sesiones simultáneas sin cerrar.
+        raise SIIRCVError(
+            "El SII rechazó el login porque hay demasiadas sesiones abiertas "
+            "sin cerrar para este RUT (límite de sesiones simultáneas del "
+            "propio SII). Espera un rato a que esas sesiones expiren por sí "
+            "solas y reintenta — evita sincronizar varias veces seguidas "
+            "mientras tanto."
+        )
 
     # ── Completar el login ────────────────────────────────────────────────
     # CONFIRMADO (viendo el HTML real vía el log [SII-LOGIN][DIAG]): el SII
@@ -164,6 +178,12 @@ async def _login(client: httpx.AsyncClient, rut_empresa: str, clave_tributaria: 
     # siempre es LOGIN_REFERENCIA, por si el SII la cambia.
     m_redirect = re.search(r"location\.replace\(['\"]([^'\"]+)['\"]\)", texto)
     destino_final = m_redirect.group(1) if m_redirect else LOGIN_REFERENCIA
+    # BUG CORREGIDO: esta página a veces trae una ruta relativa (ej.
+    # '/AUT2000/index.html' en la página de "máximo de sesiones") en vez de
+    # una URL completa. httpx no acepta una ruta relativa directamente y
+    # tronaba con "unknown url type". urljoin la resuelve contra la URL de
+    # la respuesta, igual que haría un navegador.
+    destino_final = urljoin(str(resp.url), destino_final)
     try:
         resp_final = await client.get(destino_final)
     except httpx.RequestError as e:
