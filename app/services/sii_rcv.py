@@ -203,26 +203,29 @@ async def _login(client: httpx.AsyncClient, rut_empresa: str, clave_tributaria: 
     )
 
 
-def _meta(namespace_completo: str, conversation_id: str, *, con_page: bool) -> dict:
+def _meta(namespace_completo: str, conversation_id: str, *, con_page: bool, transaction_id: str | None = None) -> dict:
     meta = {
         "namespace": namespace_completo,
         "conversationId": conversation_id,
-        "transactionId": str(uuid.uuid4()),
+        "transactionId": transaction_id or str(uuid.uuid4()),
     }
     if con_page:
         meta["page"] = None
     return meta
 
 
-async def _post_arranque(client: httpx.AsyncClient, url: str, namespace: str, conversation_id: str) -> dict:
+async def _post_arranque(client: httpx.AsyncClient, url: str, namespace: str, transaction_id: str) -> dict:
     """POST liviano para las llamadas de arranque de la app (obtieneConf,
-    consultarParametros): no llevan "page" ni "data" en el request, y su
-    respuesta no trae "respEstado" — no hay nada que validar más que la
-    conexión. Confirmado contra el HAR real: son parte de la secuencia que
-    hace el navegador antes de poder pedir datos, pero no son en sí mismas
-    la causa de rechazo si fallan — por eso son best-effort (no cortan la
-    sincronización si dan error, solo se registra)."""
-    body = {"metaData": _meta(namespace, conversation_id, con_page=False)}
+    consultarParametros). CONFIRMADO vía HAR real: estas dos llamadas van
+    con `conversationId` literal "1" (no un id de verdad) y comparten el
+    MISMO `transactionId` entre sí — un valor generado por la propia app al
+    arrancar. Ese mismo valor es el que después se usa como `conversationId`
+    en todas las llamadas reales (getDatosInicio en adelante). Si no se
+    manda así, el SII responde "Problema con el Token: NO Existen Datos" en
+    getDatosInicio — el conversationId que le pasamos ahí nunca fue "visto"
+    antes por el servidor. No llevan "page" ni "data", y su respuesta no
+    trae "respEstado" — no hay nada más que validar que la conexión."""
+    body = {"metaData": _meta(namespace, "1", con_page=False, transaction_id=transaction_id)}
     resp = await client.post(url, json=body)
     if not resp.is_success:
         raise SIIRCVError(f"{url} respondió {resp.status_code}.")
@@ -295,18 +298,20 @@ async def sync_rcv_compras(rut_empresa: str, clave_tributaria: str, periodo: str
             raise SIIRCVError(f"No se pudo abrir el Registro de Compras y Venta: {e}") from e
 
         # ── Arranque de la app — CONFIRMADO vía HAR real: el navegador hace
-        # esta secuencia exacta antes de poder pedir cualquier dato. Saltarse
-        # estos pasos es lo que causaba "Usuario no autorizado" en getResumen
-        # aunque el login general al SII ya hubiera funcionado.
-        try:
-            await client.get(AASESSION_URL)
-        except httpx.RequestError as e:
-            logger.warning(f"[SII-RCV][DIAG] aaSessionService/load falló (no fatal): {e}")
-
+        # esta secuencia exacta, EN ESTE ORDEN, antes de poder pedir
+        # cualquier dato. Saltarse estos pasos (o mandarlos en otro orden,
+        # o con el conversationId/transactionId armados distinto a como los
+        # arma la app real) es lo que causaba los rechazos "Usuario no
+        # autorizado" y "Problema con el Token: NO Existen Datos".
         try:
             await _post_arranque(client, AUTCONF_URL, f"{AUTCONF_NS}/obtieneConf", conv_id)
         except SIIRCVError as e:
             logger.warning(f"[SII-RCV][DIAG] obtieneConf falló (no fatal): {e}")
+
+        try:
+            await client.get(AASESSION_URL)
+        except httpx.RequestError as e:
+            logger.warning(f"[SII-RCV][DIAG] aaSessionService/load falló (no fatal): {e}")
 
         try:
             await _post_arranque(
