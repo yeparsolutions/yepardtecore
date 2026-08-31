@@ -239,10 +239,37 @@ async def sync_rcv_compras(rut_empresa: str, clave_tributaria: str, periodo: str
             f"cookies={dict(client.cookies)}"
         )
 
-        resumen = await _rcv_post(client, "getResumen", {
-            "periodo": periodo, "rutContribuyente": rut_num,
-            "dvContribuyente": dv, "operacion": OPERACION_COMPRAS,
-        }, conv_id)
+        try:
+            resumen = await _rcv_post(client, "getResumen", {
+                "periodo": periodo, "rutContribuyente": rut_num,
+                "dvContribuyente": dv, "operacion": OPERACION_COMPRAS,
+            }, conv_id)
+        except SIIRCVError:
+            # DIAGNÓSTICO TEMPORAL — no cambia el resultado, solo ayuda a
+            # entender el rechazo "Usuario no autorizado" (codError
+            # cnsmtds.1.1.02) en operacion=2 (compras). Probamos el MISMO
+            # período con operacion=1 (ventas/emitidos, algo que esta
+            # empresa sí hace todos los días) usando la misma sesión: si
+            # esto también falla, el problema es de sesión/autenticación en
+            # general; si esto FUNCIONA, el problema es puntual a permisos
+            # de "compras" de esta cuenta en el SII (algo a habilitar del
+            # lado del SII, no un bug de este código).
+            try:
+                resumen_ventas = await _rcv_post(client, "getResumen", {
+                    "periodo": periodo, "rutContribuyente": rut_num,
+                    "dvContribuyente": dv, "operacion": 1,
+                }, conv_id)
+                logger.warning(
+                    "[SII-RCV][DIAG] operacion=1 (ventas) SÍ funcionó con la "
+                    f"misma sesión: {resumen_ventas.get('data')!r}"
+                )
+            except SIIRCVError as e2:
+                logger.warning(
+                    f"[SII-RCV][DIAG] operacion=1 (ventas) también falló: {e2} "
+                    "— el rechazo es de sesión/autenticación en general, no "
+                    "específico de compras."
+                )
+            raise
 
         filas_resumen = ((resumen.get("data") or {}).get("resumenDte")) or []
         documentos: list[dict] = []
