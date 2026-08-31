@@ -25,15 +25,15 @@ documentación del SII (no existe). Consecuencias directas:
      una redirección HTTP normal, y el arranque de la app (obtieneConf,
      aaSessionService/load, consultarParametros, getDatosInicio,
      getDcvEmpresasAutorizadas) antes de poder llamar a getResumen.
-  3. TODAVÍA NO VERIFICADO: el detalle a nivel de documento (folio,
-     proveedor, fecha de cada factura individual). getResumen del SII solo
-     da totales agregados por tipo de documento y estado contable — no lista
-     los documentos uno por uno. Falta capturar (en un HAR real) qué llama
-     el SII cuando se hace clic en una de esas filas del resumen para ver el
-     detalle. Hasta que eso se confirme, `sync_rcv_compras` deliberadamente
-     NO inventa documentos individuales (folios falsos romperían la
-     deduplicación y el Libro de Compras) — junta los totales por tipo/
-     estado y corta ahí con un error claro pidiendo ese último HAR.
+  3. El detalle a nivel de documento (folio, proveedor, fecha de cada
+     factura individual) también está confirmado vía HAR real:
+     `getDetalleCompra` por cada combinación tipo de documento + estado
+     contable devuelve folio (`detNroDoc`), proveedor (`detRutDoc`/
+     `detDvDoc`/`detRznSoc`) y montos. Ese request real incluye un
+     "tokenRecaptcha" con un valor fijo ("t-o-k-e-n-web", no un token real
+     de reCAPTCHA) — se replica tal cual salió en la captura; si el SII
+     empieza a exigir un token de verdad, esto va a fallar con un mensaje
+     de rechazo claro, no en silencio.
   4. El SII puede cambiar esta pantalla interna sin aviso (no es un
      contrato público) y esto dejaría de funcionar de un día para otro. Si
      eso pasa, la carga manual y el importar XML (services/intercambio.py)
@@ -45,6 +45,7 @@ sincronización y la descarta. Quien guarda algo (cifrado) es el backend.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import secrets
@@ -80,9 +81,9 @@ AUTCONF_URL   = "https://www4.sii.cl/common-1.0/services/autConfDataService/obti
 # período por el propio contribuyente). Ajustable si hace falta verlos.
 ESTADOS_A_TRAER = ("REGISTRO", "PENDIENTE")
 
-# Tope de filas de resumen por sincronización — cortafuego ante una
-# respuesta inesperada antes de martillar el SII.
-MAX_FILAS_RESUMEN = 200
+# Tope de documentos por sincronización — cortafuego ante una respuesta
+# inesperada (o un período con un volumen anormal) antes de martillar el SII.
+MAX_DOCUMENTOS = 500
 
 
 class SIIRCVError(Exception):
@@ -107,6 +108,18 @@ def _gen_conversation_id() -> str:
 def _periodo_a_ptributario(periodo: str) -> str:
     """'2026-08' → '202608'. El SII de esta app no usa guión en el período."""
     return re.sub(r"[^0-9]", "", periodo or "")
+
+
+def _fecha_a_iso(fecha_ddmmaaaa: str | None) -> str | None:
+    """'04/08/2026' → '2026-08-04'. Si no calza el formato, la deja tal cual
+    para no perder el dato — mejor una fecha rara que un documento perdido."""
+    if not fecha_ddmmaaaa:
+        return None
+    from datetime import datetime
+    try:
+        return datetime.strptime(fecha_ddmmaaaa, "%d/%m/%Y").strftime("%Y-%m-%d")
+    except ValueError:
+        return fecha_ddmmaaaa
 
 
 async def _login(client: httpx.AsyncClient, rut_empresa: str, clave_tributaria: str) -> None:
@@ -250,15 +263,10 @@ async def _facade_post(client: httpx.AsyncClient, url: str, namespace: str, data
 
 async def sync_rcv_compras(rut_empresa: str, clave_tributaria: str, periodo: str) -> list[dict]:
     """
-    Trae del SII el resumen de compras del período "AAAA-MM" indicado, para
-    `rut_empresa` ("12.345.678-9"), usando su Clave Tributaria.
-
-    IMPORTANTE (ver docstring del módulo, punto 3): esto todavía trae solo
-    TOTALES por tipo de documento y estado contable, no el listado
-    documento por documento (folio, proveedor). Devuelve esos totales como
-    "resumen" — el backend NO debe crear registros de Compra individuales
-    con esto todavía; falta confirmar el endpoint de detalle con un HAR real
-    de esa pantalla.
+    Trae del SII los documentos recibidos (compras) del período "AAAA-MM"
+    indicado, para `rut_empresa` ("12.345.678-9"), usando su Clave
+    Tributaria. Devuelve una lista de dicts listos para guardar como
+    `Compra` en el backend — no persiste nada acá.
     """
     rut_num, dv = _norm_rut(rut_empresa)
     ptributario = _periodo_a_ptributario(periodo)
@@ -344,16 +352,62 @@ async def sync_rcv_compras(rut_empresa: str, clave_tributaria: str, periodo: str
             # compras registradas en el RCV.
             return []
 
-        # TODO (bloqueado — falta un HAR real de la pantalla de detalle):
-        # getResumen solo da totales por tipo de documento, no folios
-        # individuales. Hasta tener el endpoint de detalle confirmado,
-        # cortamos acá con un error explícito en vez de inventar documentos
-        # con folios falsos (rompería la deduplicación y el Libro de
-        # Compras). Los totales ya quedaron en el log de arriba como prueba
-        # de que la conexión y la autenticación SÍ están funcionando.
-        raise SIIRCVError(
-            f"Conexión y autenticación con el SII OK — se encontraron "
-            f"{total_filas} fila(s) de resumen para {periodo}, pero todavía "
-            f"falta implementar el detalle por documento (folio, proveedor). "
-            f"Contacta a soporte con este mensaje para terminar esa parte."
-        )
+        # ── Detalle documento por documento ─────────────────────────────────
+        # CONFIRMADO vía HAR real: getDetalleCompra trae folio (detNroDoc),
+        # proveedor (detRutDoc/detDvDoc/detRznSoc) y montos de cada
+        # documento del tipo+estado indicado. El request real incluye un
+        # "tokenRecaptcha" con un valor fijo ("t-o-k-e-n-web") — no un token
+        # real generado por reCAPTCHA — así que lo replicamos tal cual salió
+        # en la captura; si el SII empieza a exigir un token de verdad, esto
+        # va a fallar de forma clara (el mensaje de rechazo lo va a decir) en
+        # vez de silenciosamente.
+        documentos: list[dict] = []
+        vistos: set[tuple] = set()  # (tipo_dte, folio, proveedor_rut) — por si el mismo documento aparece en más de un estado
+        for estado, filas in resumen_por_estado.items():
+            for fila in filas:
+                if len(documentos) >= MAX_DOCUMENTOS:
+                    logger.warning(f"[SII-RCV] Tope de {MAX_DOCUMENTOS} documentos alcanzado en {periodo}, se corta.")
+                    break
+                tipo_doc = fila.get("rsmnTipoDocInteger")
+                if not tipo_doc:
+                    continue
+
+                detalle_payload = await _facade_post(
+                    client, f"{RCV_BASE}/services/data/facadeService/getDetalleCompra",
+                    f"{RCV_NS}/getDetalleCompra",
+                    {
+                        "rutEmisor": rut_num, "dvEmisor": dv,
+                        "ptributario": ptributario, "codTipoDoc": str(tipo_doc),
+                        "operacion": "COMPRA", "estadoContab": estado,
+                        "accionRecaptcha": "RCV_DETC", "tokenRecaptcha": "t-o-k-e-n-web",
+                    },
+                    conv_id,
+                )
+                await asyncio.sleep(0.25)
+                for det in (detalle_payload.get("data") or []):
+                    folio = det.get("detNroDoc")
+                    rut_prov_num = det.get("detRutDoc")
+                    dv_prov = det.get("detDvDoc")
+                    proveedor_rut = f"{rut_prov_num}-{dv_prov}" if rut_prov_num else ""
+                    clave = (int(tipo_doc), folio, proveedor_rut)
+                    if clave in vistos:
+                        continue
+                    vistos.add(clave)
+
+                    documentos.append({
+                        "tipo_dte": int(tipo_doc),
+                        "folio": int(folio) if folio else None,
+                        "fecha": _fecha_a_iso(det.get("detFchDoc")),
+                        "proveedor_rut": proveedor_rut,
+                        "proveedor_razon": det.get("detRznSoc") or "",
+                        "monto_neto": int(det.get("detMntNeto") or 0),
+                        "monto_exento": int(det.get("detMntExe") or 0),
+                        "monto_iva": int(det.get("detMntIVA") or 0),
+                        "monto_total": int(det.get("detMntTotal") or 0),
+                    })
+                    if len(documentos) >= MAX_DOCUMENTOS:
+                        break
+            if len(documentos) >= MAX_DOCUMENTOS:
+                break
+
+        return documentos
