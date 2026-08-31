@@ -109,12 +109,54 @@ def _serializar(root) -> str:
 
 
 # ─── Parseo del EnvioDTE recibido ────────────────────────────────────────────
+def _extraer_detalle_items(doc) -> list[dict]:
+    """
+    Las líneas de producto/servicio del documento (<Detalle> — nombre,
+    cantidad, precio unitario, monto). Esto NO existe en el RCV del SII (que
+    solo maneja totales para efectos tributarios) — solo está en el XML real
+    del DTE. Es lo que necesita un ERP para saber qué va a recibir, más allá
+    del monto total de la factura.
+    """
+    def _t(parent, tag):
+        el = parent.find(f"{{{NS_SII}}}{tag}")
+        return el.text if el is not None else None
+
+    def _num(parent, tag):
+        val = _t(parent, tag)
+        try:
+            return float(val) if val is not None else None
+        except ValueError:
+            return None
+
+    items = []
+    for det in doc.findall(f"{{{NS_SII}}}Detalle"):
+        items.append({
+            "nro_linea":     _t(det, "NroLinDet"),
+            "codigo":        _t(det, "VlrCodigo"),
+            "nombre":        _t(det, "NmbItem"),
+            "descripcion":   _t(det, "DscItem"),
+            "cantidad":      _num(det, "QtyItem"),
+            "unidad":        _t(det, "UnmdItem"),
+            "precio_unit":   _num(det, "PrcItem"),
+            "descuento_pct": _num(det, "DescuentoPct"),
+            "monto_item":    _num(det, "MontoItem"),
+        })
+    return items
+
+
 def parsear_envio_recibido(xml_bytes: bytes) -> dict:
-    """Extrae del EnvioDTE que mandó el SII: emisor/receptor del envío, el ID y
-    DigestValue del SetDTE (para el acuse), y los datos de cada DTE."""
+    """
+    Extrae los datos de cada DTE recibido, sea un EnvioDTE completo (el que
+    manda el SII en certificación, con Caratula/SetDTE) o un DTE suelto tal
+    como lo manda un proveedor directamente (sin ese sobre) — ambos casos
+    tienen los mismos nodos <Documento> por dentro, así que basta con no
+    asumir que la Caratula/SetDTE existen.
+    """
     root = etree.fromstring(xml_bytes)
     car  = root.find(f".//{{{NS_SII}}}Caratula")
     def _c(tag):
+        if car is None:
+            return ""
         el = car.find(f"{{{NS_SII}}}{tag}"); return el.text if el is not None else ""
 
     set_dte = root.find(f".//{{{NS_SII}}}SetDTE")
@@ -143,12 +185,23 @@ def parsear_envio_recibido(xml_bytes: bytes) -> dict:
             "folio":      _t(idd, "Folio"),
             "fch_emis":   _t(idd, "FchEmis"),
             "rut_emisor": _norm_rut(_t(emi, "RUTEmisor")),
+            "razon_emisor": _t(emi, "RznSoc") or _t(emi, "RznSocEmisor"),
+            "giro_emisor":  _t(emi, "GiroEmisor"),
             "rut_recep":  _norm_rut(_t(rec, "RUTRecep")),
+            "mnt_neto":   _t(tot, "MntNeto"),
+            "mnt_exe":    _t(tot, "MntExe"),
+            "mnt_iva":    _t(tot, "IVA"),
             "mnt_total":  _t(tot, "MntTotal"),
+            "detalle":    _extraer_detalle_items(doc),
         })
+    # Si no había Caratula (DTE suelto, sin sobre de envío), usamos el
+    # emisor/receptor del primer documento como mejor aproximación — así
+    # el llamador igual sabe entre quiénes es el intercambio.
+    rut_emisor_envio   = _norm_rut(_c("RutEmisor"))   or (dtes[0]["rut_emisor"] if dtes else "")
+    rut_receptor_envio = _norm_rut(_c("RutReceptor")) or (dtes[0]["rut_recep"]  if dtes else "")
     return {
-        "rut_emisor_envio":   _norm_rut(_c("RutEmisor")),
-        "rut_receptor_envio": _norm_rut(_c("RutReceptor")),
+        "rut_emisor_envio":   rut_emisor_envio,
+        "rut_receptor_envio": rut_receptor_envio,
         "set_id":  set_id,
         "digest":  digest_set,
         "dtes":    dtes,
