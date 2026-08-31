@@ -134,8 +134,9 @@ async def _login(client: httpx.AsyncClient, rut_empresa: str, clave_tributaria: 
     # verdad, sin tener que adivinar. Se puede quitar una vez confirmado.
     logger.info(
         f"[SII-LOGIN][DIAG] status={resp.status_code} url_final={resp.url} "
-        f"largo_body={len(texto)} inicio_body={texto[:400]!r}"
+        f"largo_body={len(texto)} body_completo={texto!r}"
     )
+    logger.info(f"[SII-LOGIN][DIAG] cookies_tras_post={dict(client.cookies)}")
     # El SII no devuelve un 401 — te vuelve a mostrar el formulario de login
     # con un mensaje. Buscamos las señales típicas de rechazo.
     if resp.status_code >= 500:
