@@ -2544,6 +2544,12 @@ async def sincronizar_compras_sii(
     try:
         documentos = await sync_rcv_compras(body.rut_empresa, body.clave_tributaria, body.periodo)
     except SIIRCVError as e:
+        # Antes esto se perdía: el 502 quedaba en el access log de uvicorn
+        # sin ningún detalle de la causa real. Este log es lo que hace falta
+        # ver para saber QUÉ rechazó el SII (login, sesión, o una consulta
+        # puntual del RCV) sin depender de mirar el body de la respuesta
+        # en el navegador.
+        logger.warning(f"[SINCRONIZAR-SII] El SII rechazó la sincronización: {e}")
         raise HTTPException(502, str(e))
     except Exception as e:
         logger.error(f"[SINCRONIZAR-SII] Error inesperado: {e}", exc_info=True)
