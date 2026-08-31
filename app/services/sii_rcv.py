@@ -125,6 +125,17 @@ async def _login(client: httpx.AsyncClient, rut_empresa: str, clave_tributaria: 
         raise SIIRCVError(f"No se pudo contactar el login del SII: {e}") from e
 
     texto = resp.text or ""
+    # DIAGNÓSTICO TEMPORAL: el login es la única parte que nunca se probó de
+    # punta a punta contra el SII real. "Usuario no autorizado" en getResumen
+    # con el RUT correcto sugiere que la sesión no quedó realmente autenticada
+    # aunque el POST haya devuelto 200 — y que nuestras señales de rechazo
+    # (_login más abajo) no están detectando el mensaje real del SII. Este log
+    # muestra la URL final y el arranque del HTML para ver qué contestó de
+    # verdad, sin tener que adivinar. Se puede quitar una vez confirmado.
+    logger.info(
+        f"[SII-LOGIN][DIAG] status={resp.status_code} url_final={resp.url} "
+        f"largo_body={len(texto)} inicio_body={texto[:400]!r}"
+    )
     # El SII no devuelve un 401 — te vuelve a mostrar el formulario de login
     # con un mensaje. Buscamos las señales típicas de rechazo.
     if resp.status_code >= 500:
