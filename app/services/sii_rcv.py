@@ -330,6 +330,20 @@ async def sync_rcv_compras(rut_empresa: str, clave_tributaria: str, periodo: str
 
         logger.info(f"[SII-RCV][DIAG] cookies antes de getDatosInicio: {dict(client.cookies)!r}")
 
+        # HIPÓTESIS A PROBAR: todo lo demás calza exactamente con el HAR real
+        # (mismos endpoints, mismo orden, mismo encadenamiento de
+        # conversationId/transactionId, sesión autenticada de verdad según
+        # aaSessionService/load) y aun así el SII sigue devolviendo
+        # "Problema con el Token: NO Existen Datos" en getDatosInicio. Un
+        # navegador real tarda segundos en cargar y arrancar Angular entre
+        # estas llamadas — nuestro cliente las dispara casi instantáneas
+        # (~150-250ms entre cada una). Si el SII escribe el "token" del
+        # conversationId de forma asíncrona/con retraso en su backend, una
+        # secuencia tan rápida podría estar adelantándose a esa escritura.
+        # Se agrega una pausa corta antes de getDatosInicio para descartar
+        # esto como causa antes de seguir buscando en otro lado.
+        await asyncio.sleep(2)
+
         # Estos dos SÍ son parte del contrato completo (FacadeService) y si
         # fallan, no tiene sentido seguir — son los que de verdad activan la
         # sesión para esta app específica.
