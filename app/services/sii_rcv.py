@@ -193,6 +193,11 @@ async def _rcv_post(client: httpx.AsyncClient, metodo: str, data: dict, conversa
     cod = (payload.get("respEstado") or {}).get("codRespuesta")
     if cod not in (0, None):
         msg = (payload.get("respEstado") or {}).get("msgeRespuesta") or "sin detalle"
+        # DIAGNÓSTICO TEMPORAL: volcamos el payload completo (no solo el
+        # mensaje) para ver si el SII manda alguna pista adicional del
+        # rechazo (otro campo del respEstado, algo en "data", etc.) que el
+        # mensaje corto no muestra.
+        logger.warning(f"[SII-RCV][DIAG] Rechazo completo en {metodo}: {payload!r}")
         raise SIIRCVError(f"El SII rechazó la consulta ({metodo}): {msg}")
     return payload
 
@@ -221,9 +226,18 @@ async def sync_rcv_compras(rut_empresa: str, clave_tributaria: str, periodo: str
         # Visita la app antes de llamarla — mismo orden que seguiría un
         # navegador real y evita depender solo de las cookies del login.
         try:
-            await client.get(RCV_APP)
+            resp_app = await client.get(RCV_APP)
         except httpx.RequestError as e:
             raise SIIRCVError(f"No se pudo abrir el Registro de Compras y Venta: {e}") from e
+
+        # DIAGNÓSTICO TEMPORAL: comparar estas cookies contra las de una
+        # sesión real de navegador (HAR) para ver si falta alguna propia de
+        # www4.sii.cl (p.ej. un token CSRF tipo XSRF-TOKEN que Angular suele
+        # exigir como header en cada POST y que un simple login no genera).
+        logger.info(
+            f"[SII-RCV][DIAG] tras abrir RCV_APP: status={resp_app.status_code} "
+            f"cookies={dict(client.cookies)}"
+        )
 
         resumen = await _rcv_post(client, "getResumen", {
             "periodo": periodo, "rutContribuyente": rut_num,
