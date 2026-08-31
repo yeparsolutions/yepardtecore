@@ -2356,18 +2356,33 @@ async def parsear_compra_xml(
     if not info["dtes"]:
         raise HTTPException(404, "El XML no contiene documentos")
 
+    def _entero(v):
+        try:
+            return int(float(v)) if v not in (None, "") else 0
+        except (TypeError, ValueError):
+            return 0
+
     return {
         "ok":                 True,
         "rut_emisor_envio":   info["rut_emisor_envio"],
         "rut_receptor_envio": info["rut_receptor_envio"],
         "documentos": [
             {
-                "tipo_dte":   int(d["tipo"])  if d["tipo"]  else None,
-                "folio":      int(d["folio"]) if d["folio"] else None,
-                "fecha":      d["fch_emis"],
-                "rut_emisor": d["rut_emisor"],
-                "rut_receptor": d["rut_recep"],
-                "monto_total": int(float(d["mnt_total"])) if d["mnt_total"] else 0,
+                "tipo_dte":       int(d["tipo"])  if d["tipo"]  else None,
+                "folio":          int(d["folio"]) if d["folio"] else None,
+                "fecha":          d["fch_emis"],
+                "rut_emisor":     d["rut_emisor"],
+                "razon_emisor":   d.get("razon_emisor") or "",
+                "giro_emisor":    d.get("giro_emisor") or "",
+                "rut_receptor":   d["rut_recep"],
+                "monto_neto":     _entero(d.get("mnt_neto")),
+                "monto_exento":   _entero(d.get("mnt_exe")),
+                "monto_iva":      _entero(d.get("mnt_iva")),
+                "monto_total":    _entero(d.get("mnt_total")),
+                # Detalle de productos/servicios — esto es lo que NO existe en
+                # el RCV del SII, solo en el XML real del documento. Lo que un
+                # ERP necesita para saber qué va a recibir, no solo cuánto.
+                "detalle": d.get("detalle") or [],
             }
             for d in info["dtes"]
         ],
@@ -2501,3 +2516,37 @@ async def generar_libro_compras_produccion(
         "estado":        (resultado_envio or {}).get("estado"),
         "mensaje":       (resultado_envio or {}).get("mensaje"),
     }
+
+
+# ══════════════════════════════════════════════════════════════
+# Sincronización con el RCV del SII (compras recibidas)
+# ══════════════════════════════════════════════════════════════
+class SincronizarRCVRequest(BaseModel):
+    periodo: str            # "AAAA-MM"
+    rut_empresa: str        # "12.345.678-9"
+    clave_tributaria: str
+
+
+@router.post("/compras/sincronizar-sii")
+async def sincronizar_compras_sii(
+    body: SincronizarRCVRequest,
+    emisor: Emisor = Depends(get_emisor_by_api_key),
+):
+    """
+    Trae del Registro de Compras y Venta del SII los documentos recibidos
+    (compras) del período pedido, iniciando sesión con RUT + Clave
+    Tributaria. Sin estado: la clave se usa en memoria para esta consulta y
+    se descarta — no queda nada guardado acá (ver services/sii_rcv.py para
+    el detalle de cómo funciona y sus límites).
+    """
+    from app.services.sii_rcv import sync_rcv_compras, SIIRCVError
+
+    try:
+        documentos = await sync_rcv_compras(body.rut_empresa, body.clave_tributaria, body.periodo)
+    except SIIRCVError as e:
+        raise HTTPException(502, str(e))
+    except Exception as e:
+        logger.error(f"[SINCRONIZAR-SII] Error inesperado: {e}", exc_info=True)
+        raise HTTPException(500, f"Error inesperado sincronizando con el SII: {e}")
+
+    return {"ok": True, "periodo": body.periodo, "documentos": documentos}
