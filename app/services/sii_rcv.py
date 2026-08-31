@@ -199,7 +199,8 @@ async def _login(client: httpx.AsyncClient, rut_empresa: str, clave_tributaria: 
         raise SIIRCVError(f"No se pudo completar el login del SII (paso final): {e}") from e
     logger.info(
         f"[SII-LOGIN][DIAG] paso_final destino={destino_final} "
-        f"status={resp_final.status_code}"
+        f"status={resp_final.status_code} largo_body={len(resp_final.text or '')} "
+        f"body={(resp_final.text or '')[:500]!r}"
     )
 
 
@@ -304,22 +305,30 @@ async def sync_rcv_compras(rut_empresa: str, clave_tributaria: str, periodo: str
         # arma la app real) es lo que causaba los rechazos "Usuario no
         # autorizado" y "Problema con el Token: NO Existen Datos".
         try:
-            await _post_arranque(client, AUTCONF_URL, f"{AUTCONF_NS}/obtieneConf", conv_id)
+            r1 = await _post_arranque(client, AUTCONF_URL, f"{AUTCONF_NS}/obtieneConf", conv_id)
+            logger.info(f"[SII-RCV][DIAG] obtieneConf respuesta: {r1!r}")
         except SIIRCVError as e:
             logger.warning(f"[SII-RCV][DIAG] obtieneConf falló (no fatal): {e}")
 
         try:
-            await client.get(AASESSION_URL)
+            resp_sess = await client.get(AASESSION_URL)
+            logger.info(
+                f"[SII-RCV][DIAG] aaSessionService/load status={resp_sess.status_code} "
+                f"body={resp_sess.text[:400]!r}"
+            )
         except httpx.RequestError as e:
             logger.warning(f"[SII-RCV][DIAG] aaSessionService/load falló (no fatal): {e}")
 
         try:
-            await _post_arranque(
+            r2 = await _post_arranque(
                 client, f"{RCV_BASE}/services/data/settingsService/consultarParametros",
                 f"{SETTINGS_NS}/consultarParametros", conv_id,
             )
+            logger.info(f"[SII-RCV][DIAG] consultarParametros respuesta (primeros 400): {str(r2)[:400]!r}")
         except SIIRCVError as e:
             logger.warning(f"[SII-RCV][DIAG] consultarParametros falló (no fatal): {e}")
+
+        logger.info(f"[SII-RCV][DIAG] cookies antes de getDatosInicio: {dict(client.cookies)!r}")
 
         # Estos dos SÍ son parte del contrato completo (FacadeService) y si
         # fallan, no tiene sentido seguir — son los que de verdad activan la
