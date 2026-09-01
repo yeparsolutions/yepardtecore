@@ -2464,7 +2464,18 @@ async def generar_libro_compras_produccion(
         tipo_libro=tipo_libro,
         tipo_envio=tipo_envio,
         cod_aut_rec=cod_aut_rec,
-        documentos=docs_validados,
+        # FIX (2026-09-01): docs_validados son instancias de
+        # DocumentoLibroCompras (la clase de validación de ESTE endpoint),
+        # pero LibroComprasRequest.documentos espera DocumentoCompra (la
+        # clase de libro_compras.py) — dos clases pydantic distintas con
+        # los mismos campos, pero pydantic v2 no acepta la instancia de una
+        # como si fuera de la otra: revienta con
+        # "Input should be a valid dictionary or instance of DocumentoCompra"
+        # sin capturar en ningún try/except de acá arriba, así que salía
+        # como 500 "Internal Server Error" genérico, sin detalle. Pasando
+        # dicts (.model_dump()) en vez de las instancias, pydantic los
+        # revalida igual pero sin chocar por la clase.
+        documentos=[d.model_dump() for d in docs_validados],
     )
 
     p12_bytes = _b64lc.b64decode(pfx_base64)
