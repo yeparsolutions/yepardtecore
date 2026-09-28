@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     MP_PUBLIC_KEY:     str = ""   # APP_USR-... public key
     MP_WEBHOOK_SECRET: str = ""   # secreto para validar webhooks
 
+    # Llave compartida para "Yepar HQ" (panel unico de todos tus
+    # productos) — separada de MP_WEBHOOK_SECRET a proposito.
+    YEPAR_HQ_API_KEY: str = ""
+
     # ── Email / SMTP ──────────────────────────────────────────
     # Variables de entorno que debes agregar en Railway:
     #   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, EMAIL_FROM
