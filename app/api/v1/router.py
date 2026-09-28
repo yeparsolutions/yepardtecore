@@ -19,6 +19,7 @@ from app.api.v1.endpoints import (
     enviar_sobre,
     libro_guias,
     libro_compras,
+    hq,
 )
 
 api_router = APIRouter()
@@ -40,3 +41,4 @@ api_router.include_router(enviar_sobre.router)
 api_router.include_router(libro_guias.router)
 api_router.include_router(libro_compras.router)
 api_router.include_router(pagos.router)
+api_router.include_router(hq.router)
