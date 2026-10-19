@@ -107,11 +107,18 @@ class TransporteDTE:
     (vigente desde el 01-05-2026) para Guía de Despacho (tipo 52) y,
     cuando acompañan traslado de bienes, también para facturas.
 
-    Orden de los campos en el XML (fijo, viene de Formato DTE 202602 /
-    Anexo Técnico 2.5 — NO reordenar, <Chofer> no existe como wrapper,
-    RUTChofer/NombreChofer van planos dentro de <Transporte>):
-        Patente, PatenteCarro, RUTTrans, RUTChofer, NombreChofer,
+    Orden real de los campos en el XML, CONFIRMADO por un rechazo real del
+    SII (STATUS=7, 19-oct-2026) — el Formato DTE 202602 que se usó de guía
+    al implementar esto por primera vez decía que RUTChofer/NombreChofer
+    iban planos; el SII los rechazó exigiendo el wrapper <Chofer>. NO
+    reordenar sin volver a validar contra un envío real:
+        Patente, PatenteCarro, RUTTrans, Chofer{RUTChofer, NombreChofer},
         DirDest, CmnaDest, CiudadDest, FchSalida, HraSalida, FchLlegada
+
+    HraSalida también fue rechazada en ese mismo envío: el SII exige el
+    tipo XML `time` completo (HH:MM:SS) — "10:23" (como lo entrega un
+    <input type="time"> de HTML, sin segundos) no es válido. Se normaliza
+    al escribir el XML (ver _build_encabezado), no acá.
     """
     patente: str = ""
     rut_trans: str = ""          # RUT del transportista (si es distinto del emisor)
@@ -413,10 +420,14 @@ class XMLBuilder:
                 etree.SubElement(transp, f"{{{NS}}}PatenteCarro").text = t.patente_carro.strip()[:8]
             if (t.rut_trans or "").strip():
                 etree.SubElement(transp, f"{{{NS}}}RUTTrans").text = t.rut_trans.strip()
-            if (t.rut_chofer or "").strip():
-                etree.SubElement(transp, f"{{{NS}}}RUTChofer").text = t.rut_chofer.strip()
-            if (t.nombre_chofer or "").strip():
-                etree.SubElement(transp, f"{{{NS}}}NombreChofer").text = t.nombre_chofer.strip()[:30]
+            # [FIX-3, 19-oct-2026] El SII rechazó RUTChofer/NombreChofer
+            # planos (STATUS=7): exige el wrapper <Chofer>.
+            if (t.rut_chofer or "").strip() or (t.nombre_chofer or "").strip():
+                chofer = etree.SubElement(transp, f"{{{NS}}}Chofer")
+                if (t.rut_chofer or "").strip():
+                    etree.SubElement(chofer, f"{{{NS}}}RUTChofer").text = t.rut_chofer.strip()
+                if (t.nombre_chofer or "").strip():
+                    etree.SubElement(chofer, f"{{{NS}}}NombreChofer").text = t.nombre_chofer.strip()[:30]
             if (t.dir_dest or "").strip():
                 etree.SubElement(transp, f"{{{NS}}}DirDest").text = t.dir_dest.strip()[:70]
             if (t.cmna_dest or "").strip():
@@ -426,7 +437,15 @@ class XMLBuilder:
             if t.fch_salida:
                 etree.SubElement(transp, f"{{{NS}}}FchSalida").text = t.fch_salida.strftime("%Y-%m-%d")
             if (t.hra_salida or "").strip():
-                etree.SubElement(transp, f"{{{NS}}}HraSalida").text = t.hra_salida.strip()
+                # [FIX-3] El SII rechazó "10:23" (STATUS=7, cvc-datatype-valid):
+                # el tipo XML `time` exige segundos. El <input type="time">
+                # del formulario entrega "HH:MM" — se completa acá.
+                partes_hora = t.hra_salida.strip().split(":")
+                if len(partes_hora) == 2:
+                    hra = f"{partes_hora[0]}:{partes_hora[1]}:00"
+                else:
+                    hra = t.hra_salida.strip()
+                etree.SubElement(transp, f"{{{NS}}}HraSalida").text = hra
             if t.fch_llegada:
                 etree.SubElement(transp, f"{{{NS}}}FchLlegada").text = t.fch_llegada.strftime("%Y-%m-%d")
 
