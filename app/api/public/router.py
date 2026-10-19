@@ -603,6 +603,12 @@ async def firmar_y_enviar(
 
     if datos.tipo == 52:
         _validar_transporte_154(datos.transporte)
+    elif datos.tipo in (33, 34) and datos.transporte is not None:
+        # Factura/Factura exenta que va acompañada del traslado de los
+        # bienes (Resolución Exenta SII N°154) — a diferencia de la Guía,
+        # acá es OPCIONAL: si el cliente mandó datos de transporte es
+        # porque eligió esa modalidad, y ahí sí deben venir completos.
+        _validar_transporte_154(datos.transporte)
 
     try:
         pfx_bytes = _b64.b64decode(datos.pfx_base64)
@@ -732,7 +738,10 @@ async def firmar_y_enviar(
                 observacion           = datos.observacion,
                 indicador_traslado    = _ind_traslado(datos.observacion or ""),
                 indicador_despacho    = _ind_despacho(datos.observacion or ""),
-                transporte            = _build_transporte(datos.transporte) if datos.tipo == 52 else None,
+                # Guía (52) siempre lleva transporte si llegó hasta acá (ya
+                # validado arriba). Factura/Factura exenta (33/34) lo llevan
+                # solo si el cliente lo mandó — ahí es opcional.
+                transporte            = _build_transporte(datos.transporte) if datos.tipo in (52, 33, 34) else None,
             )
             builder = XMLBuilder(input_dte)
 

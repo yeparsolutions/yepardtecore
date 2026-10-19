@@ -408,10 +408,19 @@ class XMLBuilder:
             etree.SubElement(receptor, f"{{{NS}}}CiudadRecep").text = rc.ciudad or "S/C"
 
         # <Transporte> — Resolución Exenta SII N°154 (vigente desde 01-05-2026):
-        # obligatorio en toda Guía de Despacho. La validación de que venga
+        # obligatorio en toda Guía de Despacho (52); opcional en Factura y
+        # Factura exenta (33/34) cuando acompañan el traslado de los bienes
+        # en vez de emitir una guía aparte. La validación de que venga
         # completo pasa ANTES de llegar aquí (ver firmar_y_enviar en
         # app/api/public/router.py) — acá solo se escribe lo que venga.
-        if tipo == 52 and d.transporte:
+        #
+        # [SIN VERIFICAR AÚN contra un envío real] A diferencia del bloque
+        # para tipo 52 (ya confirmado contra un rechazo/aceptación real del
+        # SII el 19-oct-2026), que <Transporte> sea válido como hijo de
+        # <Encabezado> en una Factura es, por ahora, una lectura del Formato
+        # DTE 202602 sin probar en producción — la primera factura real con
+        # traslado hay que revisarla con el mismo cuidado que la guía.
+        if tipo in (52, 33, 34) and d.transporte:
             t = d.transporte
             transp = etree.SubElement(enc, f"{{{NS}}}Transporte")
             if (t.patente or "").strip():
