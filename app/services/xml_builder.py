@@ -101,6 +101,32 @@ class ReferenciaDTE:
 
 
 @dataclass
+class TransporteDTE:
+    """
+    Datos de <Transporte> — exigidos por la Resolución Exenta SII N°154
+    (vigente desde el 01-05-2026) para Guía de Despacho (tipo 52) y,
+    cuando acompañan traslado de bienes, también para facturas.
+
+    Orden de los campos en el XML (fijo, viene de Formato DTE 202602 /
+    Anexo Técnico 2.5 — NO reordenar, <Chofer> no existe como wrapper,
+    RUTChofer/NombreChofer van planos dentro de <Transporte>):
+        Patente, PatenteCarro, RUTTrans, RUTChofer, NombreChofer,
+        DirDest, CmnaDest, CiudadDest, FchSalida, HraSalida, FchLlegada
+    """
+    patente: str = ""
+    rut_trans: str = ""          # RUT del transportista (si es distinto del emisor)
+    rut_chofer: str = ""
+    nombre_chofer: str = ""
+    dir_dest: str = ""
+    cmna_dest: str = ""
+    fch_salida: "date | None" = None
+    hra_salida: str = ""         # "HH:MM" o "HH:MM:SS"
+    fch_llegada: "date | None" = None
+    patente_carro: str = ""      # opcional — solo si hay carro/acoplado
+    ciudad_dest: str = ""        # opcional
+
+
+@dataclass
 class InputDTE:
     tipo_dte: int
     folio: int
@@ -114,6 +140,7 @@ class InputDTE:
     indicador_traslado: int = 0
     indicador_despacho: int = 0
     observacion: str = ""
+    transporte: "TransporteDTE | None" = None
     descuento_global_pct: float = 0.0
     descuento_global_monto: int = 0
     forzar_monto_cero: bool = False
@@ -372,6 +399,36 @@ class XMLBuilder:
             etree.SubElement(receptor, f"{{{NS}}}DirRecep").text    = rc.direccion or "S/D"
             etree.SubElement(receptor, f"{{{NS}}}CmnaRecep").text   = rc.comuna or "S/C"
             etree.SubElement(receptor, f"{{{NS}}}CiudadRecep").text = rc.ciudad or "S/C"
+
+        # <Transporte> — Resolución Exenta SII N°154 (vigente desde 01-05-2026):
+        # obligatorio en toda Guía de Despacho. La validación de que venga
+        # completo pasa ANTES de llegar aquí (ver firmar_y_enviar en
+        # app/api/public/router.py) — acá solo se escribe lo que venga.
+        if tipo == 52 and d.transporte:
+            t = d.transporte
+            transp = etree.SubElement(enc, f"{{{NS}}}Transporte")
+            if (t.patente or "").strip():
+                etree.SubElement(transp, f"{{{NS}}}Patente").text = t.patente.strip()[:8]
+            if (t.patente_carro or "").strip():
+                etree.SubElement(transp, f"{{{NS}}}PatenteCarro").text = t.patente_carro.strip()[:8]
+            if (t.rut_trans or "").strip():
+                etree.SubElement(transp, f"{{{NS}}}RUTTrans").text = t.rut_trans.strip()
+            if (t.rut_chofer or "").strip():
+                etree.SubElement(transp, f"{{{NS}}}RUTChofer").text = t.rut_chofer.strip()
+            if (t.nombre_chofer or "").strip():
+                etree.SubElement(transp, f"{{{NS}}}NombreChofer").text = t.nombre_chofer.strip()[:30]
+            if (t.dir_dest or "").strip():
+                etree.SubElement(transp, f"{{{NS}}}DirDest").text = t.dir_dest.strip()[:70]
+            if (t.cmna_dest or "").strip():
+                etree.SubElement(transp, f"{{{NS}}}CmnaDest").text = t.cmna_dest.strip()[:20]
+            if (t.ciudad_dest or "").strip():
+                etree.SubElement(transp, f"{{{NS}}}CiudadDest").text = t.ciudad_dest.strip()[:20]
+            if t.fch_salida:
+                etree.SubElement(transp, f"{{{NS}}}FchSalida").text = t.fch_salida.strftime("%Y-%m-%d")
+            if (t.hra_salida or "").strip():
+                etree.SubElement(transp, f"{{{NS}}}HraSalida").text = t.hra_salida.strip()
+            if t.fch_llegada:
+                etree.SubElement(transp, f"{{{NS}}}FchLlegada").text = t.fch_llegada.strftime("%Y-%m-%d")
 
         totales = etree.SubElement(enc, f"{{{NS}}}Totales")
 

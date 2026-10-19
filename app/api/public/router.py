@@ -470,6 +470,49 @@ class ReferenciaStateless(BaseModel):
     razon_ref:    Optional[str] = None
     cod_ref:      Optional[int] = None
 
+class TransporteStateless(BaseModel):
+    """
+    <Transporte> — Resolución Exenta SII N°154 (vigente desde 01-05-2026).
+    Obligatorio para Guía de Despacho (tipo 52) — ver _validar_transporte_154.
+    """
+    patente:        str = ""
+    patente_carro:  Optional[str] = ""   # opcional — solo si hay carro/acoplado
+    rut_trans:      str = ""             # si es igual al emisor, el cliente puede repetir su propio RUT
+    rut_chofer:     str = ""
+    nombre_chofer:  str = ""
+    dir_dest:       str = ""
+    cmna_dest:      str = ""
+    ciudad_dest:    Optional[str] = ""   # opcional
+    fch_salida:     str = ""             # YYYY-MM-DD
+    hra_salida:     str = ""             # HH:MM o HH:MM:SS
+    fch_llegada:    str = ""             # YYYY-MM-DD
+
+
+def _validar_transporte_154(transporte: "TransporteStateless | None") -> None:
+    """
+    Guía de Despacho (tipo 52) sin estos datos es, desde el 01-05-2026,
+    un documento que el SII puede rechazar por esquema (Resolución Exenta
+    N°154) — se valida ACÁ, antes de firmar nada, en vez de dejar que el
+    SII la rechace después de gastar un folio.
+    """
+    faltan = []
+    t = transporte
+    if not t or not (t.patente or "").strip():        faltan.append("patente del vehículo")
+    if not t or not (t.rut_trans or "").strip():       faltan.append("RUT del transportista")
+    if not t or not (t.rut_chofer or "").strip():      faltan.append("RUT del chofer")
+    if not t or not (t.nombre_chofer or "").strip():   faltan.append("nombre del chofer")
+    if not t or not (t.dir_dest or "").strip():        faltan.append("dirección de destino")
+    if not t or not (t.cmna_dest or "").strip():       faltan.append("comuna de destino")
+    if not t or not (t.fch_salida or "").strip():      faltan.append("fecha de salida")
+    if not t or not (t.hra_salida or "").strip():      faltan.append("hora de salida")
+    if not t or not (t.fch_llegada or "").strip():     faltan.append("fecha estimada de llegada")
+    if faltan:
+        raise HTTPException(
+            422,
+            "Guía de Despacho: faltan datos de transporte obligatorios desde la "
+            f"Resolución Exenta SII N°154 — {', '.join(faltan)}.",
+        )
+
 def _hoy_chile() -> str:
     """
     Fecha de HOY en Chile (America/Santiago), formato YYYY-MM-DD.
@@ -517,6 +560,7 @@ class FirmarYEnviarInput(BaseModel):
     ambiente:     Optional[str] = None  # None → usa el del emisor; "certificacion" | "produccion"
     auto_enviar:  bool = True
     observacion:  str = ""   # motivo de la Guía de Despacho (tipo 52) — determina IndTraslado/TipoDespacho
+    transporte:   Optional[TransporteStateless] = None  # obligatorio si tipo=52 (Res. SII N°154)
     folio_actual: Optional[int] = None  # Folio a usar (el contador lo lleva
                                         # el cliente). Si no viene, se usa el
                                         # inicio del rango del CAF. El CAF
@@ -537,7 +581,8 @@ async def firmar_y_enviar(
     YeparDTEcore NO guarda nada en BD.
     """
     from app.services.xml_builder import (
-        XMLBuilder, InputDTE, EmisorDTE, ReceptorDTE, ItemDTE, ReferenciaDTE
+        XMLBuilder, InputDTE, EmisorDTE, ReceptorDTE, ItemDTE, ReferenciaDTE,
+        TransporteDTE
     )
     from app.services.xml_builder_boleta import (
         XMLBuilderBoleta, InputBoleta, EmisorBoleta, ReceptorBoleta,
@@ -555,6 +600,9 @@ async def firmar_y_enviar(
 
     if datos.tipo not in tipos_validos:
         raise HTTPException(422, f"Tipo DTE no válido: {datos.tipo}")
+
+    if datos.tipo == 52:
+        _validar_transporte_154(datos.transporte)
 
     try:
         pfx_bytes = _b64.b64decode(datos.pfx_base64)
@@ -684,6 +732,7 @@ async def firmar_y_enviar(
                 observacion           = datos.observacion,
                 indicador_traslado    = _ind_traslado(datos.observacion or ""),
                 indicador_despacho    = _ind_despacho(datos.observacion or ""),
+                transporte            = _build_transporte(datos.transporte) if datos.tipo == 52 else None,
             )
             builder = XMLBuilder(input_dte)
 
@@ -962,6 +1011,30 @@ def _ind_despacho(motivo: str) -> int:
     elif "CLIENTE" in m:
         return 1  # Cliente retira
     return 0
+
+
+def _build_transporte(t: "TransporteStateless | None"):
+    """
+    TransporteStateless (API) → TransporteDTE (xml_builder). Separado del
+    constructor de InputDTE porque _validar_transporte_154 ya garantizó
+    que, si llegamos hasta acá con tipo=52, t no viene vacío.
+    """
+    from app.services.xml_builder import TransporteDTE
+    if not t:
+        return None
+    return TransporteDTE(
+        patente       = t.patente or "",
+        patente_carro = t.patente_carro or "",
+        rut_trans     = _norm_rut(t.rut_trans or ""),
+        rut_chofer    = _norm_rut(t.rut_chofer or ""),
+        nombre_chofer = t.nombre_chofer or "",
+        dir_dest      = t.dir_dest or "",
+        cmna_dest     = t.cmna_dest or "",
+        ciudad_dest   = t.ciudad_dest or "",
+        fch_salida    = _date.fromisoformat(t.fch_salida) if (t.fch_salida or "").strip() else None,
+        hra_salida    = t.hra_salida or "",
+        fch_llegada   = _date.fromisoformat(t.fch_llegada) if (t.fch_llegada or "").strip() else None,
+    )
 
 
 @router.post("/generar-set")
