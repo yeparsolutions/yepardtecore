@@ -970,6 +970,10 @@ class CasoSetInput(BaseModel):
     desc_global:     int   = 0      # descuento global en % (ej. 14 = 14%)
     motivo:          str   = ""     # motivo guía de despacho
     forzar_monto_cero: bool = False # NC CodRef=2
+    # Resolución Exenta SII N°154 — obligatorio si tipo_dte=52 (igual que en
+    # /api/firmar-y-enviar). El set de certificación genera Guías de Despacho
+    # como cualquier otro caso, así que el SII las exige con los mismos datos.
+    transporte:      Optional[TransporteStateless] = None
 
 class GenerarSetInput(BaseModel):
     emisor:         EmisorStateless
@@ -1349,6 +1353,18 @@ async def generar_set(
         # CAF que CONTIENE este folio — cada documento se timbra con SU CAF.
         caf_xml_str = caf_de_caso[i]
 
+        # Resolución Exenta SII N°154 — validar ANTES de timbrar, igual que en
+        # /api/firmar-y-enviar, para no quemar folio+CAF en un caso que el SII
+        # certificación va a rechazar por esquema de todas formas.
+        if tipo_dte == 52 or (tipo_dte in (33, 34) and caso.transporte is not None):
+            try:
+                _validar_transporte_154(caso.transporte)
+            except HTTPException as ex:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Caso {caso.numero_caso} (tipo {tipo_dte}): {ex.detail}",
+                )
+
         rut_recep = _norm_rut(caso.rut_receptor or "66666666-6")
         nom_recep = caso.nombre_receptor or "Consumidor Final"
 
@@ -1517,6 +1533,7 @@ async def generar_set(
                 descuento_global_pct=float(caso.desc_global or 0),
                 indicador_traslado=_ind_traslado(caso.motivo or ""),
                 indicador_despacho=_ind_despacho(caso.motivo or ""),
+                transporte=_build_transporte(caso.transporte) if tipo_dte in (52, 33, 34) else None,
                 forzar_monto_cero=(
                     getattr(caso, "forzar_monto_cero", False) or
                     # NC/ND CodRef=2 (corrige texto) → sin montos en el detalle
