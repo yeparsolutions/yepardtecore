@@ -564,6 +564,7 @@ class FirmarYEnviarInput(BaseModel):
     ambiente:     Optional[str] = None  # None → usa el del emisor; "certificacion" | "produccion"
     auto_enviar:  bool = True
     observacion:  str = ""   # motivo de la Guía de Despacho (tipo 52) — determina IndTraslado/TipoDespacho
+    indicador_traslado: Optional[int] = None  # IndTraslado explícito (1-12, ver IND_TRASLADO_CATALOG); si None, se infiere de `observacion`
     transporte:   Optional[TransporteStateless] = None  # obligatorio si tipo=52 (Res. SII N°144)
     folio_actual: Optional[int] = None  # Folio a usar (el contador lo lleva
                                         # el cliente). Si no viene, se usa el
@@ -740,7 +741,7 @@ async def firmar_y_enviar(
                 # se escriben en el XML (ver _build_encabezado: solo aplica
                 # si tipo_dte == 52), así que es seguro pasarlos siempre.
                 observacion           = datos.observacion,
-                indicador_traslado    = _ind_traslado(datos.observacion or ""),
+                indicador_traslado    = _ind_traslado(datos.observacion or "", datos.indicador_traslado),
                 indicador_despacho    = _ind_despacho(datos.observacion or ""),
                 # Guía (52) siempre lleva transporte si llegó hasta acá (ya
                 # validado arriba). Factura/Factura exenta (33/34) lo llevan
@@ -973,6 +974,7 @@ class CasoSetInput(BaseModel):
     referencia:      Optional[dict] = None
     desc_global:     int   = 0      # descuento global en % (ej. 14 = 14%)
     motivo:          str   = ""     # motivo guía de despacho
+    indicador_traslado: Optional[int] = None  # IndTraslado explícito (1-12); si None, se infiere de `motivo`
     forzar_monto_cero: bool = False # NC CodRef=2
     # Resolución Exenta SII N°144 — obligatorio si tipo_dte=52 (igual que en
     # /api/firmar-y-enviar). El set de certificación genera Guías de Despacho
@@ -1007,15 +1009,58 @@ class GenerarSetInput(BaseModel):
                                           # SIN tocar el CAF firmado.
 
 
-def _ind_traslado(motivo: str) -> int:
-    """Determina IndTraslado según el motivo de la guía de despacho."""
+# Catálogo de 12 tipos de IndTraslado — Anexo de la Resolución Exenta
+# SII N°144 (23-oct-2026, vigente desde 01-11-2026).
+IND_TRASLADO_CATALOG = {
+    1:  "Operación constituye venta",
+    2:  "Ventas por efectuar",
+    3:  "Consignaciones",
+    4:  "Entrega gratuita",
+    5:  "Traslados internos",
+    6:  "Otros traslados no venta",
+    7:  "Devolución de Mercaderías",
+    8:  "Traslado para exportación (No venta)",
+    9:  "Venta de Exportación",
+    10: "Traslado de tercerizado",
+    11: "Traslado prolongado, importa venta",
+    12: "Traslado prolongado, no venta",
+}
+
+
+def _ind_traslado(motivo: str, override: "int | None" = None) -> int:
+    """
+    Determina IndTraslado (1-12, Anexo Res. SII N°144).
+
+    Si el cliente mandó un valor explícito (el usuario eligió el tipo en
+    el formulario), se usa tal cual — es la fuente de verdad. Si no,
+    se cae a inferirlo por palabras clave en el motivo de texto libre,
+    igual que antes (compatibilidad con clientes/sets antiguos que no
+    mandan el selector); solo cubre los casos más comunes, el resto
+    requiere que el usuario elija el tipo explícitamente.
+    """
+    if override in IND_TRASLADO_CATALOG:
+        return override
     m = motivo.upper()
-    if "BODEGA" in m or "INTERNO" in m or "TRASLADO" in m:
-        return 5  # Traslado interno
-    elif "CLIENTE" in m and "LOCAL" in m:
-        return 1  # Venta, emisor despacha al local del cliente
-    elif "CLIENTE" in m:
-        return 1  # Venta, cliente retira
+    if "CONSIGNA" in m:
+        return 3
+    elif "GRATU" in m or "REGALO" in m or "DONA" in m:
+        return 4
+    elif "BODEGA" in m or "INTERNO" in m:
+        return 5
+    elif "DEVOLU" in m:
+        return 7
+    elif "EXPORTA" in m and ("NO VENTA" in m or "SIN VENTA" in m):
+        return 8
+    elif "EXPORTA" in m:
+        return 9
+    elif "TERCERIZAD" in m:
+        return 10
+    elif "PROLONGAD" in m and "NO VENTA" in m:
+        return 12
+    elif "PROLONGAD" in m:
+        return 11
+    elif "POR EFECTUAR" in m or "PARCIAL" in m:
+        return 2
     return 1
 
 def _ind_despacho(motivo: str) -> int:
@@ -1535,7 +1580,7 @@ async def generar_set(
                 ),
                 items=items_d, referencias=refs, ambiente=datos.ambiente,
                 descuento_global_pct=float(caso.desc_global or 0),
-                indicador_traslado=_ind_traslado(caso.motivo or ""),
+                indicador_traslado=_ind_traslado(caso.motivo or "", caso.indicador_traslado),
                 indicador_despacho=_ind_despacho(caso.motivo or ""),
                 transporte=_build_transporte(caso.transporte) if tipo_dte in (52, 33, 34) else None,
                 forzar_monto_cero=(
