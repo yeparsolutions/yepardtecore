@@ -472,45 +472,49 @@ class ReferenciaStateless(BaseModel):
 
 class TransporteStateless(BaseModel):
     """
-    <Transporte> — Resolución Exenta SII N°154 (vigente desde 01-05-2026).
-    Obligatorio para Guía de Despacho (tipo 52) — ver _validar_transporte_154.
+    <Transporte> — Resolución Exenta SII N°144 (23-oct-2026, vigente desde
+    01-11-2026; reemplaza a la N°154, derogada por esta misma resolución).
+    Obligatorio para Guía de Despacho (tipo 52) — ver _validar_transporte_144.
     """
     patente:        str = ""
     patente_carro:  Optional[str] = ""   # opcional — solo si hay carro/acoplado
-    rut_trans:      str = ""             # si es igual al emisor, el cliente puede repetir su propio RUT
+    rut_trans:      str = ""             # opcional — si viene vacío, el emisor se completa a sí mismo (ver emision_core.py en yepardte-backend)
     rut_chofer:     str = ""
     nombre_chofer:  str = ""
     dir_dest:       str = ""
     cmna_dest:      str = ""
     ciudad_dest:    Optional[str] = ""   # opcional
     fch_salida:     str = ""             # YYYY-MM-DD
-    hra_salida:     str = ""             # HH:MM o HH:MM:SS
+    hra_salida:     str = ""             # HH:MM o HH:MM:SS — OPCIONAL (Res. N°144, resolutivo 7°: "la información de hora de salida es opcional")
     fch_llegada:    str = ""             # YYYY-MM-DD
 
 
-def _validar_transporte_154(transporte: "TransporteStateless | None") -> None:
+def _validar_transporte_144(transporte: "TransporteStateless | None") -> None:
     """
-    Guía de Despacho (tipo 52) sin estos datos es, desde el 01-05-2026,
+    Guía de Despacho (tipo 52) sin estos datos es, desde el 01-11-2026,
     un documento que el SII puede rechazar por esquema (Resolución Exenta
-    N°154) — se valida ACÁ, antes de firmar nada, en vez de dejar que el
-    SII la rechace después de gastar un folio.
+    N°144, que reemplaza a la N°154) — se valida ACÁ, antes de firmar
+    nada, en vez de dejar que el SII la rechace después de gastar un folio.
+
+    rut_trans y hra_salida NO se exigen acá: rut_trans llega siempre
+    completado por yepardte-backend (con el RUT del propio emisor si el
+    cliente no declaró transportista — ver emision_core.py) y hra_salida
+    es explícitamente opcional según el texto de la Resolución N°144.
     """
     faltan = []
     t = transporte
     if not t or not (t.patente or "").strip():        faltan.append("patente del vehículo")
-    if not t or not (t.rut_trans or "").strip():       faltan.append("RUT del transportista")
     if not t or not (t.rut_chofer or "").strip():      faltan.append("RUT del chofer")
     if not t or not (t.nombre_chofer or "").strip():   faltan.append("nombre del chofer")
     if not t or not (t.dir_dest or "").strip():        faltan.append("dirección de destino")
     if not t or not (t.cmna_dest or "").strip():       faltan.append("comuna de destino")
     if not t or not (t.fch_salida or "").strip():      faltan.append("fecha de salida")
-    if not t or not (t.hra_salida or "").strip():      faltan.append("hora de salida")
     if not t or not (t.fch_llegada or "").strip():     faltan.append("fecha estimada de llegada")
     if faltan:
         raise HTTPException(
             422,
             "Guía de Despacho: faltan datos de transporte obligatorios desde la "
-            f"Resolución Exenta SII N°154 — {', '.join(faltan)}.",
+            f"Resolución Exenta SII N°144 — {', '.join(faltan)}.",
         )
 
 def _hoy_chile() -> str:
@@ -560,7 +564,7 @@ class FirmarYEnviarInput(BaseModel):
     ambiente:     Optional[str] = None  # None → usa el del emisor; "certificacion" | "produccion"
     auto_enviar:  bool = True
     observacion:  str = ""   # motivo de la Guía de Despacho (tipo 52) — determina IndTraslado/TipoDespacho
-    transporte:   Optional[TransporteStateless] = None  # obligatorio si tipo=52 (Res. SII N°154)
+    transporte:   Optional[TransporteStateless] = None  # obligatorio si tipo=52 (Res. SII N°144)
     folio_actual: Optional[int] = None  # Folio a usar (el contador lo lleva
                                         # el cliente). Si no viene, se usa el
                                         # inicio del rango del CAF. El CAF
@@ -602,13 +606,13 @@ async def firmar_y_enviar(
         raise HTTPException(422, f"Tipo DTE no válido: {datos.tipo}")
 
     if datos.tipo == 52:
-        _validar_transporte_154(datos.transporte)
+        _validar_transporte_144(datos.transporte)
     elif datos.tipo in (33, 34) and datos.transporte is not None:
         # Factura/Factura exenta que va acompañada del traslado de los
-        # bienes (Resolución Exenta SII N°154) — a diferencia de la Guía,
+        # bienes (Resolución Exenta SII N°144) — a diferencia de la Guía,
         # acá es OPCIONAL: si el cliente mandó datos de transporte es
         # porque eligió esa modalidad, y ahí sí deben venir completos.
-        _validar_transporte_154(datos.transporte)
+        _validar_transporte_144(datos.transporte)
 
     try:
         pfx_bytes = _b64.b64decode(datos.pfx_base64)
@@ -970,7 +974,7 @@ class CasoSetInput(BaseModel):
     desc_global:     int   = 0      # descuento global en % (ej. 14 = 14%)
     motivo:          str   = ""     # motivo guía de despacho
     forzar_monto_cero: bool = False # NC CodRef=2
-    # Resolución Exenta SII N°154 — obligatorio si tipo_dte=52 (igual que en
+    # Resolución Exenta SII N°144 — obligatorio si tipo_dte=52 (igual que en
     # /api/firmar-y-enviar). El set de certificación genera Guías de Despacho
     # como cualquier otro caso, así que el SII las exige con los mismos datos.
     transporte:      Optional[TransporteStateless] = None
@@ -1029,7 +1033,7 @@ def _ind_despacho(motivo: str) -> int:
 def _build_transporte(t: "TransporteStateless | None"):
     """
     TransporteStateless (API) → TransporteDTE (xml_builder). Separado del
-    constructor de InputDTE porque _validar_transporte_154 ya garantizó
+    constructor de InputDTE porque _validar_transporte_144 ya garantizó
     que, si llegamos hasta acá con tipo=52, t no viene vacío.
     """
     from app.services.xml_builder import TransporteDTE
@@ -1353,12 +1357,12 @@ async def generar_set(
         # CAF que CONTIENE este folio — cada documento se timbra con SU CAF.
         caf_xml_str = caf_de_caso[i]
 
-        # Resolución Exenta SII N°154 — validar ANTES de timbrar, igual que en
+        # Resolución Exenta SII N°144 — validar ANTES de timbrar, igual que en
         # /api/firmar-y-enviar, para no quemar folio+CAF en un caso que el SII
         # certificación va a rechazar por esquema de todas formas.
         if tipo_dte == 52 or (tipo_dte in (33, 34) and caso.transporte is not None):
             try:
-                _validar_transporte_154(caso.transporte)
+                _validar_transporte_144(caso.transporte)
             except HTTPException as ex:
                 raise HTTPException(
                     status_code=422,

@@ -103,8 +103,8 @@ class ReferenciaDTE:
 @dataclass
 class TransporteDTE:
     """
-    Datos de <Transporte> — exigidos por la Resolución Exenta SII N°154
-    (vigente desde el 01-05-2026) para Guía de Despacho (tipo 52) y,
+    Datos de <Transporte> — exigidos por la Resolución Exenta SII N°144
+    (vigente desde el 01-11-2026) para Guía de Despacho (tipo 52) y,
     cuando acompañan traslado de bienes, también para facturas.
 
     Orden real de los campos en el XML, CONFIRMADO por un rechazo real del
@@ -407,7 +407,7 @@ class XMLBuilder:
             etree.SubElement(receptor, f"{{{NS}}}CmnaRecep").text   = rc.comuna or "S/C"
             etree.SubElement(receptor, f"{{{NS}}}CiudadRecep").text = rc.ciudad or "S/C"
 
-        # <Transporte> — Resolución Exenta SII N°154 (vigente desde 01-05-2026):
+        # <Transporte> — Resolución Exenta SII N°144 (vigente desde 01-11-2026):
         # obligatorio en toda Guía de Despacho (52); opcional en Factura y
         # Factura exenta (33/34) cuando acompañan el traslado de los bienes
         # en vez de emitir una guía aparte. La validación de que venga
